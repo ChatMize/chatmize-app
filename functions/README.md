@@ -11,6 +11,9 @@ and every secret lives in Secret Manager.
 | `metaWebhook` | HTTPS `onRequest` | Meta verification handshake (GET) + inbound Messenger / Instagram / WhatsApp events (POST) |
 | `sendChannelMessage` | Callable `onCall` | Authenticated outbound send on any channel; checks workspace membership, uses Secret Manager tokens, records the result |
 | `onInboundMessageCreated` | Firestore `onDocumentCreated` | Telemetry hook per inbound message; the AI agent auto-reply pipeline plugs in here (Phase 4) |
+| `getCreditBalance` | Callable `onCall` | Member/Super Admin: read (and lazily create) a workspace's AI credit balance |
+| `adjustCredits` | Callable `onCall` | Super Admin only: grant or deduct AI credits; every adjustment hits the immutable ledger |
+| `resetMonthlyCredits` | Scheduled (monthly, 1st) | Reset every workspace balance to its plan allowance |
 
 ## Webhook URL
 
@@ -35,6 +38,9 @@ firebase functions:secrets:set WHATSAPP_PHONE_NUMBER_ID
 ```
 workspaces/{workspaceId}/conversations/{channel}_{senderId}/messages/{externalId}
 workspaces/{workspaceId}/webhook_dead_letter/{autoId}   # failed events, pending_retry
+credit_balances/{workspaceId}                          # AI credit balance (server-write only)
+credit_ledger/{workspaceId}/entries/{autoId}           # immutable credit ledger (server-write only)
+plans/{planId}                                         # commercial tiers (Super Admin managed)
 ```
 
 Message document ids are the Meta message id, so duplicate webhook

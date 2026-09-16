@@ -2,7 +2,16 @@ import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions";
+import {
+  getBalance,
+  ensureCreditAccount,
+  grantCredits,
+  spendCredits,
+  resetAllMonthlyCredits,
+  CreditReason,
+} from "./credits";
 import {
   ALL_SECRETS,
   META_APP_SECRET,
@@ -31,6 +40,24 @@ async function resolveWorkspace(workspaceId: unknown): Promise<string | null> {
   if (typeof workspaceId !== "string" || workspaceId.length === 0) return null;
   const snap = await db().collection("workspaces").doc(workspaceId).get();
   return snap.exists ? workspaceId : null;
+}
+
+/** Throw unless the caller may act on the workspace (member or Super Admin). */
+async function requireWorkspaceAccess(
+  uid: string,
+  workspaceId: string,
+  token: Record<string, unknown> | undefined,
+): Promise<void> {
+  if (token?.superadmin === true) return;
+  const member = await db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("members")
+    .doc(uid)
+    .get();
+  if (!member.exists) {
+    throw new HttpsError("permission-denied", "Not a member of this workspace.");
+  }
 }
 
 /**
@@ -132,18 +159,7 @@ export const sendChannelMessage = onCall(
     }
 
     // Membership check (Super Admin claim bypasses).
-    const isSuperAdmin = request.auth?.token?.superadmin === true;
-    if (!isSuperAdmin) {
-      const member = await db()
-        .collection("workspaces")
-        .doc(workspaceId)
-        .collection("members")
-        .doc(uid)
-        .get();
-      if (!member.exists) {
-        throw new HttpsError("permission-denied", "Not a member of this workspace.");
-      }
-    }
+    await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
 
     const sender = CHANNEL_SENDERS[channel];
     let result;
@@ -196,5 +212,70 @@ export const onInboundMessageCreated = onDocumentCreated(
       textLength: data.text?.length ?? 0,
     });
     // TODO(Phase 4): route through the AI agent with credit metering here.
+  },
+);
+
+// ---------------------------------------------------------------------------
+// AI credits
+// ---------------------------------------------------------------------------
+
+/** Authenticated callable: read a workspace's credit balance + ledger-ready account. */
+export const getCreditBalance = onCall(
+  { region: REGION },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
+    }
+    const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+    if (!workspaceId) {
+      throw new HttpsError("invalid-argument", "workspaceId is required.");
+    }
+    await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+    return ensureCreditAccount(workspaceId);
+  },
+);
+
+interface AdjustCreditsData {
+  workspaceId?: string;
+  /** Positive = grant, negative = deduct. */
+  delta?: number;
+  reason?: CreditReason;
+  note?: string;
+}
+
+/**
+ * Super Admin only: grant or deduct credits (top-ups, corrections).
+ * Every adjustment is written to the immutable ledger.
+ */
+export const adjustCredits = onCall(
+  { region: REGION },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
+    }
+    if (request.auth?.token?.superadmin !== true) {
+      throw new HttpsError("permission-denied", "Super Admin only.");
+    }
+    const { workspaceId, delta, reason, note } = (request.data ?? {}) as AdjustCreditsData;
+    if (!workspaceId || !delta || delta === 0) {
+      throw new HttpsError("invalid-argument", "workspaceId and a non-zero delta are required.");
+    }
+    if (delta > 0) {
+      if (reason !== "topup_purchase" && reason !== "admin_adjust" && reason !== "monthly_grant") {
+        throw new HttpsError("invalid-argument", "Invalid grant reason.");
+      }
+      return grantCredits(workspaceId, delta, reason, note);
+    }
+    return spendCredits(workspaceId, -delta, "admin_adjust", note ?? "super admin deduction");
+  },
+);
+
+/** Monthly reset: every workspace balance returns to its plan allowance. */
+export const resetMonthlyCredits = onSchedule(
+  { region: REGION, schedule: "0 0 1 * *", timeZone: "America/Phoenix" },
+  async () => {
+    await resetAllMonthlyCredits();
   },
 );

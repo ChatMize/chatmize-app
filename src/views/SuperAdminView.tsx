@@ -22,6 +22,9 @@ import {
   Calculator
 } from 'lucide-react';
 import { SuperAdminKanban } from '../components/admin/SuperAdminKanban';
+import { PlanEditorModal } from '../components/admin/PlanEditorModal';
+import { Plan, FEATURE_LABELS, formatPrice, deletePlan } from '../lib/billing';
+import { usePlans } from '../lib/entitlements';
 
 interface SuperAdminViewProps {
   initialTab?: 'kanban' | 'users' | 'plans' | 'migration';
@@ -103,75 +106,15 @@ const INITIAL_USERS: UserRecord[] = [
   }
 ];
 
-interface PlanTier {
-  id: string;
-  name: string;
-  price: string;
-  billingPeriod: string;
-  subscribersCount: number;
-  features: string[];
-  badge?: string;
-  color: string;
-}
-
-const PLANS: PlanTier[] = [
-  {
-    id: 'starter',
-    name: 'Starter Messenger',
-    price: '$49',
-    billingPeriod: '/month',
-    subscribersCount: 184,
-    color: 'from-blue-500/20 to-cyan-500/20 border-cyan-500/30',
-    features: [
-      'Up to 2,500 active contacts',
-      'Facebook & Instagram DMs',
-      'Drag & Drop Flow Builder',
-      'Meta 24h standard window policy',
-      'Email support'
-    ]
-  },
-  {
-    id: 'pro',
-    name: 'Pro Automation & Blasts',
-    price: '$129',
-    billingPeriod: '/month',
-    subscribersCount: 420,
-    badge: 'Most Popular',
-    color: 'from-purple-500/20 to-indigo-500/20 border-purple-500/40',
-    features: [
-      'Up to 10,000 active contacts',
-      'Meta Recurring Notifications (Daily/Weekly/Monthly)',
-      'Twilio SMS + Click-to-WhatsApp',
-      'AI Smart Lead Qualification',
-      'Webhooks & Zapier connectors',
-      'Priority 1-on-1 support'
-    ]
-  },
-  {
-    id: 'agency',
-    name: 'Agency & White-Label',
-    price: '$299',
-    billingPeriod: '/month',
-    subscribersCount: 78,
-    badge: 'Enterprise',
-    color: 'from-amber-500/20 to-orange-500/20 border-amber-500/40',
-    features: [
-      'Unlimited client sub-accounts',
-      'Custom branding & white-label domain',
-      'Unlimited Recurring Notification opt-ins',
-      'Direct Meta webhook event relays',
-      'Platform 1-Click Migration bridge access',
-      'Dedicated Slack channel & onboarding'
-    ]
-  }
-];
-
 export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   initialTab = 'kanban'
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration'>(initialTab);
   const [users, setUsers] = useState<UserRecord[]>(INITIAL_USERS);
   const [searchQuery, setSearchQuery] = useState('');
+  const { plans, loading: plansLoading } = usePlans();
+  const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
+  const [isCreatingPlan, setIsCreatingPlan] = useState(false);
   
   // Platform Migration Simulation State
   const [legacyApiKey, setLegacyApiKey] = useState('');
@@ -455,10 +398,10 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold text-white">Commercial Tier Configuration</h2>
-              <p className="text-xs text-slate-400">Configure public self-service plans, feature quotas, and billing packages for customers.</p>
+              <p className="text-xs text-slate-400">Plans are live data: edits here update every pricing surface immediately, no deploy needed.</p>
             </div>
-            <button 
-              onClick={() => alert('New Tier Builder opening: configure price, Meta broadcast quotas, and Stripe checkout links.')}
+            <button
+              onClick={() => setIsCreatingPlan(true)}
               className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-purple-500/20"
             >
               <Plus className="w-4 h-4" />
@@ -466,50 +409,94 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {PLANS.map((plan) => (
-              <div 
-                key={plan.id}
-                className={`bg-slate-900/80 border rounded-3xl p-6 relative flex flex-col justify-between backdrop-blur-md shadow-xl ${plan.color}`}
-              >
-                {plan.badge && (
-                  <span className="absolute -top-3 right-6 px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[10px] font-extrabold uppercase tracking-wider rounded-full shadow-md">
-                    {plan.badge}
-                  </span>
-                )}
+          {plansLoading ? (
+            <div className="text-center py-12 text-slate-400 text-sm">Loading plans...</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {plans.map((plan) => (
+                <div
+                  key={plan.id}
+                  className={`bg-slate-900/80 border rounded-3xl p-6 relative flex flex-col justify-between backdrop-blur-md shadow-xl ${plan.color || 'border-white/10'}`}
+                >
+                  {plan.badge && (
+                    <span className="absolute -top-3 right-6 px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[10px] font-extrabold uppercase tracking-wider rounded-full shadow-md">
+                      {plan.badge}
+                    </span>
+                  )}
+                  {!plan.isPublic && (
+                    <span className="absolute -top-3 left-6 px-3 py-1 bg-slate-700 text-slate-300 text-[10px] font-extrabold uppercase tracking-wider rounded-full shadow-md">
+                      Hidden
+                    </span>
+                  )}
 
-                <div>
-                  <h3 className="text-xl font-bold text-white mb-1">{plan.name}</h3>
-                  <div className="flex items-baseline gap-1 my-3">
-                    <span className="text-3xl font-black text-white">{plan.price}</span>
-                    <span className="text-xs text-slate-400">{plan.billingPeriod}</span>
-                  </div>
-                  <div className="text-xs text-slate-400 mb-5 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                    <span>{plan.subscribersCount} active paying subscribers</span>
+                  <div>
+                    <h3 className="text-xl font-bold text-white mb-1">{plan.name}</h3>
+                    {plan.tagline && <p className="text-xs text-slate-500 mb-1">{plan.tagline}</p>}
+                    <div className="flex items-baseline gap-1 my-3">
+                      <span className="text-3xl font-black text-white">{formatPrice(plan.priceMonthlyCents)}</span>
+                      <span className="text-xs text-slate-400">/month</span>
+                    </div>
+                    <div className="text-xs text-slate-400 mb-1 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      <span>{plan.subscribersCount} active paying subscribers</span>
+                    </div>
+                    <div className="text-xs text-slate-400 mb-4 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                      <span>
+                        {plan.contactLimit === null ? 'Unlimited' : plan.contactLimit.toLocaleString()} contacts
+                        {' · '}{plan.aiCreditsMonthly.toLocaleString()} AI credits/mo
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5 mb-6 border-t border-white/10 pt-4">
+                      {plan.features.map((feat) => (
+                        <div key={feat} className="flex items-start gap-2 text-xs text-slate-300">
+                          <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+                          <span>{FEATURE_LABELS[feat]}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="space-y-2.5 mb-6 border-t border-white/10 pt-4">
-                    {plan.features.map((feat, idx) => (
-                      <div key={idx} className="flex items-start gap-2 text-xs text-slate-300">
-                        <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
-                        <span>{feat}</span>
-                      </div>
-                    ))}
+                  <div className="pt-4 border-t border-white/10 flex items-center gap-2">
+                    <button
+                      onClick={() => setEditingPlan(plan)}
+                      className="flex-1 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-bold transition-all text-center cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit Tier & Limits</span>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (window.confirm(`Delete the "${plan.name}" tier? Workspaces on it keep their subscription record but resolve to no plan.`)) {
+                          try {
+                            await deletePlan(plan.id);
+                          } catch (e) {
+                            alert(e instanceof Error ? e.message : 'Failed to delete plan.');
+                          }
+                        }
+                      }}
+                      title="Delete tier"
+                      className="p-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
 
-                <div className="pt-4 border-t border-white/10 flex items-center justify-between">
-                  <button 
-                    onClick={() => alert(`Editing checkout link and pricing for ${plan.name}`)}
-                    className="w-full py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-bold transition-all text-center cursor-pointer"
-                  >
-                    Edit Tier & Limits
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+          {(editingPlan || isCreatingPlan) && (
+            <PlanEditorModal
+              plan={editingPlan}
+              onClose={() => {
+                setEditingPlan(null);
+                setIsCreatingPlan(false);
+              }}
+              onSaved={() => {}}
+            />
+          )}
         </div>
       )}
 

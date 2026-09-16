@@ -42,6 +42,23 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // Commercial plans: public read (pricing page), Super Admin write.
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // AI credit balances: members can read their own workspace; only the
+    // backend (Admin SDK) writes. Same for the immutable ledger.
+    match /credit_balances/{workspaceId} {
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+    match /credit_ledger/{workspaceId}/entries/{entryId} {
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+
     // Legacy top-level collections (pre-tenancy data model). Authenticated-only;
     // Phase 3 migrates these under workspaces/{workspaceId}/... at which point
     // these branches are removed.
