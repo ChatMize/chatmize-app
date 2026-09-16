@@ -108,11 +108,11 @@ export const DEFAULT_PLANS: Plan[] = [
   {
     id: "starter",
     name: "Starter Messenger",
-    tagline: "For businesses starting with Messenger automation",
+    tagline: "Manual setup: you build every map and connection yourself",
     mode: "diy",
     priceMonthlyCents: 4900,
     contactLimit: 2500,
-    aiCreditsMonthly: 1000,
+    aiCreditsMonthly: 0,
     features: ["messenger", "instagram", "flow_builder"],
     serviceInclusions: [],
     color: "from-blue-500/20 to-cyan-500/20 border-cyan-500/30",

@@ -22,14 +22,14 @@ interface RoutePickerProps {
 const TRACK_COPY: Record<PlanMode, { title: string; subtitle: string; best: string; bullets: string[] }> = {
   diy: {
     title: 'DIY Self-Service',
-    subtitle: 'You run it',
-    best: 'Pick DIY if you want hands-on control at the lowest cost and you (or your team) will build and manage the automation.',
+    subtitle: 'You build it all yourself',
+    best: 'Pick DIY if you want the lowest cost and full control, and you will set up every map and connection yourself.',
     bullets: [
-      'You build flows with the AI Copilot',
-      'You spend your own monthly AI credit pool',
-      'Every AI action shows its credit cost before it runs',
-      'Top up credits anytime at 4x cost (plans save you 25%)',
-      'Upgrade, downgrade, or switch tracks whenever you want',
+      'You set up all your bot maps and connections manually',
+      'No AI assistance included: you build everything out yourself',
+      'Your time instead of your money: the lowest price to get started',
+      'Upgrade to an AI-assisted tier when you want Copilot to help',
+      'Upgrade, downgrade, or switch to Done-For-You anytime',
     ],
   },
   dfu: {
@@ -37,11 +37,11 @@ const TRACK_COPY: Record<PlanMode, { title: string; subtitle: string; best: stri
     subtitle: 'We run it for you',
     best: 'Pick Done-For-You if you want it live fast without touching the tech. Our team builds, launches, and manages everything.',
     bullets: [
-      'Our team builds and launches your flows for you',
-      'We operate the AI on your behalf from a larger credit pool',
+      'Our team sets up your maps, connections, and flows',
+      'AI operated on your behalf by our team, from a larger credit pool',
       'Done-for-you onboarding and managed broadcasts',
       'Dedicated account manager',
-      'Upgrade, downgrade, or switch tracks whenever you want',
+      'Downgrade to DIY anytime and keep everything we built',
     ],
   },
 };
@@ -157,6 +157,11 @@ export const RoutePicker: React.FC<RoutePickerProps> = ({
                         {active && <span className="w-2.5 h-2.5 rounded-full bg-purple-400" />}
                       </span>
                     </div>
+                    {plan.features.includes('ai_copilot') && (
+                      <span className="inline-block self-start px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-purple-500/15 text-purple-300 border border-purple-500/30 mb-2">
+                        AI-assisted
+                      </span>
+                    )}
                     {plan.tagline && <p className="text-[11px] text-slate-500 mb-2">{plan.tagline}</p>}
                     <div className="flex items-baseline gap-1 mb-2">
                       <span className="text-2xl font-black text-white">{formatPrice(plan.priceMonthlyCents)}</span>

@@ -195,7 +195,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <span className="text-slate-400"> · {formatPrice(chosenPlan.priceMonthlyCents)}/month</span>
                   </p>
                   <p className="text-[11px] text-slate-500">
-                    {chosenPlan.aiCreditsMonthly.toLocaleString()} AI credits/month included. Change or cancel anytime in Settings → Plan.
+                    {chosenPlan.aiCreditsMonthly > 0 ? (
+                      <>{chosenPlan.aiCreditsMonthly.toLocaleString()} AI credits/month included. </>
+                    ) : (
+                      <>Manual setup, no AI credits. </>
+                    )}
+                    Change or cancel anytime in Settings → Plan.
                   </p>
                 </div>
               ) : (
