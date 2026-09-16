@@ -1,1 +1,1 @@
-{"fieldOverrides":[],"indexes":[]}
+{"fieldOverrides":[],"indexes":[{"collectionGroup":"snapshots","fields":[{"fieldPath":"isTemplate","order":"ASCENDING"},{"fieldPath":"createdAt","order":"DESCENDING"}],"queryScope":"COLLECTION"},{"collectionGroup":"snapshots","fields":[{"fieldPath":"starterBonus","order":"ASCENDING"},{"fieldPath":"createdAt","order":"DESCENDING"}],"queryScope":"COLLECTION"}]}

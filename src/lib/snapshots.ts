@@ -54,12 +54,27 @@ export interface SnapshotDoc {
   isTemplate: boolean;
   /** Importable by anyone with the link. */
   public: boolean;
+  /** 'free' = signup bonus, importable on any plan. 'subscriber' = gated by snapshot_library. */
+  access: 'free' | 'subscriber';
+  /** Featured as the free starter bonus for new signups. */
+  starterBonus: boolean;
   counts: Record<SnapshotAssetKind, number>;
   payload: SnapshotPayload;
 }
 
 const snapshotsCol = () => collection(db, 'snapshots');
 const MAX_PAYLOAD_BYTES = 900_000; // stay safely under the 1MB Firestore doc limit
+
+/** Backfill defaults for snapshots written before the access fields existed. */
+function normalize(d: { id: string; data: () => any }): SnapshotDoc {
+  const data = d.data();
+  return {
+    id: d.id,
+    ...data,
+    access: data.access ?? 'subscriber',
+    starterBonus: data.starterBonus ?? false,
+  } as SnapshotDoc;
+}
 
 function readJson(key: string): any {
   try {
@@ -269,6 +284,8 @@ export async function createSnapshot(input: {
     version: 1,
     isTemplate: input.isTemplate ?? false,
     public: true,
+    access: 'subscriber',
+    starterBonus: false,
     counts: input.counts,
     payload: input.payload,
   });
@@ -278,20 +295,31 @@ export async function createSnapshot(input: {
 export async function getSnapshot(id: string): Promise<SnapshotDoc | null> {
   const snap = await getDoc(doc(db, 'snapshots', id));
   if (!snap.exists()) return null;
-  return { id: snap.id, ...(snap.data() as Omit<SnapshotDoc, 'id'>) };
+  return normalize({ id: snap.id, data: () => snap.data() });
 }
 
 export async function listTemplates(): Promise<SnapshotDoc[]> {
   const q = query(snapshotsCol(), where('isTemplate', '==', true), orderBy('createdAt', 'desc'));
   const res = await getDocs(q);
-  return res.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SnapshotDoc, 'id'>) }));
+  return res.docs.map((d) => normalize(d));
+}
+
+/** Free starter-bonus snapshots every new account gets. */
+export async function listStarterBonuses(): Promise<SnapshotDoc[]> {
+  const q = query(
+    snapshotsCol(),
+    where('starterBonus', '==', true),
+    orderBy('createdAt', 'desc')
+  );
+  const res = await getDocs(q);
+  return res.docs.map((d) => normalize(d));
 }
 
 /** Super Admin: every snapshot on the platform, newest first. */
 export async function listAllSnapshots(): Promise<SnapshotDoc[]> {
   const q = query(snapshotsCol(), orderBy('createdAt', 'desc'));
   const res = await getDocs(q);
-  return res.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SnapshotDoc, 'id'>) }));
+  return res.docs.map((d) => normalize(d));
 }
 
 export async function listMySnapshots(): Promise<SnapshotDoc[]> {
@@ -303,7 +331,7 @@ export async function listMySnapshots(): Promise<SnapshotDoc[]> {
     orderBy('createdAt', 'desc')
   );
   const res = await getDocs(q);
-  return res.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SnapshotDoc, 'id'>) }));
+  return res.docs.map((d) => normalize(d));
 }
 
 export async function deleteSnapshot(id: string): Promise<void> {
@@ -315,6 +343,13 @@ export async function setSnapshotTemplate(id: string, isTemplate: boolean, niche
     isTemplate,
     ...(niche !== undefined ? { niche } : {}),
   });
+}
+
+export async function setSnapshotAccess(
+  id: string,
+  patch: { access?: 'free' | 'subscriber'; starterBonus?: boolean }
+): Promise<void> {
+  await updateDoc(doc(db, 'snapshots', id), { ...patch });
 }
 
 /** Shareable import link for a snapshot id. */

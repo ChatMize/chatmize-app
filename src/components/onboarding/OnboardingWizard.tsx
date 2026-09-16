@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Sparkles, ArrowRight, Rocket } from 'lucide-react';
+import { Sparkles, ArrowRight, Rocket, Gift } from 'lucide-react';
 import { WorkspaceSilo } from '../../types/workspace';
 import { Plan, PlanMode, formatPrice } from '../../lib/billing';
 import { usePlans } from '../../lib/entitlements';
+import { listStarterBonuses, importSnapshotPayload } from '../../lib/snapshots';
 import { ChatMizeLogo } from '../Logo';
 import { ConnectStep } from './ConnectStep';
 import { RoutePicker } from './RoutePicker';
@@ -36,6 +37,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   const [step, setStep] = useState<Step>('welcome');
   const [chosenMode, setChosenMode] = useState<PlanMode | null>(workspace.planMode ?? null);
   const [chosenPlan, setChosenPlan] = useState<Plan | null>(null);
+  const [claimingBonus, setClaimingBonus] = useState(false);
+  const [bonusClaimed, setBonusClaimed] = useState(false);
+  const [bonusCount, setBonusCount] = useState(0);
   const { plans } = usePlans();
 
   const stepIndex = STEPS.indexOf(step);
@@ -54,6 +58,24 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     setChosenMode(mode);
     setChosenPlan(plan);
     setStep('done');
+  };
+
+  const claimBonus = async () => {
+    setClaimingBonus(true);
+    try {
+      const bonuses = await listStarterBonuses();
+      let total = 0;
+      for (const b of bonuses) {
+        const counts = importSnapshotPayload(b.payload);
+        total += Object.values(counts).reduce((a, n) => a + n, 0);
+      }
+      setBonusCount(total);
+      setBonusClaimed(true);
+    } catch {
+      setBonusClaimed(true);
+    } finally {
+      setClaimingBonus(false);
+    }
   };
 
   return (
@@ -217,6 +239,33 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 <span>Launch ChatMize</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
+
+              {/* Starter bonus: free snapshots for every new account, any plan */}
+              <div className="mt-2 w-full max-w-md rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-4">
+                {bonusClaimed ? (
+                  <p className="text-xs text-emerald-300 font-bold text-center">
+                    Starter bonus claimed: {bonusCount} free items added as drafts.
+                  </p>
+                ) : (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <Gift className="w-4 h-4 text-emerald-300 shrink-0" />
+                      <p className="text-xs text-slate-300">
+                        <span className="font-bold text-white">Signup bonus:</span> free starter
+                        snapshots land in your account on any plan.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={claimBonus}
+                      disabled={claimingBonus}
+                      className="px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 rounded-xl text-xs font-bold cursor-pointer disabled:opacity-50 shrink-0"
+                    >
+                      {claimingBonus ? 'Claiming...' : 'Claim free snapshots'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

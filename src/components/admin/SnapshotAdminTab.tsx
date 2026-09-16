@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Library, Trash2, Star, Loader2 } from 'lucide-react';
+import { Library, Trash2, Star, Loader2, Gift, Crown } from 'lucide-react';
 import {
   SnapshotDoc,
   ALL_SNAPSHOT_KINDS,
@@ -7,6 +7,7 @@ import {
   listAllSnapshots,
   deleteSnapshot,
   setSnapshotTemplate,
+  setSnapshotAccess,
 } from '../../lib/snapshots';
 
 /** Super Admin curation: feature snapshots into the library, set niches, moderate. */
@@ -32,6 +33,26 @@ export const SnapshotAdminTab: React.FC = () => {
       refresh();
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to update snapshot.');
+    }
+  };
+
+  const toggleAccess = async (snap: SnapshotDoc) => {
+    try {
+      await setSnapshotAccess(snap.id, {
+        access: snap.access === 'free' ? 'subscriber' : 'free',
+      });
+      refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to update access.');
+    }
+  };
+
+  const toggleStarter = async (snap: SnapshotDoc) => {
+    try {
+      await setSnapshotAccess(snap.id, { starterBonus: !snap.starterBonus });
+      refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to update starter bonus.');
     }
   };
 
@@ -68,7 +89,8 @@ export const SnapshotAdminTab: React.FC = () => {
       <div>
         <h2 className="text-lg font-bold text-white">Snapshot Curation</h2>
         <p className="text-xs text-slate-400">
-          Feature snapshots into the template library subscribers pay for. Set the niche so users can find them.
+          Star: feature in the library. Crown: free for every plan. Gift: starter bonus every new
+          signup gets. Set the niche so users can find them.
         </p>
       </div>
 
@@ -95,6 +117,16 @@ export const SnapshotAdminTab: React.FC = () => {
                     {snap.isTemplate && (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1 shrink-0">
                         <Star className="w-3 h-3" /> In library
+                      </span>
+                    )}
+                    {snap.access === 'free' && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                        Free
+                      </span>
+                    )}
+                    {snap.starterBonus && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 flex items-center gap-1 shrink-0">
+                        <Gift className="w-3 h-3" /> Starter
                       </span>
                     )}
                   </div>
@@ -132,6 +164,28 @@ export const SnapshotAdminTab: React.FC = () => {
                     }`}
                   >
                     <Star className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => toggleAccess(snap)}
+                    title={snap.access === 'free' ? 'Move to subscriber-only' : 'Make free for all plans'}
+                    className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                      snap.access === 'free'
+                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/30'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/25'
+                    }`}
+                  >
+                    <Crown className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => toggleStarter(snap)}
+                    title={snap.starterBonus ? 'Remove from signup bonus' : 'Feature as signup starter bonus'}
+                    className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                      snap.starterBonus
+                        ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/30'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/25'
+                    }`}
+                  >
+                    <Gift className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => remove(snap)}
