@@ -31,7 +31,26 @@ firebase functions:secrets:set META_VERIFY_TOKEN      # your chosen verify token
 firebase functions:secrets:set META_PAGE_TOKEN_DEFAULT
 firebase functions:secrets:set WHATSAPP_TOKEN_DEFAULT
 firebase functions:secrets:set WHATSAPP_PHONE_NUMBER_ID
+firebase functions:secrets:set ANTHROPIC_API_KEY          # Claude models
+firebase functions:secrets:set OPENAI_API_KEY              # GPT models
+firebase functions:secrets:set GEMINI_API_KEY             # Gemini models
+firebase functions:secrets:set META_API_KEY               # Meta Llama API
 ```
+
+## AI router (`src/ai/router.ts`)
+
+Three tiers route to the cheapest capable model across Karl's four
+providers (Anthropic, OpenAI, Google, Meta), with automatic fallback when
+a provider errors:
+
+- `fast` — classification, intent, short replies (Gemini Flash first)
+- `balanced` — drafting, lead qualification (Claude Sonnet first)
+- `smart` — Copilot flow building, hard reasoning (Claude Opus first)
+
+`MODEL_CATALOG` is the single source of truth for routing AND cost:
+every call meters real tokens through the credit ledger at
+(cost x 3 margin). `testAiRouter` (Super Admin only, dry-run) verifies
+keys and routing without spending credits.
 
 ## Firestore layout (written by these functions)
 

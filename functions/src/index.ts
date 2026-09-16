@@ -12,6 +12,7 @@ import {
   resetAllMonthlyCredits,
   CreditReason,
 } from "./credits";
+import { aiComplete, AI_SECRETS, ModelTier, ChatMessage } from "./ai/router";
 import {
   ALL_SECRETS,
   META_APP_SECRET,
@@ -277,5 +278,48 @@ export const resetMonthlyCredits = onSchedule(
   { region: REGION, schedule: "0 0 1 * *", timeZone: "America/Phoenix" },
   async () => {
     await resetAllMonthlyCredits();
+  },
+);
+
+// ---------------------------------------------------------------------------
+// AI router
+// ---------------------------------------------------------------------------
+
+interface TestRouterData {
+  tier?: ModelTier;
+  prompt?: string;
+}
+
+/**
+ * Super Admin only: verify provider keys and routing with a dry-run
+ * completion. No credits are spent. Use from the Firebase console or a
+ * test harness after setting the AI secrets.
+ */
+export const testAiRouter = onCall(
+  { region: REGION, secrets: AI_SECRETS },
+  async (request) => {
+    if (request.auth?.token?.superadmin !== true) {
+      throw new HttpsError("permission-denied", "Super Admin only.");
+    }
+    const { tier, prompt } = (request.data ?? {}) as TestRouterData;
+    if (tier !== "fast" && tier !== "balanced" && tier !== "smart") {
+      throw new HttpsError("invalid-argument", "tier must be fast, balanced, or smart.");
+    }
+    if (!prompt || prompt.trim().length === 0) {
+      throw new HttpsError("invalid-argument", "prompt is required.");
+    }
+    const messages: ChatMessage[] = [
+      { role: "system", content: "Reply in one short sentence." },
+      { role: "user", content: prompt },
+    ];
+    return aiComplete({
+      workspaceId: "dry_run",
+      tier,
+      messages,
+      reason: "ai_reply",
+      maxOutputTokens: 128,
+      note: "super admin router test",
+      dryRun: true,
+    });
   },
 );
