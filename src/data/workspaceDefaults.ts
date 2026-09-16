@@ -2,6 +2,36 @@ import { WorkspaceSilo, KanbanCard, KanbanColumn } from '../types/workspace';
 
 export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
   {
+    id: 'ws-chatmize-hq',
+    name: 'ChatMize HQ (Live)',
+    slug: 'chatmize-hq',
+    businessType: 'saas',
+    color: '#06b6d4',
+    ownerName: 'Karl Schuckert',
+    connectedPage: {
+      pageId: '',
+      pageName: 'Not connected yet',
+      pageCategory: '',
+      connectedAt: '',
+      ownerName: 'Karl Schuckert',
+      serviceStatus: 'deactivated',
+    },
+    planTier: 'pro_unlimited',
+    pricingModel: 'custom_retainer',
+    whitelabel: {
+      enabled: false,
+      hideChatMizeWatermark: false,
+      clientRoleAccess: 'full_admin'
+    },
+    stats: {
+      subscribers: 0,
+      botsCount: 0,
+      toolsCount: 0,
+      broadcastsCount: 0
+    },
+    createdAt: '2026-09-16'
+  },
+  {
     id: 'ws-chatmize-prod',
     name: 'Chatmize (Official Account)',
     slug: 'chatmize-official',
