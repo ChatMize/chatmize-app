@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Check, MessageSquare, Instagram, Phone, Smartphone, ArrowRight, ArrowLeft, Unplug } from 'lucide-react';
 import { WorkspaceSilo, SmsConnection } from '../../types/workspace';
+import { MetaConnectCard } from '../channels/MetaConnectCard';
 
 interface ConnectStepProps {
   workspace: WorkspaceSilo;
@@ -17,8 +18,6 @@ interface ConnectStepProps {
  */
 export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, onNext, onBack }) => {
   const page = workspace.connectedPage || ({} as WorkspaceSilo['connectedPage']);
-  const [pageName, setPageName] = useState(page?.pageName || '');
-  const [pageId, setPageId] = useState(page?.pageId || '');
   const [igUsername, setIgUsername] = useState(page?.connectedIg?.username?.replace('@', '') || '');
   const [waNumber, setWaNumber] = useState(page?.connectedWhatsApp?.phoneNumber || '');
   const [smsNumber, setSmsNumber] = useState(workspace.connectedSms?.phoneNumber || '');
@@ -30,21 +29,6 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
   const whatsappConnected = Boolean(page?.connectedWhatsApp?.connected);
   const smsConnected = Boolean(workspace.connectedSms?.connected);
   const connectedCount = [messengerConnected, instagramConnected, whatsappConnected, smsConnected].filter(Boolean).length;
-
-  const saveMessenger = () => {
-    if (!pageId.trim()) return;
-    onUpdate({
-      ...workspace,
-      connectedPage: {
-        ...page,
-        pageId: pageId.trim(),
-        pageName: pageName.trim() || pageId.trim(),
-        pageCategory: page?.pageCategory || 'Business',
-        connectedAt: page?.connectedAt || new Date().toISOString(),
-      },
-    });
-    setEditing(null);
-  };
 
   const saveInstagram = () => {
     if (!igUsername.trim()) return;
@@ -154,13 +138,22 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
       ) : editing === which ? (
         <div className="mt-3 space-y-2">
           {which === 'messenger' && (
-            <>
-              <input className={inputCls} value={pageName} onChange={(e) => setPageName(e.target.value)} placeholder="Facebook Page name" />
-              <input className={inputCls} value={pageId} onChange={(e) => setPageId(e.target.value)} placeholder="Facebook Page ID" />
-              <button type="button" onClick={saveMessenger} disabled={!pageId.trim()} className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold cursor-pointer">
-                Connect Page
-              </button>
-            </>
+            <MetaConnectCard
+              workspaceId={workspace.id}
+              onConnected={(pageName, connectedPageId) => {
+                onUpdate({
+                  ...workspace,
+                  connectedPage: {
+                    ...page,
+                    pageId: connectedPageId,
+                    pageName: pageName || connectedPageId,
+                    pageCategory: page?.pageCategory || 'Business',
+                    connectedAt: new Date().toISOString(),
+                    serviceStatus: 'active',
+                  },
+                });
+              }}
+            />
           )}
           {which === 'instagram' && (
             <>

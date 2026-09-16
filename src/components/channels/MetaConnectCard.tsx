@@ -11,6 +11,8 @@ import {
 
 interface MetaConnectCardProps {
   workspaceId: string;
+  /** Fired after a Page is picked and the token is stored. Lets parents (e.g. onboarding) sync local state. */
+  onConnected?: (pageName: string, pageId: string) => void;
 }
 
 /**
@@ -18,7 +20,7 @@ interface MetaConnectCardProps {
  * connect -> pick one of the user's Pages -> the page token is stored as the
  * workspace's own Secret Manager secret. Powers Messenger + Instagram.
  */
-export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId }) => {
+export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, onConnected }) => {
   const [status, setStatus] = useState<MetaOAuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -27,7 +29,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId })
   const [selecting, setSelecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = async () => {
+  const refresh = async (): Promise<MetaOAuthStatus | null> => {
     try {
       const s = await getMetaOAuthStatus(workspaceId);
       setStatus(s);
@@ -36,8 +38,10 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId })
         setPages(p);
         if (p.length > 0) setShowPicker(true);
       }
+      return s;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load Meta status.');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -83,7 +87,10 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId })
       await selectMetaOAuthPage(workspaceId, pageId);
       setShowPicker(false);
       setPages([]);
-      await refresh();
+      const s = await refresh();
+      if (s?.connected && s.pageId) {
+        onConnected?.(s.pageName || '', s.pageId);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not connect that Page.');
     } finally {
