@@ -23,6 +23,15 @@ import {
   pageTokenSecretFor,
 } from "./secrets";
 import { verifyMetaSignature, verifyHandshake } from "./verify";
+import {
+  buildLoginUrl,
+  consumeOAuthState,
+  exchangeCodeForPages,
+  storePendingPages,
+  selectWorkspacePage,
+  resolvePageToken,
+  appReturnUrl,
+} from "./metaOAuth";
 import { normalizeEntry } from "./handlers";
 import {
   persistInboundMessage,
@@ -199,7 +208,7 @@ export const sendChannelMessage = onCall(
         WHATSAPP_PHONE_NUMBER_ID.value(),
       );
     } else {
-      result = await sender(pageTokenSecretFor(workspaceId).value(), recipientId, text);
+      result = await sender(await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()), recipientId, text);
     }
 
     await recordOutboundMessage(
@@ -919,3 +928,112 @@ export const testAiRouter = onCall(
     return { estimate, result };
   },
 );
+
+// ---------------------------------------------------------------------------
+// Facebook Login for Business (workspace Meta connections)
+// ---------------------------------------------------------------------------
+
+/** Step 1: return the Facebook Login URL for this workspace (authed). */
+export const metaOAuthStart = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const url = await buildLoginUrl(workspaceId, uid);
+  logger.info("Meta OAuth started", { workspaceId, uid });
+  return { url };
+});
+
+/** Step 2: Meta redirects here with ?code&state. Public; state is single-use. */
+export const metaOAuthCallback = onRequest(
+  { region: REGION, secrets: [META_APP_SECRET] },
+  async (req, res) => {
+    const code = req.query["code"];
+    const state = req.query["state"];
+    try {
+      if (typeof code !== "string" || typeof state !== "string") {
+        throw new Error("Missing code or state.");
+      }
+      const { workspaceId, uid } = await consumeOAuthState(state);
+      const pages = await exchangeCodeForPages(code);
+      if (pages.length === 0) {
+        throw new Error("No Facebook Pages found on this account.");
+      }
+      await storePendingPages(workspaceId, uid, pages);
+      logger.info("Meta OAuth callback ok", { workspaceId, pageCount: pages.length });
+      res.redirect(302, appReturnUrl("success"));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Login failed.";
+      logger.warn("Meta OAuth callback failed", { message });
+      res.redirect(302, appReturnUrl("error", message));
+    }
+  },
+);
+
+/** Connection status for the client (no tokens leave the server). */
+export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const snap = await db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("integrations")
+    .doc("meta")
+    .get();
+  const conn = (snap.data() ?? {}) as {
+    status?: string;
+    pageId?: string;
+    pageName?: string;
+  };
+  return {
+    connected: conn.status === "connected",
+    pending: conn.status === "pending",
+    pageId: conn.pageId ?? null,
+    pageName: conn.pageName ?? null,
+  };
+});
+
+/** Pages awaiting selection (id + name only; tokens never reach the client). */
+export const metaOAuthListPages = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const snap = await db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("integrations")
+    .doc("meta")
+    .get();
+  const conn = (snap.data() ?? {}) as {
+    status?: string;
+    pages?: Array<{ id: string; name: string }>;
+    pendingExpiresAtMs?: number;
+  };
+  if (conn.status !== "pending" || !conn.pages || (conn.pendingExpiresAtMs ?? 0) < Date.now()) {
+    return { pages: [] };
+  }
+  return { pages: conn.pages.map((p) => ({ id: p.id, name: p.name })) };
+});
+
+/** Step 4: store the chosen page token as the workspace's own secret. */
+export const metaOAuthSelectPage = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, pageId } = (request.data ?? {}) as {
+    workspaceId?: string;
+    pageId?: string;
+  };
+  if (!workspaceId || !pageId) {
+    throw new HttpsError("invalid-argument", "workspaceId and pageId are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const result = await selectWorkspacePage(workspaceId, uid, pageId);
+  logger.info("Meta page connected", { workspaceId, pageId: result.pageId });
+  return result;
+});

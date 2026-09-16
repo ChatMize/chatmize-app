@@ -40,6 +40,7 @@ export type { IntegrationApp };
 export { CHATMIZE_INTEGRATIONS };
 import { WorkspaceSilo } from '../types/workspace';
 import { SmsChannelCard } from '../components/channels/SmsChannelCard';
+import { MetaConnectCard } from '../components/channels/MetaConnectCard';
 import { usePlans, usePlan } from '../lib/entitlements';
 import { Plan, PlanMode, formatPrice } from '../lib/billing';
 import { RoutePicker } from '../components/onboarding/RoutePicker';
@@ -521,6 +522,7 @@ export function SettingsView({
                 </div>
               </div>
             ))}
+            {workspace?.id && <MetaConnectCard workspaceId={workspace.id} />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
           </div>
         </div>
