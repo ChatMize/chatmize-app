@@ -117,7 +117,15 @@ export default function App() {
           if (hasLegacyNames) {
             localStorage.setItem('chatmize_workspaces', JSON.stringify(cleaned));
           }
-          return cleaned;
+          // Merge in any default workspaces missing from the saved list
+          // (e.g. the live ws-chatmize-hq added after the first seed).
+          const existingIds = new Set(cleaned.map((w: WorkspaceSilo) => w.id));
+          const missing = DEFAULT_WORKSPACES.filter((w) => !existingIds.has(w.id));
+          const merged = missing.length > 0 ? [...missing, ...cleaned] : cleaned;
+          if (missing.length > 0) {
+            localStorage.setItem('chatmize_workspaces', JSON.stringify(merged));
+          }
+          return merged;
         }
       }
     } catch (e) {
