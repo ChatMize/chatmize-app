@@ -124,6 +124,7 @@ export interface KanbanCard {
   priority: KanbanPriority;
   tags: string[];
   estimatedEffort?: string;
+  dueDate?: string; // ISO date (YYYY-MM-DD) deadline for the card
   checklist: KanbanChecklistItem[];
   assignee?: string;
   notes?: string;

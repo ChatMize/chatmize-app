@@ -41,6 +41,7 @@ import {
   Tag,
   CheckCircle2,
   Cloud,
+  CalendarDays,
   Bot,
   ClipboardCheck,
   FileText,
@@ -956,11 +957,33 @@ export const SuperAdminKanban: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Footer: Assignee, Edit, Move arrows, Delete */}
+                      {/* Footer: Assignee, Due Date, Edit, Move arrows, Delete */}
                       <div className="flex items-center justify-between pt-2 border-t border-slate-900 text-[10px] text-slate-500">
-                        <span className="truncate max-w-[90px] font-medium text-slate-400">
-                          {card.assignee || 'Unassigned'}
-                        </span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="truncate max-w-[90px] font-medium text-slate-400">
+                            {card.assignee || 'Unassigned'}
+                          </span>
+                          {card.dueDate && (() => {
+                            const today = new Date().toISOString().split('T')[0];
+                            const isOverdue = card.dueDate < today && card.columnId !== 'done';
+                            const isToday = card.dueDate === today;
+                            return (
+                              <span
+                                className={`flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap ${
+                                  isOverdue
+                                    ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                                    : isToday
+                                      ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                      : 'bg-slate-900 text-slate-400 border border-slate-800'
+                                }`}
+                                title={isOverdue ? 'Overdue' : `Due ${card.dueDate}`}
+                              >
+                                <CalendarDays className="w-3 h-3" />
+                                {card.dueDate}
+                              </span>
+                            );
+                          })()}
+                        </div>
 
                         <div className="flex items-center gap-0.5">
                           {/* Edit Button */}

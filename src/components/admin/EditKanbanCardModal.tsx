@@ -16,6 +16,7 @@ import {
   Square, 
   Tag, 
   Clock, 
+  CalendarDays,
   User, 
   AlertCircle,
   FileText,
@@ -46,6 +47,7 @@ export const EditKanbanCardModal: React.FC<EditKanbanCardModalProps> = ({
   const [priority, setPriority] = useState<KanbanPriority>('high');
   const [assignee, setAssignee] = useState('');
   const [estimatedEffort, setEstimatedEffort] = useState('');
+  const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   const [qaNotes, setQaNotes] = useState('');
   const [qaStatus, setQaStatus] = useState<KanbanQaStatus>('ready_for_ai');
@@ -63,6 +65,7 @@ export const EditKanbanCardModal: React.FC<EditKanbanCardModalProps> = ({
       setPriority(card.priority);
       setAssignee(card.assignee || '');
       setEstimatedEffort(card.estimatedEffort || '');
+      setDueDate(card.dueDate || '');
       setNotes(card.notes || '');
       setQaNotes(card.qaNotes || '');
       setQaStatus(card.qaStatus || 'ready_for_ai');
@@ -124,6 +127,7 @@ export const EditKanbanCardModal: React.FC<EditKanbanCardModalProps> = ({
       priority,
       assignee: assignee.trim() || undefined,
       estimatedEffort: estimatedEffort.trim() || undefined,
+      dueDate: dueDate.trim() || undefined,
       notes: notes.trim() || undefined,
       qaNotes: qaNotes.trim() || undefined,
       qaStatus: qaNotes.trim() ? qaStatus : undefined,
@@ -249,8 +253,8 @@ export const EditKanbanCardModal: React.FC<EditKanbanCardModalProps> = ({
             </div>
           </div>
 
-          {/* Assignee & Effort */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Assignee, Effort & Due Date */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-slate-400" />
@@ -275,6 +279,19 @@ export const EditKanbanCardModal: React.FC<EditKanbanCardModalProps> = ({
                 placeholder="e.g. 3 days, 1 sprint, Done"
                 value={estimatedEffort}
                 onChange={(e) => setEstimatedEffort(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
+                Deadline
+              </label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
               />
             </div>
