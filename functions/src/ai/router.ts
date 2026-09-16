@@ -3,6 +3,7 @@ import { logger } from "firebase-functions";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import LlamaAPIClient from "llama-api-client";
 import { spendCredits, CreditReason } from "../credits";
 
 // ---------------------------------------------------------------------------
@@ -13,9 +14,6 @@ export const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 export const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
 export const META_API_KEY = defineSecret("META_API_KEY");
 export const AI_SECRETS = [ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, META_API_KEY];
-
-/** Meta's Llama API speaks the OpenAI chat-completions dialect. */
-const META_BASE_URL = "https://api.llama.com/compat/v1";
 
 // ---------------------------------------------------------------------------
 // Model catalog: the single source of truth for routing AND credit costs.
@@ -45,14 +43,16 @@ export const MODEL_CATALOG: ModelSpec[] = [
   // smart: Copilot flow building, complex reasoning, strategy
   { id: "claude-opus", provider: "anthropic", model: "claude-opus-4-1", tier: "smart", inputPerMtok: 15.0, outputPerMtok: 75.0 },
   { id: "gpt-5", provider: "openai", model: "gpt-5", tier: "smart", inputPerMtok: 5.0, outputPerMtok: 20.0 },
-  // meta: Llama API entry, tiered once Karl confirms the model id in his console
-  // { id: "llama-fast", provider: "meta", model: "REPLACE_WITH_META_MODEL_ID", tier: "fast", inputPerMtok: 0, outputPerMtok: 0 },
+  // meta: Llama 4 on Meta's hosted API. Confirm the exact model IDs in the
+  // Meta developer console; costs below are TBD until Meta's pricing is set.
+  { id: "llama-scout", provider: "meta", model: "Llama-4-Scout-17B-16E-Instruct-FP8", tier: "fast", inputPerMtok: 0, outputPerMtok: 0 },
+  { id: "llama-maverick", provider: "meta", model: "Llama-4-Maverick-17B-128E-Instruct-FP8", tier: "balanced", inputPerMtok: 0, outputPerMtok: 0 },
 ];
 
 /** Routing chains: primary first, then fallbacks if a provider errors. */
 const ROUTES: Record<ModelTier, string[]> = {
-  fast: ["gemini-flash", "gpt-mini"],
-  balanced: ["claude-sonnet", "gpt-4o", "gemini-pro"],
+  fast: ["gemini-flash", "gpt-mini", "llama-scout"],
+  balanced: ["claude-sonnet", "llama-maverick", "gpt-4o", "gemini-pro"],
   smart: ["claude-opus", "gpt-5", "gemini-pro"],
 };
 
@@ -129,14 +129,12 @@ async function callAnthropic(spec: ModelSpec, messages: ChatMessage[], maxOutput
   return { text, tokensIn: res.usage.input_tokens, tokensOut: res.usage.output_tokens };
 }
 
-async function callOpenAICompatible(
+async function callOpenAI(
   spec: ModelSpec,
   messages: ChatMessage[],
   maxOutputTokens: number,
-  apiKey: string,
-  baseURL?: string,
 ): Promise<ProviderResult> {
-  const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  const client = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
   const res = await client.chat.completions.create({
     model: spec.model,
     max_tokens: maxOutputTokens,
@@ -147,6 +145,37 @@ async function callOpenAICompatible(
     tokensIn: res.usage?.prompt_tokens ?? 0,
     tokensOut: res.usage?.completion_tokens ?? 0,
   };
+}
+
+/**
+ * Meta's hosted Llama API via the official client. Token usage comes back
+ * in the response `metrics` array; names are matched defensively since Meta
+ * does not publish stable metric keys in the SDK types.
+ */
+async function callMeta(
+  spec: ModelSpec,
+  messages: ChatMessage[],
+  maxOutputTokens: number,
+): Promise<ProviderResult> {
+  const client = new LlamaAPIClient({ apiKey: META_API_KEY.value() });
+  const res = await client.chat.completions.create({
+    model: spec.model,
+    max_completion_tokens: maxOutputTokens,
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+  });
+  const content = res.completion_message.content;
+  const text = typeof content === "string" ? content : (content?.text ?? "");
+  let tokensIn = 0;
+  let tokensOut = 0;
+  for (const m of res.metrics ?? []) {
+    const name = m.metric.toLowerCase();
+    if (/prompt|input/.test(name)) tokensIn = m.value;
+    else if (/completion|output|generated/.test(name)) tokensOut = m.value;
+  }
+  if (tokensIn === 0 && tokensOut === 0) {
+    logger.warn("callMeta: no token metrics returned, metering as zero", { model: spec.model });
+  }
+  return { text, tokensIn, tokensOut };
 }
 
 async function callProvider(
@@ -160,9 +189,9 @@ async function callProvider(
     case "anthropic":
       return callAnthropic(spec, messages, maxOutputTokens);
     case "openai":
-      return callOpenAICompatible(spec, messages, maxOutputTokens, OPENAI_API_KEY.value());
+      return callOpenAI(spec, messages, maxOutputTokens);
     case "meta":
-      return callOpenAICompatible(spec, messages, maxOutputTokens, META_API_KEY.value(), META_BASE_URL);
+      return callMeta(spec, messages, maxOutputTokens);
   }
 }
 
