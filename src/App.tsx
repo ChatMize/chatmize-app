@@ -33,7 +33,8 @@ import {
   Eye,
   QrCode,
   Smartphone,
-  Instagram
+  Instagram,
+  X
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 
@@ -59,6 +60,7 @@ import { AuthGateModal } from './components/AuthGateModal';
 import { subscribeToAuthChanges, signOutUser, AppUser } from './lib/firebase';
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
+import { CopilotGuide } from './components/CopilotGuide';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { SnapshotImportView } from './views/SnapshotImportView';
 import { SnapshotLibraryView } from './views/SnapshotLibraryView';
@@ -409,8 +411,38 @@ export default function App() {
     );
   }
 
+  // Plan nudge: dismissible per workspace, persisted
+  const planNudgeKey = `chatmize_plan_nudge_dismissed_${activeWorkspaceId}`;
+  const [planNudgeDismissed, setPlanNudgeDismissed] = useState(() => {
+    try { return localStorage.getItem(planNudgeKey) === '1'; } catch { return false; }
+  });
+  const dismissPlanNudge = () => {
+    try { localStorage.setItem(planNudgeKey, '1'); } catch { /* ignore */ }
+    setPlanNudgeDismissed(true);
+  };
+
+  // Copilot setup guide: shows once after onboarding until permanently dismissed
+  const guideKey = `chatmize_guide_dismissed_${activeWorkspaceId}`;
+  const [guideDismissed, setGuideDismissed] = useState(() => {
+    try { return localStorage.getItem(guideKey) === '1'; } catch { return false; }
+  });
+  const dismissGuide = () => {
+    try { localStorage.setItem(guideKey, '1'); } catch { /* ignore */ }
+    setGuideDismissed(true);
+  };
+  // Re-read dismissal flags when switching workspaces
+  useEffect(() => {
+    try {
+      setPlanNudgeDismissed(localStorage.getItem(planNudgeKey) === '1');
+      setGuideDismissed(localStorage.getItem(guideKey) === '1');
+    } catch { /* ignore */ }
+  }, [activeWorkspaceId]);
+  const showGuide = Boolean(
+    currentUser && activeWorkspace?.onboardingComplete && !guideDismissed
+  );
+
   const showPlanNudge = Boolean(
-    activeWorkspace?.onboardingComplete && !activeWorkspace.planId
+    activeWorkspace?.onboardingComplete && !activeWorkspace.planId && !planNudgeDismissed
   );
 
   return (
@@ -862,18 +894,28 @@ export default function App() {
         {/* View Viewport */}
         <main className={`flex-1 min-w-0 flex flex-col relative ${isFlows || activeTab === 'conversations' ? 'overflow-hidden p-0 h-full' : 'overflow-y-auto p-3.5 sm:p-5 md:p-6 lg:p-8'}`}>
           {showPlanNudge && (
-            <button
-              onClick={() => { setSettingsInitialTab('plan'); setActiveTab('settings'); }}
-              className="mb-4 w-full text-left px-4 py-3 rounded-2xl bg-gradient-to-r from-purple-600/15 to-indigo-600/15 border border-purple-500/30 hover:border-purple-500/50 transition-all cursor-pointer flex items-center justify-between gap-3"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Sparkles className="w-4 h-4 text-purple-300 shrink-0" />
-                <p className="text-xs text-slate-200 truncate">
-                  <span className="font-bold text-white">Choose your route:</span> DIY self-service or Done-For-You. You can switch anytime.
-                </p>
-              </div>
-              <span className="text-[11px] font-bold text-purple-200 bg-purple-500/20 px-2.5 py-1 rounded-lg shrink-0">Pick a plan</span>
-            </button>
+            <div className="mb-4 w-full px-4 py-3 rounded-2xl bg-gradient-to-r from-purple-600/15 to-indigo-600/15 border border-purple-500/30 flex items-center justify-between gap-3">
+              <button
+                onClick={() => { setSettingsInitialTab('plan'); setActiveTab('settings'); }}
+                className="flex-1 text-left flex items-center justify-between gap-3 hover:border-purple-500/50 transition-all cursor-pointer min-w-0"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Sparkles className="w-4 h-4 text-purple-300 shrink-0" />
+                  <p className="text-xs text-slate-200 truncate">
+                    <span className="font-bold text-white">Choose your route:</span> DIY self-service or Done-For-You. You can switch anytime.
+                  </p>
+                </div>
+                <span className="text-[11px] font-bold text-purple-200 bg-purple-500/20 px-2.5 py-1 rounded-lg shrink-0">Pick a plan</span>
+              </button>
+              <button
+                type="button"
+                onClick={dismissPlanNudge}
+                title="Dismiss"
+                className="p-1 text-slate-500 hover:text-white shrink-0 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           )}
           {renderContent()}
         </main>
@@ -882,6 +924,18 @@ export default function App() {
       {/* Auth Gate: Require login for all visitors */}
       {!authLoading && !currentUser && (
         <AuthGateModal onSuccess={() => {}} />
+      )}
+
+      {/* Copilot setup guide: walks new users through remaining setup */}
+      {showGuide && activeWorkspace && (
+        <CopilotGuide
+          workspace={activeWorkspace}
+          onGoToPlan={() => { setSettingsInitialTab('plan'); setActiveTab('settings'); }}
+          onGoToChannels={() => { setSettingsInitialTab('channels'); setActiveTab('settings'); }}
+          onGoToIntegrations={() => { setSettingsInitialTab('integrations'); setActiveTab('settings'); }}
+          onGoToFlows={() => setActiveTab('bot-list')}
+          onDismiss={dismissGuide}
+        />
       )}
     </div>
   );
