@@ -1401,11 +1401,127 @@ export function FlowBuilder({
     setNodes(prev => [...prev, newNode]);
   };
 
+  /* ------------------------------------------------------------------ */
+  /* Canvas toolbar pieces (extracted so the header can lay them out     */
+  /* responsively: one row on xl screens, two rows below).               */
+  /* ------------------------------------------------------------------ */
+  const renderModeSwitcher = () => (
+    <div className="hidden sm:flex items-center bg-slate-900/90 border border-white/10 p-0.5 sm:p-1 rounded-xl shadow-inner flex-shrink-0">
+      <ModeButton
+        active={aiMode === 'manual'}
+        onClick={() => setAiMode('manual')}
+        icon={<MousePointer2 className="w-3.5 h-3.5" />}
+        label="Flow Canvas"
+        shortLabel="Canvas"
+      />
+      <ModeButton
+        active={aiMode === 'copilot'}
+        onClick={() => setAiMode('copilot')}
+        icon={<Sparkles className="w-3.5 h-3.5 text-cyan-400" />}
+        label="AI Copilot"
+        shortLabel="Copilot"
+      />
+      <ModeButton
+        active={aiMode === 'auto'}
+        onClick={() => setAiMode('auto')}
+        icon={<Bot className="w-3.5 h-3.5 text-blue-400" />}
+        label="Auto-Build"
+        shortLabel="Auto"
+      />
+    </div>
+  );
+
+  const renderAutoSave = () => (
+    <div
+      className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-xl bg-slate-900/90 border border-white/10 text-[10px] sm:text-xs shadow-sm transition-all flex-shrink-0"
+      title="All changes save automatically to Firestore in real time"
+    >
+      {saveStatus === 'saving' ? (
+        <>
+          <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-cyan-400 animate-ping flex-shrink-0" />
+          <span className="text-cyan-400 font-medium text-[10px] sm:text-xs hidden lg:inline whitespace-nowrap">Saving...</span>
+        </>
+      ) : (
+        <>
+          <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 flex-shrink-0" />
+          <span className="text-emerald-400 font-semibold text-[10px] sm:text-xs hidden lg:inline whitespace-nowrap">Auto-saved</span>
+        </>
+      )}
+    </div>
+  );
+
+  const renderZoomControls = () => (
+    <div className="hidden sm:flex bg-slate-900/90 border border-white/10 p-0.5 sm:p-1 rounded-xl items-center gap-0.5 text-slate-300 flex-shrink-0">
+      <button
+        onClick={() => setZoomLevel(prev => Math.max(0.25, Number((prev - 0.1).toFixed(2))))}
+        className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white cursor-pointer"
+        title="Zoom Out"
+      >
+        <Minus className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setZoomLevel(1);
+          setPanOffset({ x: 0, y: 0 });
+        }}
+        className="text-[10px] sm:text-xs font-mono px-1 sm:px-1.5 font-semibold text-slate-300 hover:text-cyan-300 min-w-[28px] sm:min-w-[34px] text-center select-none transition-colors cursor-pointer"
+        title="Click to reset to 100%"
+      >
+        {Math.round(zoomLevel * 100)}%
+      </button>
+      <button
+        onClick={() => setZoomLevel(prev => Math.min(2.5, Number((prev + 0.1).toFixed(2))))}
+        className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white cursor-pointer"
+        title="Zoom In"
+      >
+        <Plus className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+      </button>
+      <div className="w-px h-3 sm:h-3.5 bg-white/10 mx-0.5" />
+      <button
+        onClick={() => {
+          setZoomLevel(1);
+          setPanOffset({ x: 0, y: 0 });
+        }}
+        className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white inline-flex cursor-pointer"
+        title="Reset View & Recenter (100%)"
+      >
+        <Maximize2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+      </button>
+    </div>
+  );
+
+  const renderAuditButton = () => (
+    <button
+      onClick={() => setShowMetaPolicyModal(true)}
+      className="px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 hover:text-blue-200 rounded-xl text-[10px] sm:text-xs font-bold flex items-center gap-1 sm:gap-1.5 transition-all shadow-sm cursor-pointer flex-shrink-0 whitespace-nowrap"
+      title="Scan Flow for Meta 24-Hour Messaging Policy, Message Tags & Opt-In Permissions"
+    >
+      <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-400 flex-shrink-0" />
+      <span className="hidden md:inline">24h Policy Audit</span>
+      <span className="hidden xs:inline md:hidden">Audit</span>
+    </button>
+  );
+
+  const renderTestButton = () => (
+    <button
+      onClick={() => setShowSimulator(true)}
+      className="px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 hover:text-white rounded-xl text-[10px] sm:text-xs font-bold flex items-center gap-1 sm:gap-1.5 transition-all shadow-sm cursor-pointer flex-shrink-0 whitespace-nowrap"
+      title="Interactive Phone Preview Simulator"
+    >
+      <Play className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-400 fill-cyan-400 flex-shrink-0" />
+      <span className="hidden md:inline">Test Flow</span>
+      <span className="hidden xs:inline md:hidden">Test</span>
+    </button>
+  );
+
   return (
     <div className="flex-1 w-full h-full relative overflow-hidden bg-[#080d1a] flex flex-col select-none">
       
-      {/* Canvas Top Bar Header overlayed directly across top of Canvas */}
-      <div className="h-14 bg-slate-950/90 backdrop-blur-xl border-b border-white/10 px-2 sm:px-3 lg:px-4 flex items-center justify-between z-30 flex-shrink-0 shadow-xl gap-1 sm:gap-2 lg:gap-3 w-full min-w-0">
+      {/* Canvas Top Bar Header — responsive: single row on xl screens, tools wrap to a second row below */}
+      <div className="bg-slate-950/90 backdrop-blur-xl border-b border-white/10 z-30 flex-shrink-0 shadow-xl w-full min-w-0">
+      {/* Row 1: identity + primary actions */}
+      <div className="h-14 px-2 sm:px-3 lg:px-4 flex items-center justify-between gap-1 sm:gap-2 w-full min-w-0">
         
         {/* Left: Flow Name, Status Badge & Mobile Mode Switcher */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-shrink">
@@ -1494,113 +1610,16 @@ export function FlowBuilder({
           </div>
         </div>
 
-        {/* Center: Canvas / Copilot / Auto-Build Mode Switchers (Visible sm and up) */}
-        <div className="hidden sm:flex items-center bg-slate-900/90 border border-white/10 p-0.5 sm:p-1 rounded-xl shadow-inner flex-shrink-0">
-          <ModeButton 
-            active={aiMode === 'manual'} 
-            onClick={() => setAiMode('manual')}
-            icon={<MousePointer2 className="w-3.5 h-3.5" />} 
-            label="Flow Canvas" 
-            shortLabel="Canvas"
-          />
-          <ModeButton 
-            active={aiMode === 'copilot'} 
-            onClick={() => setAiMode('copilot')}
-            icon={<Sparkles className="w-3.5 h-3.5 text-cyan-400" />} 
-            label="AI Copilot" 
-            shortLabel="Copilot"
-          />
-          <ModeButton 
-            active={aiMode === 'auto'} 
-            onClick={() => setAiMode('auto')}
-            icon={<Bot className="w-3.5 h-3.5 text-blue-400" />} 
-            label="Auto-Build" 
-            shortLabel="Auto"
-          />
-        </div>
-
-        {/* Right: Auto-Save indicator, Zoom controls, Test Flow, + Add Bot, and + Go Live overlay buttons */}
+        {/* Right: tools inline on xl, primary actions on every screen */}
         <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2 flex-shrink-0">
-          
-          {/* Auto-Save Indicator */}
-          <div 
-            className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-xl bg-slate-900/90 border border-white/10 text-[10px] sm:text-xs shadow-sm transition-all flex-shrink-0"
-            title="All changes save automatically to Firestore in real time"
-          >
-            {saveStatus === 'saving' ? (
-              <>
-                <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-cyan-400 animate-ping flex-shrink-0" />
-                <span className="text-cyan-400 font-medium text-[10px] sm:text-xs hidden lg:inline whitespace-nowrap">Saving...</span>
-              </>
-            ) : (
-              <>
-                <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 flex-shrink-0" />
-                <span className="text-emerald-400 font-semibold text-[10px] sm:text-xs hidden lg:inline whitespace-nowrap">Auto-saved</span>
-              </>
-            )}
+          <div className="hidden xl:flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+            {renderModeSwitcher()}
+            {renderAutoSave()}
+            {renderZoomControls()}
+            {renderAuditButton()}
           </div>
 
-          {/* Zoom controls */}
-          <div className="hidden sm:flex bg-slate-900/90 border border-white/10 p-0.5 sm:p-1 rounded-xl items-center gap-0.5 text-slate-300 flex-shrink-0">
-            <button 
-              onClick={() => setZoomLevel(prev => Math.max(0.25, Number((prev - 0.1).toFixed(2))))}
-              className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white cursor-pointer"
-              title="Zoom Out"
-            >
-              <Minus className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setZoomLevel(1);
-                setPanOffset({ x: 0, y: 0 });
-              }}
-              className="text-[10px] sm:text-xs font-mono px-1 sm:px-1.5 font-semibold text-slate-300 hover:text-cyan-300 min-w-[28px] sm:min-w-[34px] text-center select-none transition-colors cursor-pointer"
-              title="Click to reset to 100%"
-            >
-              {Math.round(zoomLevel * 100)}%
-            </button>
-            <button 
-              onClick={() => setZoomLevel(prev => Math.min(2.5, Number((prev + 0.1).toFixed(2))))}
-              className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white cursor-pointer"
-              title="Zoom In"
-            >
-              <Plus className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-            </button>
-            <div className="w-px h-3 sm:h-3.5 bg-white/10 mx-0.5" />
-            <button 
-              onClick={() => {
-                setZoomLevel(1);
-                setPanOffset({ x: 0, y: 0 });
-              }}
-              className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-white inline-flex cursor-pointer"
-              title="Reset View & Recenter (100%)"
-            >
-              <Maximize2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-            </button>
-          </div>
-
-          {/* Meta 24h Policy Audit Button */}
-          <button 
-            onClick={() => setShowMetaPolicyModal(true)}
-            className="px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 hover:text-blue-200 rounded-xl text-[10px] sm:text-xs font-bold flex items-center gap-1 sm:gap-1.5 transition-all shadow-sm cursor-pointer flex-shrink-0 whitespace-nowrap"
-            title="Scan Flow for Meta 24-Hour Messaging Policy, Message Tags & Opt-In Permissions"
-          >
-            <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-400 flex-shrink-0" />
-            <span className="hidden md:inline">24h Policy Audit</span>
-            <span className="hidden xs:inline md:hidden">Audit</span>
-          </button>
-
-          {/* Test Flow / Phone Preview Simulator */}
-          <button 
-            onClick={() => setShowSimulator(true)}
-            className="px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 hover:text-white rounded-xl text-[10px] sm:text-xs font-bold flex items-center gap-1 sm:gap-1.5 transition-all shadow-sm cursor-pointer flex-shrink-0 whitespace-nowrap"
-            title="Interactive Phone Preview Simulator"
-          >
-            <Play className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-400 fill-cyan-400 flex-shrink-0" />
-            <span className="hidden md:inline">Test Flow</span>
-            <span className="hidden xs:inline md:hidden">Test</span>
-          </button>
+          {renderTestButton()}
 
           {/* + Add Bot Component Dropdown */}
           <div className="relative flex-shrink-0">
@@ -1739,6 +1758,14 @@ export function FlowBuilder({
             )}
           </button>
         </div>
+      </div>
+      {/* Row 2: tools move here on screens below xl so nothing gets cut off */}
+      <div className="xl:hidden flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 pb-2 overflow-x-auto min-w-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {renderModeSwitcher()}
+        {renderAutoSave()}
+        {renderZoomControls()}
+        {renderAuditButton()}
+      </div>
       </div>
 
       {/* Live Toast Banner */}
