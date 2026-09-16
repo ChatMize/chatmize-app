@@ -136,31 +136,14 @@ export default function App() {
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
 
   // Authentication State & Gating
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
-    try {
-      const stored = localStorage.getItem('chatmize_bypass_user');
-      if (stored) return JSON.parse(stored);
-    } catch (e) {}
-    return null;
-  });
+  // The Firebase Auth session is the single source of truth. There is no
+  // localStorage bypass: a signed-out user sees the auth gate, period.
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges((user) => {
-      if (user) {
-        setCurrentUser(user);
-      } else {
-        try {
-          const stored = localStorage.getItem('chatmize_bypass_user');
-          if (stored) {
-            setCurrentUser(JSON.parse(stored));
-          } else {
-            setCurrentUser(null);
-          }
-        } catch (e) {
-          setCurrentUser(null);
-        }
-      }
+      setCurrentUser(user);
       setAuthLoading(false);
     });
     return () => unsubscribe();
@@ -768,7 +751,6 @@ export default function App() {
             onSelectWorkspace={handleSelectWorkspace}
             currentUser={currentUser}
             onSignOut={() => {
-              localStorage.removeItem('chatmize_bypass_user');
               signOutUser();
               setCurrentUser(null);
             }}

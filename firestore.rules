@@ -1,20 +1,70 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /contacts/{contactId} {
-      allow read, write: if true;
+
+    function isSignedIn() {
+      return request.auth != null;
     }
-    match /deletion_audit_logs/{logId} {
-      allow read, write: if true;
+
+    // Super Admin is granted via Firebase Auth custom claim: { superadmin: true }.
+    // Claims are set by a Cloud Function (Phase 3); until then no account
+    // carries the claim and these branches stay closed.
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.superadmin == true;
+    }
+
+    // Phase 3 tenancy model: every workspace has a members subcollection of uids.
+    function isWorkspaceMember(workspaceId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+    }
+
+    // Platform user profiles
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // Workspaces and everything nested under them (Phase 3 tenancy model)
+    match /workspaces/{workspaceId} {
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin();
+      match /{document=**} {
+        allow read, write: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+      }
+    }
+
+    // Delivery board (Super Admin Kanban incl. qaNotes). Authenticated-only for
+    // now; Phase 3 restricts this to the superadmin custom claim once client
+    // role gating lands, so Karl's access never breaks mid-migration.
+    match /system_settings/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Legacy top-level collections (pre-tenancy data model). Authenticated-only;
+    // Phase 3 migrates these under workspaces/{workspaceId}/... at which point
+    // these branches are removed.
+    match /contacts/{contactId} {
+      allow read, write: if isSignedIn();
     }
     match /campaigns/{campaignId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
-    match /system_settings/{docId} {
-      allow read, write: if true;
+    match /deletion_audit_logs/{logId} {
+      allow read, write: if isSignedIn();
     }
+
+    // Connectivity probe: readable when signed in, never writable from clients.
     match /test/{docId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Explicit deny-all catch-all. (Firestore denies by default when no rule
+    // matches; this makes the posture visible in the file itself.)
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

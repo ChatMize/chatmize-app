@@ -30,11 +30,37 @@ import {
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Initialize Firebase App singleton
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+// Firebase web config: environment variables take precedence so each deploy
+// target (dev / staging / production) can point at its own project and
+// Firestore database. Falls back to the AI Studio applet config for local/demo.
+const envVars = import.meta.env as Record<string, string | undefined>;
+const applet = firebaseConfig as unknown as Record<string, string>;
+const resolvedConfig = {
+  apiKey: envVars.VITE_FIREBASE_API_KEY || applet.apiKey,
+  authDomain: envVars.VITE_FIREBASE_AUTH_DOMAIN || applet.authDomain,
+  projectId: envVars.VITE_FIREBASE_PROJECT_ID || applet.projectId,
+  storageBucket: envVars.VITE_FIREBASE_STORAGE_BUCKET || applet.storageBucket,
+  messagingSenderId: envVars.VITE_FIREBASE_MESSAGING_SENDER_ID || applet.messagingSenderId,
+  appId: envVars.VITE_FIREBASE_APP_ID || applet.appId,
+  measurementId: envVars.VITE_FIREBASE_MEASUREMENT_ID || applet.measurementId,
+};
+const firestoreDatabaseId =
+  envVars.VITE_FIRESTORE_DATABASE_ID || applet.firestoreDatabaseId;
 
-// Initialize Firestore database using the provisioned database ID
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Initialize Firebase App singleton
+const app = getApps().length === 0 ? initializeApp(resolvedConfig) : getApp();
+
+// Initialize Firestore database using the configured database ID
+export const db = getFirestore(app, firestoreDatabaseId);
+
+/**
+ * Demo seeding is opt-in and dev-only. It must never run in staging or
+ * production: fictional contacts and campaigns would pollute real customer
+ * data. Enable locally with VITE_ENABLE_DEMO_SEED=true.
+ */
+export function isDemoSeedEnabled(): boolean {
+  return envVars.VITE_ENABLE_DEMO_SEED === 'true';
+}
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);
@@ -597,8 +623,12 @@ export async function deleteContactRecord(contactId: string): Promise<void> {
   await deleteDoc(contactRef);
 }
 
-// Seed realistic Meta-captured contacts if Firestore is empty
+// Seed realistic Meta-captured contacts if Firestore is empty.
+// DEMO ONLY: no-ops unless VITE_ENABLE_DEMO_SEED=true.
 export async function seedInitialMetaContacts(): Promise<void> {
+  if (!isDemoSeedEnabled()) {
+    return;
+  }
   try {
     const contactsRef = collection(db, 'contacts');
     const snap = await getDocs(contactsRef);
@@ -904,7 +934,11 @@ export async function enrollContactInCampaign(contactId: string, campaignId: str
 }
 
 // Seed initial campaigns
+// DEMO ONLY: no-ops unless VITE_ENABLE_DEMO_SEED=true.
 export async function seedInitialCampaigns(): Promise<void> {
+  if (!isDemoSeedEnabled()) {
+    return;
+  }
   try {
     const demoCampaigns: CampaignRecord[] = [
       {

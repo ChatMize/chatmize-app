@@ -9,10 +9,10 @@ interface AuthGateModalProps {
 
 export const AuthGateModal: React.FC<AuthGateModalProps> = ({ onSuccess }) => {
   const [mode, setMode] = useState<'signin' | 'signup' | 'reset'>('signin');
-  const [email, setEmail] = useState('instantreferralsapp@gmail.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [displayName, setDisplayName] = useState('Karl Schuckert');
+  const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,29 +42,9 @@ export const AuthGateModal: React.FC<AuthGateModalProps> = ({ onSuccess }) => {
 
     try {
       const cleanEmail = email.trim().toLowerCase();
-      const storedAuthUsers = JSON.parse(localStorage.getItem('chatmize_custom_auth_users') || '{}');
 
       if (mode === 'signin') {
-        // First check local registered users
-        if (storedAuthUsers[cleanEmail]) {
-          if (storedAuthUsers[cleanEmail].password === password) {
-            const authedUser = {
-              uid: storedAuthUsers[cleanEmail].uid,
-              email: cleanEmail,
-              displayName: storedAuthUsers[cleanEmail].displayName || 'Karl Schuckert',
-              photoURL: null
-            };
-            localStorage.setItem('chatmize_bypass_user', JSON.stringify(authedUser));
-            window.location.reload();
-            return;
-          } else {
-            setError('Incorrect password. Please try again.');
-            setLoading(false);
-            return;
-          }
-        }
-
-        // Try Firebase Auth
+        // Firebase Authentication is the only sign-in path.
         const res = await signInUser(cleanEmail, password);
         if (!res.success) {
           setError(res.error || 'Failed to sign in. Please verify your email and password.');
@@ -78,30 +58,14 @@ export const AuthGateModal: React.FC<AuthGateModalProps> = ({ onSuccess }) => {
           return;
         }
 
-        // Save account locally so user can immediately sign in with this password
-        const newUserObj = {
-          uid: `usr_${Date.now()}`,
-          email: cleanEmail,
-          displayName: displayName.trim() || 'Karl Schuckert',
-          password: password,
-          createdAt: new Date().toISOString()
-        };
-        storedAuthUsers[cleanEmail] = newUserObj;
-        localStorage.setItem('chatmize_custom_auth_users', JSON.stringify(storedAuthUsers));
-
-        // Attempt Firebase sign up in background (will succeed if enabled in console)
-        signUpUser(cleanEmail, password, displayName).catch(() => {});
-
-        // Set current active session
-        localStorage.setItem('chatmize_bypass_user', JSON.stringify({
-          uid: newUserObj.uid,
-          email: newUserObj.email,
-          displayName: newUserObj.displayName,
-          photoURL: null
-        }));
-
-        window.location.reload();
-        return;
+        // Create the account in Firebase Authentication. Passwords are never
+        // stored in localStorage or anywhere else client-side.
+        const res = await signUpUser(cleanEmail, password, displayName.trim() || undefined);
+        if (!res.success) {
+          setError(res.error || 'Failed to create account.');
+        } else {
+          onSuccess?.();
+        }
       } else if (mode === 'reset') {
         const res = await resetPassword(email);
         if (!res.success) {
@@ -308,21 +272,6 @@ export const AuthGateModal: React.FC<AuthGateModalProps> = ({ onSuccess }) => {
                       <span>Sign in with Google</span>
                     </>
                   )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    localStorage.setItem('chatmize_bypass_user', JSON.stringify({
-                      uid: 'admin-karl',
-                      email: 'instantreferralsapp@gmail.com',
-                      displayName: 'Karl Schuckert'
-                    }));
-                    window.location.reload();
-                  }}
-                  className="w-full py-2 px-4 text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 border border-dashed border-white/10 rounded-xl transition-colors text-center"
-                >
-                  🚀 Instant Admin Access (Karl Schuckert)
                 </button>
               </>
             )}
