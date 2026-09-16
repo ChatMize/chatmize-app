@@ -13,7 +13,7 @@ import {
   resetAllMonthlyCredits,
   CreditReason,
 } from "./credits";
-import { aiComplete, AI_SECRETS, ModelTier, ChatMessage } from "./ai/router";
+import { aiComplete, projectTestCost, AI_SECRETS, ModelTier, ChatMessage } from "./ai/router";
 import {
   ALL_SECRETS,
   META_APP_SECRET,
@@ -52,6 +52,8 @@ import {
   chargeForSend,
   persistInboundSms,
   persistOutboundSms,
+  checkInboundThrottle,
+  markComplianceReplySent,
   SMS_CREDITS_PER_SEGMENT,
   SmsConnection,
 } from "./sms";
@@ -229,8 +231,15 @@ export const onInboundMessageCreated = onDocumentCreated(
     document: "workspaces/{workspaceId}/conversations/{convoId}/messages/{messageId}",
   },
   async (event) => {
-    const data = event.data?.data() as { direction?: string; text?: string; channel?: string } | undefined;
+    const data = event.data?.data() as
+      | { direction?: string; via?: string; agentProcessed?: boolean; text?: string; channel?: string }
+      | undefined;
     if (!data || data.direction !== "inbound") return;
+    // Recursion guard for the Phase 4 agent pipeline: never process the
+    // agent's own output. Agent replies must be written with direction
+    // "outbound" (or via:"agent"), but if one ever lands here marked
+    // inbound, skip it instead of triggering an infinite AI-spend loop.
+    if (data.via === "agent" || data.agentProcessed === true) return;
     logger.info("Inbound message ready for agent pipeline", {
       workspaceId: event.params.workspaceId,
       convoId: event.params.convoId,
@@ -300,7 +309,12 @@ export const adjustCredits = onCall(
 
 /** Monthly reset: every workspace balance returns to its plan allowance. */
 export const resetMonthlyCredits = onSchedule(
-  { region: REGION, schedule: "0 0 1 * *", timeZone: "America/Phoenix" },
+  {
+    region: REGION,
+    schedule: "0 0 1 * *",
+    timeZone: "America/Phoenix",
+    timeoutSeconds: 540,
+  },
   async () => {
     await resetAllMonthlyCredits();
   },
@@ -501,6 +515,24 @@ export const sendSms = onCall(
       return { ok: true, twilioSid, segments, chargedTo: charged.chargedTo };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Twilio send failed.";
+      // Compensating refund: the workspace was charged before Twilio sent,
+      // and Twilio never billed for this message, so give the charge back.
+      if (charged.chargedTo === "credits" && charged.creditsCharged > 0) {
+        await grantCredits(
+          workspaceId,
+          charged.creditsCharged,
+          "admin_adjust",
+          `refund: twilio send failed (${message})`,
+        ).catch((refundErr) =>
+          logger.error("SMS refund failed", { workspaceId, refundErr }),
+        );
+      } else if (charged.chargedTo === "allowance") {
+        const conn = await getSmsConnection(workspaceId);
+        if (conn) {
+          conn.usedThisMonth = Math.max(0, conn.usedThisMonth - segments);
+          await saveSmsConnection(conn);
+        }
+      }
       await logSms({
         workspaceId,
         direction: "outbound",
@@ -524,18 +556,46 @@ interface SendSmsBroadcastData {
   body?: string;
   /** Explicit recipients. When omitted, broadcasts to every opted-in number. */
   phones?: string[];
+  /**
+   * Client-generated idempotency key. Retries with the same key resume (or
+   * return the completed result) instead of re-sending the broadcast.
+   */
+  idempotencyKey?: string;
 }
 
 /**
- * Authenticated callable: broadcast to opted-in numbers. Sequential sends
- * with per-recipient opt-in re-checks; returns a delivery report.
+ * Authenticated callable: broadcast to opted-in numbers. Idempotent on a
+ * client-generated key and resumable in chunks: progress is persisted after
+ * every chunk, so a client retry (or a timeout) resumes where the run left
+ * off instead of re-sending. Per-recipient opt-in is re-checked at send
+ * time; returns a delivery report.
  */
+/** Max recipients per broadcast run: sized so sequential sends fit the 540s timeout. */
+const BROADCAST_MAX_RECIPIENTS = 500;
+/** Progress is persisted to the broadcast doc after each chunk (resumable). */
+const BROADCAST_CHUNK_SIZE = 50;
+
+interface BroadcastState {
+  workspaceId: string;
+  recipients: string[];
+  status: "running" | "complete";
+  processed: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  creditsCharged: number;
+  errors: string[];
+  stoppedEarly: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const sendSmsBroadcast = onCall(
   { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN], timeoutSeconds: 540 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
-    const { workspaceId, body, phones } = (request.data ?? {}) as SendSmsBroadcastData;
+    const { workspaceId, body, phones, idempotencyKey } = (request.data ?? {}) as SendSmsBroadcastData;
     if (!workspaceId || !body) {
       throw new HttpsError("invalid-argument", "workspaceId and body are required.");
     }
@@ -550,64 +610,148 @@ export const sendSmsBroadcast = onCall(
       throw new HttpsError("failed-precondition", "SMS is not enabled for this workspace yet.");
     }
 
-    let recipients: string[];
-    if (phones && phones.length > 0) {
-      recipients = [...new Set(phones.map((p) => normalizePhone(p)).filter((p): p is string => !!p))];
-    } else {
-      const snap = await db()
-        .collection("sms_optins")
-        .where("workspaceId", "==", workspaceId)
-        .where("optedIn", "==", true)
-        .get();
-      recipients = snap.docs.map((d) => (d.data() as { phone: string }).phone);
-    }
-    if (recipients.length === 0) {
-      throw new HttpsError("failed-precondition", "No opted-in recipients to send to.");
-    }
-    if (recipients.length > 5000) {
-      throw new HttpsError("invalid-argument", "Broadcasts are limited to 5,000 recipients per run.");
-    }
+    // Idempotency: retries with the same key resume (or replay the stored
+    // result) instead of re-sending the broadcast.
+    const key = (idempotencyKey ?? "").trim() || `bc_${Date.now().toString(36)}`;
+    const bcastRef = db().collection("sms_broadcasts").doc(key);
+    const broadcastId = key;
 
-    const broadcastId = `bc_${Date.now().toString(36)}`;
-    const segments = calculateSegments(body);
-    let sent = 0;
-    let failed = 0;
-    let skipped = 0;
-    let creditsCharged = 0;
-    const errors: string[] = [];
-
-    for (const to of recipients) {
-      const optIn = await getOptIn(workspaceId, to);
-      if (!optIn?.optedIn) {
-        skipped += 1;
-        continue;
+    let state: BroadcastState;
+    const existing = await bcastRef.get();
+    if (existing.exists) {
+      const d = existing.data() as BroadcastState;
+      if (d.status === "complete") {
+        logger.info("SMS broadcast replayed from idempotency key", { workspaceId, broadcastId });
+        return {
+          ok: true, broadcastId, replayed: true, complete: true,
+          sent: d.sent, failed: d.failed, skipped: d.skipped,
+          creditsCharged: d.creditsCharged, errors: d.errors,
+        };
       }
+      if (d.workspaceId !== workspaceId) {
+        throw new HttpsError("invalid-argument", "This idempotency key is already in use.");
+      }
+      state = d;
+      logger.info("SMS broadcast resuming", { workspaceId, broadcastId, processed: d.processed });
+    } else {
+      let recipients: string[];
+      if (phones && phones.length > 0) {
+        recipients = [...new Set(phones.map((p) => normalizePhone(p)).filter((p): p is string => !!p))];
+      } else {
+        // Requires the composite index on sms_optins(workspaceId, optedIn);
+        // see firestore.indexes.json.
+        const snap = await db()
+          .collection("sms_optins")
+          .where("workspaceId", "==", workspaceId)
+          .where("optedIn", "==", true)
+          .get();
+        recipients = snap.docs.map((d) => (d.data() as { phone: string }).phone);
+      }
+      if (recipients.length === 0) {
+        throw new HttpsError("failed-precondition", "No opted-in recipients to send to.");
+      }
+      if (recipients.length > BROADCAST_MAX_RECIPIENTS) {
+        throw new HttpsError(
+          "invalid-argument",
+          `Broadcasts are limited to ${BROADCAST_MAX_RECIPIENTS} recipients per run; split larger lists.`,
+        );
+      }
+      const now = new Date().toISOString();
+      state = {
+        workspaceId,
+        recipients,
+        status: "running",
+        processed: 0,
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        creditsCharged: 0,
+        errors: [],
+        stoppedEarly: false,
+        createdAt: now,
+        updatedAt: now,
+      };
       try {
-        const charged = await chargeForSend(workspaceId, segments, `sms broadcast ${broadcastId}`);
-        const twilioSid = await twilioSendSms(conn.phoneNumber, to, body);
-        creditsCharged += charged.creditsCharged;
-        sent += 1;
-        await persistOutboundSms(workspaceId, conn.phoneNumber, to, body, twilioSid);
-        await logSms({
-          workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
-          segments, creditsCharged: charged.creditsCharged, twilioSid, status: "sent", broadcastId,
-        });
-      } catch (err) {
-        failed += 1;
-        const message = err instanceof Error ? err.message : "send failed";
-        if (errors.length < 5) errors.push(`${to}: ${message}`);
-        await logSms({
-          workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
-          segments, creditsCharged: 0, status: "failed", error: message, broadcastId,
-        });
-        if (message.includes("exhausted") || message.includes("insufficient credits")) {
-          break; // stop burning through the list when billing is the problem
+        // create() is atomic: it throws when the key already exists, so a
+        // racing retry falls through to the resume path below.
+        await bcastRef.create(state);
+      } catch (e) {
+        const code = (e as { code?: number }).code;
+        const msg = e instanceof Error ? e.message : String(e);
+        if (code !== 6 && !/already exists/i.test(msg)) throw e;
+        const raced = await bcastRef.get();
+        state = raced.data() as BroadcastState;
+        if (state.workspaceId !== workspaceId) {
+          throw new HttpsError("invalid-argument", "This idempotency key is already in use.");
+        }
+        logger.info("SMS broadcast lost create race; resuming", { workspaceId, broadcastId });
+      }
+    }
+
+    const segments = calculateSegments(body);
+    let stoppedEarly = state.stoppedEarly;
+
+    for (let i = state.processed; i < state.recipients.length; i += BROADCAST_CHUNK_SIZE) {
+      const chunk = state.recipients.slice(i, i + BROADCAST_CHUNK_SIZE);
+      for (const to of chunk) {
+        const optIn = await getOptIn(workspaceId, to);
+        if (!optIn?.optedIn) {
+          state.skipped += 1;
+          continue;
+        }
+        try {
+          const charged = await chargeForSend(workspaceId, segments, `sms broadcast ${broadcastId}`);
+          const twilioSid = await twilioSendSms(conn.phoneNumber, to, body);
+          state.creditsCharged += charged.creditsCharged;
+          state.sent += 1;
+          await persistOutboundSms(workspaceId, conn.phoneNumber, to, body, twilioSid);
+          await logSms({
+            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
+            segments, creditsCharged: charged.creditsCharged, twilioSid, status: "sent", broadcastId,
+          });
+        } catch (err) {
+          state.failed += 1;
+          const message = err instanceof Error ? err.message : "send failed";
+          if (state.errors.length < 5) state.errors.push(`${to}: ${message}`);
+          await logSms({
+            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
+            segments, creditsCharged: 0, status: "failed", error: message, broadcastId,
+          });
+          if (message.includes("exhausted") || message.includes("insufficient credits")) {
+            stoppedEarly = true;
+            break; // stop burning through the list when billing is the problem
+          }
         }
       }
+      state.processed = Math.min(i + BROADCAST_CHUNK_SIZE, state.recipients.length);
+      state.stoppedEarly = stoppedEarly;
+      state.updatedAt = new Date().toISOString();
+      await bcastRef.update({
+        processed: state.processed,
+        sent: state.sent,
+        failed: state.failed,
+        skipped: state.skipped,
+        creditsCharged: state.creditsCharged,
+        errors: state.errors,
+        stoppedEarly,
+        updatedAt: state.updatedAt,
+      });
+      if (stoppedEarly) break;
     }
 
-    logger.info("SMS broadcast complete", { workspaceId, broadcastId, sent, failed, skipped });
-    return { ok: true, broadcastId, sent, failed, skipped, creditsCharged, errors };
+    const complete = !stoppedEarly;
+    if (complete) {
+      await bcastRef.update({ status: "complete", updatedAt: new Date().toISOString() });
+    }
+    logger.info("SMS broadcast finished", {
+      workspaceId, broadcastId,
+      sent: state.sent, failed: state.failed, skipped: state.skipped, complete,
+    });
+    return {
+      ok: true, broadcastId, complete,
+      sent: state.sent, failed: state.failed, skipped: state.skipped,
+      creditsCharged: state.creditsCharged, errors: state.errors,
+    };
   },
 );
 
@@ -669,13 +813,22 @@ export const smsWebhook = onRequest(
     }
 
     try {
+      // Throttle before doing any paid work: >20 inbound/hour from one
+      // number is dropped, and compliance replies go out at most once
+      // per number per 24h.
+      const keyword = classifyKeyword(body);
+      const throttle = await checkInboundThrottle(workspaceId, from, keyword);
+      if (!throttle.allowed) {
+        res.status(200).set("Content-Type", "text/xml").send("<Response/>");
+        return;
+      }
+
       await persistInboundSms(workspaceId, from, to, body, twilioSid || `in_${Date.now()}`);
       await logSms({
         workspaceId, direction: "inbound", to: from, from: to, body,
         segments: calculateSegments(body), creditsCharged: 0, twilioSid, status: "received",
       });
 
-      const keyword = classifyKeyword(body);
       if (keyword) {
         const conn = await getSmsConnection(workspaceId);
         if (keyword === "opt_out") {
@@ -683,9 +836,10 @@ export const smsWebhook = onRequest(
         } else if (keyword === "opt_in") {
           await setOptIn(workspaceId, from, true, "keyword_start");
         }
-        if (conn) {
+        if (conn && throttle.complianceDue) {
           // Compliance replies are carrier-required and free to the workspace.
           await twilioSendSms(conn.phoneNumber, from, complianceReply(keyword));
+          await markComplianceReplySent(workspaceId, from);
         }
       }
     } catch (err) {
@@ -707,15 +861,36 @@ interface TestRouterData {
   prompt?: string;
 }
 
+/** Max router tests per admin per day: each test is real provider spend. */
+const ROUTER_TESTS_PER_DAY = 10;
+
+async function checkRouterTestQuota(uid: string): Promise<void> {
+  const day = new Date().toISOString().slice(0, 10);
+  const ref = db().collection("ai_router_tests").doc(`${uid}_${day}`);
+  await db().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const count = (snap.data() as { count?: number } | undefined)?.count ?? 0;
+    if (count >= ROUTER_TESTS_PER_DAY) {
+      throw new HttpsError(
+        "resource-exhausted",
+        `Router test quota exceeded (${ROUTER_TESTS_PER_DAY} per day).`,
+      );
+    }
+    tx.set(ref, { uid, day, count: count + 1, updatedAt: new Date().toISOString() });
+  });
+}
+
 /**
  * Super Admin only: verify provider keys and routing with a dry-run
- * completion. No credits are spent. Use from the Firebase console or a
- * test harness after setting the AI secrets.
+ * completion. No credits are spent, but the dry run still makes a REAL
+ * paid provider call, so the response leads with a projected cost estimate
+ * and tests are capped per admin per day.
  */
 export const testAiRouter = onCall(
   { region: REGION, secrets: AI_SECRETS },
   async (request) => {
-    if (request.auth?.token?.superadmin !== true) {
+    const uid = request.auth?.uid;
+    if (!uid || request.auth?.token?.superadmin !== true) {
       throw new HttpsError("permission-denied", "Super Admin only.");
     }
     const { tier, prompt } = (request.data ?? {}) as TestRouterData;
@@ -725,11 +900,13 @@ export const testAiRouter = onCall(
     if (!prompt || prompt.trim().length === 0) {
       throw new HttpsError("invalid-argument", "prompt is required.");
     }
+    const estimate = projectTestCost(tier, prompt, 128);
+    await checkRouterTestQuota(uid);
     const messages: ChatMessage[] = [
       { role: "system", content: "Reply in one short sentence." },
       { role: "user", content: prompt },
     ];
-    return aiComplete({
+    const result = await aiComplete({
       workspaceId: "dry_run",
       tier,
       messages,
@@ -738,5 +915,6 @@ export const testAiRouter = onCall(
       note: "super admin router test",
       dryRun: true,
     });
+    return { estimate, result };
   },
 );

@@ -145,27 +145,46 @@ export async function setMonthlyAllowance(
   });
 }
 
-/** Reset every workspace balance to its monthly allowance. Runs on schedule. */
+/**
+ * Reset every workspace balance to its monthly allowance. Runs on schedule.
+ * Pages through workspaces with a cursor and writes in batches, so the job
+ * stays resumable and never exceeds Firestore's 500-op batch limit no
+ * matter how many workspaces exist.
+ */
 export async function resetAllMonthlyCredits(): Promise<{ reset: number }> {
-  const snap = await db().collection("credit_balances").get();
+  const PAGE_SIZE = 250; // x2 ops per workspace (balance + ledger) fits one batch
   let reset = 0;
-  for (const d of snap.docs) {
-    const data = d.data() as Omit<CreditBalance, "workspaceId">;
+  let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+  for (;;) {
+    let q = db().collection("credit_balances").orderBy("__name__").limit(PAGE_SIZE);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get();
+    if (snap.empty) break;
+
+    const batch = db().batch();
     const now = new Date().toISOString();
-    const delta = data.monthlyAllowance - data.balance;
-    await d.ref.update({
-      balance: data.monthlyAllowance,
-      lastResetAt: now,
-      updatedAt: now,
-    });
-    await appendLedger(
-      d.id,
-      delta,
-      "monthly_grant",
-      data.monthlyAllowance,
-      "monthly allowance reset",
-    );
-    reset += 1;
+    for (const d of snap.docs) {
+      const data = d.data() as Omit<CreditBalance, "workspaceId">;
+      const delta = data.monthlyAllowance - data.balance;
+      batch.update(d.ref, {
+        balance: data.monthlyAllowance,
+        lastResetAt: now,
+        updatedAt: now,
+      });
+      batch.set(ledgerRef(d.id).doc(), {
+        workspaceId: d.id,
+        delta,
+        reason: "monthly_grant",
+        balanceAfter: data.monthlyAllowance,
+        note: "monthly allowance reset",
+        createdAt: now,
+      });
+    }
+    await batch.commit();
+    reset += snap.size;
+    logger.info("Monthly credit reset page complete", { reset, pageSize: snap.size });
+    if (snap.size < PAGE_SIZE) break;
+    last = snap.docs[snap.docs.length - 1];
   }
   logger.info("Monthly credit reset complete", { reset });
   return { reset };

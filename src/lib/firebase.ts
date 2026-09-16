@@ -12,6 +12,7 @@ import {
   onSnapshot, 
   query, 
   orderBy, 
+  limit,
   serverTimestamp,
   Timestamp,
   arrayUnion
@@ -322,13 +323,15 @@ export async function testFirebaseConnection(): Promise<boolean> {
   }
 }
 
-// Subscribe to real-time contacts
+// Subscribe to real-time contacts (capped: every mount re-reads the result
+// set, so an unbounded listener burns reads on every page load)
 export function subscribeToContacts(
   onUpdate: (contacts: ContactRecord[]) => void,
-  onError?: (err: Error) => void
+  onError?: (err: Error) => void,
+  maxResults = 500
 ) {
   const contactsRef = collection(db, 'contacts');
-  const q = query(contactsRef, orderBy('lastInteractionAt', 'desc'));
+  const q = query(contactsRef, orderBy('lastInteractionAt', 'desc'), limit(maxResults));
 
   return onSnapshot(
     q,
@@ -589,13 +592,16 @@ export async function saveOtnToken(
   });
 }
 
-// Subscribe to real-time deletion audit logs for compliance officers
+// Subscribe to real-time deletion audit logs for compliance officers.
+// Capped: this collection grows forever, so the listener is bounded to the
+// most recent entries instead of re-reading the full history on every mount.
 export function subscribeToDeletionAuditLogs(
   onUpdate: (logs: DeletionAuditRecord[]) => void,
-  onError?: (err: Error) => void
+  onError?: (err: Error) => void,
+  maxResults = 200
 ) {
   const logsRef = collection(db, 'deletion_audit_logs');
-  const q = query(logsRef, orderBy('purgedAt', 'desc'));
+  const q = query(logsRef, orderBy('purgedAt', 'desc'), limit(maxResults));
 
   return onSnapshot(
     q,
@@ -882,13 +888,15 @@ export async function seedInitialMetaContacts(): Promise<void> {
   }
 }
 
-// Subscribe to real-time campaigns
+// Subscribe to real-time campaigns (capped for the same read-burn reason
+// as contacts: every mount re-reads the result set)
 export function subscribeToCampaigns(
   onUpdate: (campaigns: CampaignRecord[]) => void,
-  onError?: (err: Error) => void
+  onError?: (err: Error) => void,
+  maxResults = 200
 ) {
   const campaignsRef = collection(db, 'campaigns');
-  const q = query(campaignsRef, orderBy('createdAt', 'desc'));
+  const q = query(campaignsRef, orderBy('createdAt', 'desc'), limit(maxResults));
 
   return onSnapshot(
     q,

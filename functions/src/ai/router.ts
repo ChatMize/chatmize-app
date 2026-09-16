@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import LlamaAPIClient from "llama-api-client";
-import { spendCredits, CreditReason } from "../credits";
+import { spendCredits, getBalance, CreditReason } from "../credits";
 
 // ---------------------------------------------------------------------------
 // Secrets (one per provider; set in Secret Manager per environment)
@@ -51,10 +51,16 @@ export const MODEL_CATALOG: ModelSpec[] = [
 
 /** Routing chains: primary first, then fallbacks if a provider errors. */
 const ROUTES: Record<ModelTier, string[]> = {
-  fast: ["gemini-flash", "gpt-mini", "llama-scout"],
-  balanced: ["claude-sonnet", "llama-maverick", "gpt-4o", "gemini-pro"],
+  fast: ["gemini-flash", "gpt-mini"],
+  balanced: ["claude-sonnet", "gpt-4o", "gemini-pro"],
   smart: ["claude-opus", "gpt-5", "gemini-pro"],
 };
+// NOTE (cost): llama-scout and llama-maverick are PARKED until Meta confirms
+// hosted Llama pricing. Their catalog prices are $0, so routing them would
+// meter real provider spend at 1 credit per call — a silent margin leak.
+// Re-add once priced:
+//   fast: insert "llama-scout" after "gpt-mini"
+//   balanced: insert "llama-maverick" after "claude-sonnet"
 
 // ---------------------------------------------------------------------------
 // Credit pricing. 1 credit = $0.001 of raw model cost (face value).
@@ -232,9 +238,62 @@ export interface CompleteOptions {
 }
 
 /**
+ * Projected cost for a completion before it runs: uses the tier's primary
+ * model, ~4 chars per input token, and the requested max output tokens.
+ * Powers the Super Admin router test's cost preview.
+ */
+export function projectTestCost(
+  tier: ModelTier,
+  prompt: string,
+  maxOutputTokens: number,
+): { model: string; provider: Provider; estTokensIn: number; estCostUsd: number; estCredits: number } {
+  const chain = ROUTES[tier]
+    .map((id) => MODEL_CATALOG.find((m) => m.id === id))
+    .filter((m): m is ModelSpec => !!m);
+  const spec = chain[0];
+  if (!spec) throw new Error(`no models configured for tier ${tier}`);
+  const estTokensIn = Math.ceil((prompt.length + 40) / 4); // + short system prompt
+  const estCostUsd =
+    (estTokensIn / 1_000_000) * spec.inputPerMtok +
+    (maxOutputTokens / 1_000_000) * spec.outputPerMtok;
+  const estCredits = Math.max(1, Math.ceil(estCostUsd / CREDIT_PRICING.usdPerCreditFace));
+  return { model: spec.model, provider: spec.provider, estTokensIn, estCostUsd, estCredits };
+}
+
+/** True when the error came from the credit ledger, not from a provider. */
+function isBillingError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /insufficient credits|no credit account/.test(msg);
+}
+
+/**
+ * Worst-case credits a single call anywhere in the fallback chain could
+ * cost, using the same ~4-chars-per-token estimate as projectTestCost.
+ */
+function worstCaseCredits(
+  chain: ModelSpec[],
+  messages: ChatMessage[],
+  maxOutputTokens: number,
+): number {
+  const estIn = Math.ceil(messages.reduce((n, m) => n + m.content.length, 0) / 4);
+  let worst = 1;
+  for (const spec of chain) {
+    const costUsd =
+      (estIn / 1_000_000) * spec.inputPerMtok +
+      (maxOutputTokens / 1_000_000) * spec.outputPerMtok;
+    worst = Math.max(worst, Math.max(1, Math.ceil(costUsd / CREDIT_PRICING.usdPerCreditFace)));
+  }
+  return worst;
+}
+
+/**
  * Route a completion to the cheapest capable model for the tier, with
  * automatic fallback across providers. Meters the real token cost through
  * the workspace's credit ledger at (cost x margin).
+ *
+ * Cost guard: the workspace balance is checked BEFORE any provider is
+ * called, and billing errors are never treated as provider failures, so a
+ * zero-credit workspace can never trigger paid fallback calls.
  */
 export async function aiComplete(opts: CompleteOptions): Promise<RouteResult> {
   const chain = ROUTES[opts.tier]
@@ -244,6 +303,18 @@ export async function aiComplete(opts: CompleteOptions): Promise<RouteResult> {
 
   const maxOutputTokens = opts.maxOutputTokens ?? 1024;
   let lastError: unknown = null;
+
+  // Pre-check: never make a paid provider call the workspace cannot cover.
+  // (Skipped for dry runs, which use a synthetic workspace with no ledger.)
+  if (!opts.dryRun) {
+    const required = worstCaseCredits(chain, opts.messages, maxOutputTokens);
+    const bal = await getBalance(opts.workspaceId);
+    if (!bal || bal.balance < required) {
+      throw new Error(
+        `insufficient credits: balance=${bal?.balance ?? 0} required~${required} for tier ${opts.tier}; top up to continue`,
+      );
+    }
+  }
 
   for (const spec of chain) {
     try {
@@ -284,6 +355,9 @@ export async function aiComplete(opts: CompleteOptions): Promise<RouteResult> {
         creditsCharged,
       };
     } catch (e) {
+      // Billing errors are fatal: re-throw instead of burning a paid
+      // fallback call the workspace cannot cover.
+      if (isBillingError(e)) throw e;
       lastError = e;
       logger.warn("aiComplete provider failed, trying fallback", {
         tier: opts.tier,

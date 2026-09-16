@@ -340,8 +340,83 @@ export async function persistOutboundSms(
   await batch.commit();
 }
 
-export async function logSms(entry: {  workspaceId: string;
-  direction: "outbound" | "inbound";
+const INBOUND_PER_HOUR = 20;
+const COMPLIANCE_REPLY_COOLDOWN_MS = 24 * 3600 * 1000;
+
+const inboundLimitRef = (workspaceId: string, phone: string) =>
+  db().collection("sms_inbound_limits").doc(`${workspaceId}_${phone}`);
+
+export interface InboundThrottle {
+  /** False when the sender exceeded 20 inbound messages in the last hour. */
+  allowed: boolean;
+  /** True when a compliance reply (STOP/START/HELP) may be sent now. */
+  complianceDue: boolean;
+}
+
+/**
+ * Per-sender inbound throttle. Counts every inbound message in a rolling
+ * hourly window and reports whether the message may be processed and
+ * whether a compliance reply is due (at most one per sender per 24h, so a
+ * keyword spammer cannot make ChatMize pay for unlimited replies).
+ */
+export async function checkInboundThrottle(
+  workspaceId: string,
+  phone: string,
+  keyword: SmsKeyword,
+): Promise<InboundThrottle> {
+  const now = Date.now();
+  const res = await db().runTransaction(async (tx) => {
+    const snap = await tx.get(inboundLimitRef(workspaceId, phone));
+    let count = 0;
+    let windowStart = now;
+    let lastReply: string | null = null;
+    if (snap.exists) {
+      const d = snap.data() as {
+        windowStart: number;
+        count: number;
+        lastComplianceReplyAt: string | null;
+      };
+      if (now - d.windowStart < 3600_000) {
+        count = d.count;
+        windowStart = d.windowStart;
+      }
+      lastReply = d.lastComplianceReplyAt ?? null;
+    }
+    const allowed = count < INBOUND_PER_HOUR;
+    const complianceDue =
+      keyword !== null &&
+      (!lastReply || now - Date.parse(lastReply) > COMPLIANCE_REPLY_COOLDOWN_MS);
+    tx.set(
+      inboundLimitRef(workspaceId, phone),
+      {
+        workspaceId,
+        phone,
+        windowStart,
+        count: count + 1,
+        lastComplianceReplyAt: lastReply,
+      },
+      { merge: true },
+    );
+    return { allowed, complianceDue };
+  });
+  if (!res.allowed) {
+    logger.warn("SMS inbound throttled: sender over hourly limit", { workspaceId, phone });
+  }
+  return res;
+}
+
+/** Record that a compliance reply was sent (starts the 24h cooldown). */
+export async function markComplianceReplySent(
+  workspaceId: string,
+  phone: string,
+): Promise<void> {
+  await inboundLimitRef(workspaceId, phone).set(
+    { lastComplianceReplyAt: new Date().toISOString() },
+    { merge: true },
+  );
+}
+
+export async function logSms(entry: {  workspaceId: string;  direction: "outbound" | "inbound";
   to: string;
   from: string;
   body: string;
