@@ -34,14 +34,20 @@ export const OAUTH_CALLBACK_URL =
   "https://us-west2-gen-lang-client-0433776094.cloudfunctions.net/metaOAuthCallback";
 const APP_RETURN_URL = "https://app.chatmize.com/";
 
-/** Scopes needed for Messenger + Instagram messaging on the customer's page. */
+/**
+ * Scopes for Facebook Login for Business (use-case based app).
+ * NOTE 2026-09-16: Meta's business login dialog rejects pages_read_engagement,
+ * instagram_basic, and instagram_manage_messages as invalid scopes in this
+ * flow ("This message is only shown to developers"). Instagram messaging
+ * coverage comes from the "Manage messaging & content on Instagram" use case
+ * configured in the app dashboard, not from OAuth scope strings. Keep this
+ * list to exactly what the dialog accepts; re-test in the dialog before
+ * adding more.
+ */
 const OAUTH_SCOPES = [
   "pages_show_list",
   "pages_messaging",
-  "pages_read_engagement",
   "pages_manage_metadata",
-  "instagram_basic",
-  "instagram_manage_messages",
 ];
 
 const STATE_TTL_MS = 10 * 60 * 1000;
