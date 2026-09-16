@@ -1,1 +1,41 @@
-{"firestore":{"indexes":"firestore.indexes.json","rules":"firestore.rules"},"functions":[{"codebase":"default","predeploy":["npm --prefix \"$RESOURCE_DIR\" install --no-audit --no-fund","npm --prefix \"$RESOURCE_DIR\" run build"],"source":"functions"}],"hosting":{"predeploy":["npm run build"],"public":"dist","rewrites":[{"destination":"/index.html","source":"**"}]}}
+{
+  "firestore": {
+    "indexes": "firestore.indexes.json",
+    "rules": "firestore.rules"
+  },
+  "functions": [
+    {
+      "codebase": "default",
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" install --no-audit --no-fund",
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ],
+      "source": "functions"
+    }
+  ],
+  "hosting": [
+    {
+      "target": "app",
+      "public": "dist",
+      "predeploy": [
+        "npm run build"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ]
+    },
+    {
+      "target": "landing",
+      "public": "landing-dist",
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ]
+    }
+  ]
+}

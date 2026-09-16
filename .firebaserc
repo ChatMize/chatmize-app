@@ -1,1 +1,21 @@
-{"projects":{"default":"gen-lang-client-0433776094","dev":"REPLACE_WITH_DEV_PROJECT_ID","production":"gen-lang-client-0433776094","staging":"REPLACE_WITH_STAGING_PROJECT_ID"}}
+{
+  "projects": {
+    "default": "gen-lang-client-0433776094",
+    "dev": "REPLACE_WITH_DEV_PROJECT_ID",
+    "production": "gen-lang-client-0433776094",
+    "staging": "REPLACE_WITH_STAGING_PROJECT_ID"
+  },
+  "targets": {
+    "gen-lang-client-0433776094": {
+      "hosting": {
+        "app": [
+          "chatmize-app"
+        ],
+        "landing": [
+          "chatmize-landing"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
