@@ -1,20 +1,44 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# ChatMize
 
-# Run and deploy your AI Studio app
+AI-powered messaging and marketing automation. Build chatbots for Messenger, Instagram, WhatsApp, and SMS with a visual flow builder, run broadcasts, manage conversations live, and grow with an AI copilot, a snapshot library, and usage-based plans and credits.
 
-This contains everything you need to run your app locally.
+## Project structure
 
-View your app in AI Studio: https://ai.studio/apps/60bc3e89-30fb-48f3-b9e0-7fe82cb47d81
+- `src/` — React 19 + Vite client application
+- `functions/` — Firebase Cloud Functions backend (Meta webhooks, outbound messaging, SMS via Twilio, AI metering and credits)
+- `firestore.rules` / `firestore.indexes.json` — Firestore security rules and composite indexes
+- `firebase.json` — Firebase project configuration
+- `.github/workflows/` — CI and deploy pipelines
 
-## Run Locally
+## Run locally
 
-**Prerequisites:**  Node.js
+**Client**
 
+```bash
+npm install
+npm run dev
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Serves the app at `http://localhost:3000`.
+
+**Backend**
+
+```bash
+cd functions
+npm install
+npm run serve
+```
+
+Runs the Cloud Functions emulators.
+
+## Branches
+
+- `main` — production
+- `staging` — pre-production verification
+- `dev` — active development
+
+## CI / Deploy
+
+Every push runs CI (`tsc --noEmit` lint and `vite build` for the client, lint and build for functions). The deploy workflow deploys each branch to its Firebase environment and requires the GitHub environment secrets to be configured.
+
+Live production URL will be added here after the first production deploy.
