@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Check, MessageSquare, Instagram, Phone, ArrowRight, ArrowLeft, Unplug } from 'lucide-react';
-import { WorkspaceSilo } from '../../types/workspace';
+import { Check, MessageSquare, Instagram, Phone, Smartphone, ArrowRight, ArrowLeft, Unplug } from 'lucide-react';
+import { WorkspaceSilo, SmsConnection } from '../../types/workspace';
 
 interface ConnectStepProps {
   workspace: WorkspaceSilo;
@@ -21,12 +21,15 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
   const [pageId, setPageId] = useState(page?.pageId || '');
   const [igUsername, setIgUsername] = useState(page?.connectedIg?.username?.replace('@', '') || '');
   const [waNumber, setWaNumber] = useState(page?.connectedWhatsApp?.phoneNumber || '');
-  const [editing, setEditing] = useState<'messenger' | 'instagram' | 'whatsapp' | null>(null);
+  const [smsNumber, setSmsNumber] = useState(workspace.connectedSms?.phoneNumber || '');
+  const [smsProvider, setSmsProvider] = useState<SmsConnection['provider']>(workspace.connectedSms?.provider || 'twilio');
+  const [editing, setEditing] = useState<'messenger' | 'instagram' | 'whatsapp' | 'sms' | null>(null);
 
   const messengerConnected = Boolean(page?.pageId);
   const instagramConnected = Boolean(page?.connectedIg?.connected);
   const whatsappConnected = Boolean(page?.connectedWhatsApp?.connected);
-  const connectedCount = [messengerConnected, instagramConnected, whatsappConnected].filter(Boolean).length;
+  const smsConnected = Boolean(workspace.connectedSms?.connected);
+  const connectedCount = [messengerConnected, instagramConnected, whatsappConnected, smsConnected].filter(Boolean).length;
 
   const saveMessenger = () => {
     if (!pageId.trim()) return;
@@ -79,13 +82,30 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
     setEditing(null);
   };
 
-  const disconnect = (which: 'messenger' | 'instagram' | 'whatsapp') => {
+  const saveSms = () => {
+    if (!smsNumber.trim()) return;
+    onUpdate({
+      ...workspace,
+      connectedSms: {
+        phoneNumber: smsNumber.trim(),
+        provider: smsProvider,
+        status: 'active',
+        connected: true,
+        compliant10dlc: false,
+      },
+    });
+    setEditing(null);
+  };
+
+  const disconnect = (which: 'messenger' | 'instagram' | 'whatsapp' | 'sms') => {
     if (which === 'messenger') {
       onUpdate({ ...workspace, connectedPage: { ...page, pageId: '', pageName: '' } });
     } else if (which === 'instagram') {
       onUpdate({ ...workspace, connectedPage: { ...page, connectedIg: undefined } });
-    } else {
+    } else if (which === 'whatsapp') {
       onUpdate({ ...workspace, connectedPage: { ...page, connectedWhatsApp: undefined } });
+    } else {
+      onUpdate({ ...workspace, connectedSms: undefined });
     }
   };
 
@@ -93,7 +113,7 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
     'w-full bg-slate-800/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/50';
 
   const renderCard = (
-    which: 'messenger' | 'instagram' | 'whatsapp',
+    which: 'messenger' | 'instagram' | 'whatsapp' | 'sms',
     icon: React.ReactNode,
     title: string,
     description: string,
@@ -158,6 +178,30 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
               </button>
             </>
           )}
+          {which === 'sms' && (
+            <>
+              <input className={inputCls} value={smsNumber} onChange={(e) => setSmsNumber(e.target.value)} placeholder="SMS sending number (+1 ...)" />
+              <div className="flex gap-2">
+                {(['twilio', 'telnyx', 'bandwidth'] as SmsConnection['provider'][]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setSmsProvider(p)}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold capitalize cursor-pointer border ${
+                      smsProvider === p
+                        ? 'bg-amber-500/20 border-amber-500/50 text-amber-200'
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={saveSms} disabled={!smsNumber.trim()} className="w-full py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold cursor-pointer">
+                Connect SMS
+              </button>
+            </>
+          )}
           <button type="button" onClick={() => setEditing(null)} className="w-full text-[11px] text-slate-500 hover:text-slate-300 cursor-pointer">
             Cancel
           </button>
@@ -180,7 +224,7 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
         <h3 className="text-lg font-black text-white mb-1">Connect your accounts</h3>
         <p className="text-xs text-slate-400">
           Link the channels where your audience talks to you. The more you connect now, the faster your automation goes live.
-          ({connectedCount} of 3 connected)
+          ({connectedCount} of 4 connected)
         </p>
       </div>
 
@@ -208,6 +252,14 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
           'Reach customers on the world\u2019s most-used chat app.',
           whatsappConnected,
           page?.connectedWhatsApp?.phoneNumber || '',
+        )}
+        {renderCard(
+          'sms',
+          <Smartphone className="w-5 h-5 text-amber-400" />,
+          'SMS Texting',
+          'Broadcasts and follow-ups that reach every phone.',
+          smsConnected,
+          workspace.connectedSms ? `${workspace.connectedSms.phoneNumber} · ${workspace.connectedSms.provider}` : '',
         )}
       </div>
 

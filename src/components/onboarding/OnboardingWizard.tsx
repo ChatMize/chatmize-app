@@ -6,6 +6,7 @@ import { usePlans } from '../../lib/entitlements';
 import { listStarterBonuses, importSnapshotPayload } from '../../lib/snapshots';
 import { ChatMizeLogo } from '../Logo';
 import { ConnectStep } from './ConnectStep';
+import { IntegrationsStep } from './IntegrationsStep';
 import { RoutePicker } from './RoutePicker';
 
 interface OnboardingWizardProps {
@@ -14,20 +15,22 @@ interface OnboardingWizardProps {
   onComplete: () => void;
 }
 
-type Step = 'welcome' | 'connect' | 'route' | 'done';
+type Step = 'welcome' | 'connect' | 'integrations' | 'route' | 'done';
 
-const STEPS: Step[] = ['welcome', 'connect', 'route', 'done'];
+const STEPS: Step[] = ['welcome', 'connect', 'integrations', 'route', 'done'];
 const STEP_LABELS: Record<Step, string> = {
   welcome: 'Welcome',
   connect: 'Connect accounts',
+  integrations: 'Integrations',
   route: 'Choose your route',
   done: 'Launch',
 };
 
 /**
- * New-user onboarding: connect Meta/WhatsApp accounts, pick the DIY vs
- * Done-For-You track with the trade-offs spelled out, choose a tier
- * (changeable anytime in Settings), then launch.
+ * New-user onboarding: connect Meta/WhatsApp/SMS accounts, plug in the rest
+ * of the marketing stack, pick the DIY vs Done-For-You track with the
+ * trade-offs spelled out, choose a tier (changeable anytime in Settings),
+ * then launch.
  */
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   workspace,
@@ -130,15 +133,16 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 Turn your DMs into<br />revenue on autopilot
               </h1>
               <p className="text-sm text-slate-400 max-w-xl mx-auto">
-                ChatMize connects your Messenger, Instagram, and WhatsApp, then puts AI to work:
+                ChatMize connects your Messenger, Instagram, WhatsApp, and SMS, then puts AI to work:
                 answering questions, qualifying leads, and recovering sales while you sleep.
-                Three quick steps and you are live.
+                Four quick steps and you are live.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-left max-w-2xl mx-auto pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left max-w-2xl mx-auto pt-2">
                 {[
-                  { n: '1', t: 'Connect your accounts', d: 'Link your Facebook Page, Instagram, and WhatsApp.' },
-                  { n: '2', t: 'Choose your route', d: 'Run it yourself, or let our team do it for you.' },
-                  { n: '3', t: 'Launch your automation', d: 'Pick a tier and your workspace is ready.' },
+                  { n: '1', t: 'Connect your accounts', d: 'Link your Facebook Page, Instagram, WhatsApp, and SMS.' },
+                  { n: '2', t: 'Plug in your tools', d: 'Connect your email provider, CRM, and automations.' },
+                  { n: '3', t: 'Choose your route', d: 'Run it yourself, or let our team do it for you.' },
+                  { n: '4', t: 'Launch your automation', d: 'Pick a tier and your workspace is ready.' },
                 ].map((s) => (
                   <div key={s.n} className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
                     <span className="text-[10px] font-black text-purple-300 bg-purple-500/15 border border-purple-500/30 px-2 py-0.5 rounded-full">
@@ -166,8 +170,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
               <ConnectStep
                 workspace={workspace}
                 onUpdate={onUpdateWorkspace}
-                onNext={() => setStep('route')}
+                onNext={() => setStep('integrations')}
                 onBack={() => setStep('welcome')}
+              />
+            </div>
+          )}
+
+          {step === 'integrations' && (
+            <div className="pt-6">
+              <IntegrationsStep
+                onNext={() => setStep('route')}
+                onBack={() => setStep('connect')}
               />
             </div>
           )}
