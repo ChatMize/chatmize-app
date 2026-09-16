@@ -57,12 +57,36 @@ const ROUTES: Record<ModelTier, string[]> = {
 };
 
 // ---------------------------------------------------------------------------
-// Credit pricing: 1 credit = $0.001 of model cost, charged at MARGIN_MULTIPLIER.
-// Tune the margin here; the ledger records the model + tokens behind every
-// charge so pricing stays auditable.
+// Credit pricing. 1 credit = $0.001 of raw model cost (face value).
+// Margin lives on the PURCHASE side, not the spend side:
+//   - plan allowances are valued at 3x cost (generous, baked into the plan)
+//   - à la carte top-ups sell at 4x cost
+// so a plan subscriber pays 3/4 per credit: a 25% saving vs à la carte.
+// The ledger records model + tokens behind every charge, keeping true
+// margin auditable in a Super Admin report.
 // ---------------------------------------------------------------------------
-const CREDIT_USD_VALUE = 0.001;
-const MARGIN_MULTIPLIER = 3;
+export const CREDIT_PRICING = {
+  usdPerCreditFace: 0.001,
+  planMargin: 3,
+  alacarteMargin: 4,
+} as const;
+
+/** Retail price of a top-up pack: 4x raw cost. */
+export function alacartePriceForCredits(credits: number): number {
+  return credits * CREDIT_PRICING.usdPerCreditFace * CREDIT_PRICING.alacarteMargin;
+}
+
+/** Implied retail value of a plan's monthly allowance: 3x raw cost. */
+export function planValueForCredits(credits: number): number {
+  return credits * CREDIT_PRICING.usdPerCreditFace * CREDIT_PRICING.planMargin;
+}
+
+/** Suggested top-up packs (credits -> retail $). */
+export const TOPUP_PACKS = [
+  { credits: 2500, priceUsd: 10 },
+  { credits: 5000, priceUsd: 20 },
+  { credits: 25000, priceUsd: 100 },
+] as const;
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -227,7 +251,12 @@ export async function aiComplete(opts: CompleteOptions): Promise<RouteResult> {
       const costUsd =
         (out.tokensIn / 1_000_000) * spec.inputPerMtok +
         (out.tokensOut / 1_000_000) * spec.outputPerMtok;
-      const creditsCharged = Math.max(1, Math.ceil((costUsd * MARGIN_MULTIPLIER) / CREDIT_USD_VALUE));
+      // Spend at face value; margin was captured when the credits were
+      // purchased (3x in-plan, 4x à la carte).
+      const creditsCharged = Math.max(
+        1,
+        Math.ceil(costUsd / CREDIT_PRICING.usdPerCreditFace),
+      );
       const ledgerNote = [opts.note, `${spec.provider}/${spec.model}`, `${out.tokensIn}in/${out.tokensOut}out`]
         .filter(Boolean)
         .join(" | ");
