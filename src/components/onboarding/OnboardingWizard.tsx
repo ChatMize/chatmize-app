@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { Sparkles, ArrowRight, Rocket, Gift } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import confetti from 'canvas-confetti';
+import { Sparkles, ArrowRight, Rocket, Gift, Check, Plug } from 'lucide-react';
 import { WorkspaceSilo } from '../../types/workspace';
 import { Plan, PlanMode, formatPrice } from '../../lib/billing';
 import { usePlans } from '../../lib/entitlements';
 import { listStarterBonuses, importSnapshotPayload } from '../../lib/snapshots';
+import { getStoredIntegrationCredentials } from '../../data/integrations';
 import { ChatMizeLogo } from '../Logo';
 import { ConnectStep } from './ConnectStep';
 import { IntegrationsStep } from './IntegrationsStep';
@@ -43,9 +45,38 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   const [claimingBonus, setClaimingBonus] = useState(false);
   const [bonusClaimed, setBonusClaimed] = useState(false);
   const [bonusCount, setBonusCount] = useState(0);
+  const [celebrated, setCelebrated] = useState(false);
   const { plans } = usePlans();
 
   const stepIndex = STEPS.indexOf(step);
+
+  // Celebrate arrival at the launch step
+  useEffect(() => {
+    if (step === 'done' && !celebrated) {
+      setCelebrated(true);
+      const fire = (particleRatio: number, opts: confetti.Options) =>
+        confetti({ origin: { y: 0.6 }, ...opts, particleCount: Math.floor(200 * particleRatio) });
+      fire(0.25, { spread: 26, startVelocity: 55 });
+      fire(0.2, { spread: 60 });
+      fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+      fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+      fire(0.1, { spread: 120, startVelocity: 45 });
+    }
+  }, [step, celebrated]);
+
+  // Connected channel summary for the launch step
+  const connectedChannels: { label: string; detail: string }[] = [];
+  const cp = workspace.connectedPage;
+  if (cp?.pageId) connectedChannels.push({ label: 'Messenger', detail: cp.pageName || cp.pageId });
+  if (cp?.connectedIg?.connected) connectedChannels.push({ label: 'Instagram', detail: cp.connectedIg.username || '' });
+  if (cp?.connectedWhatsApp?.connected) connectedChannels.push({ label: 'WhatsApp', detail: cp.connectedWhatsApp.phoneNumber || '' });
+  if (workspace.connectedSms?.connected) connectedChannels.push({ label: 'SMS', detail: `${workspace.connectedSms.phoneNumber} · ${workspace.connectedSms.provider}` });
+  let connectedIntegrations = 0;
+  try {
+    connectedIntegrations = Object.keys(getStoredIntegrationCredentials()).length;
+  } catch {
+    connectedIntegrations = 0;
+  }
 
   const finish = (mode: PlanMode | null, plan: Plan | null) => {
     onUpdateWorkspace({
@@ -217,33 +248,65 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 <Rocket className="w-8 h-8 text-emerald-300" />
               </div>
               <h1 className="text-3xl font-black text-white">You are all set</h1>
-              {chosenPlan ? (
-                <div className="max-w-md mx-auto rounded-3xl border border-white/10 bg-slate-900/60 p-5 text-left space-y-2">
-                  <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Your setup</p>
-                  <p className="text-sm text-slate-300">
-                    <span className="text-slate-500">Route:</span>{' '}
-                    <span className="font-bold text-white">{chosenMode === 'dfu' ? 'Done-For-You' : 'DIY Self-Service'}</span>
-                  </p>
-                  <p className="text-sm text-slate-300">
-                    <span className="text-slate-500">Tier:</span>{' '}
-                    <span className="font-bold text-white">{chosenPlan.name}</span>
-                    <span className="text-slate-400"> · {formatPrice(chosenPlan.priceMonthlyCents)}/month</span>
-                  </p>
-                  <p className="text-[11px] text-slate-500">
-                    {chosenPlan.aiCreditsMonthly > 0 ? (
-                      <>{chosenPlan.aiCreditsMonthly.toLocaleString()} AI credits/month included. </>
-                    ) : (
-                      <>Manual setup, no AI credits. </>
+              <p className="text-sm text-slate-400 max-w-md mx-auto">
+                Your workspace is live. Here is everything you wired up{chosenPlan ? '' : ' — pick your plan anytime in Settings → Plan'}.
+              </p>
+
+              <div className="max-w-md mx-auto rounded-3xl border border-white/10 bg-slate-900/60 p-5 text-left space-y-3">
+                <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Your setup</p>
+                {(chosenMode || chosenPlan) && (
+                  <>
+                    {chosenMode && (
+                      <p className="text-sm text-slate-300">
+                        <span className="text-slate-500">Route:</span>{' '}
+                        <span className="font-bold text-white">{chosenMode === 'dfu' ? 'Done-For-You' : 'DIY Self-Service'}</span>
+                      </p>
                     )}
-                    Change or cancel anytime in Settings → Plan.
+                    {chosenPlan && (
+                      <p className="text-sm text-slate-300">
+                        <span className="text-slate-500">Tier:</span>{' '}
+                        <span className="font-bold text-white">{chosenPlan.name}</span>
+                        <span className="text-slate-400"> · {formatPrice(chosenPlan.priceMonthlyCents)}/month</span>
+                      </p>
+                    )}
+                  </>
+                )}
+                {connectedChannels.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                      Channels ({connectedChannels.length})
+                    </p>
+                    <ul className="space-y-1.5">
+                      {connectedChannels.map((c) => (
+                        <li key={c.label} className="flex items-center gap-2 text-xs text-slate-300">
+                          <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span className="font-bold text-white">{c.label}</span>
+                          <span className="text-slate-500 truncate">{c.detail}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {connectedIntegrations > 0 && (
+                  <p className="text-sm text-slate-300 flex items-center gap-2">
+                    <Plug className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                    <span>
+                      <span className="font-bold text-white">{connectedIntegrations}</span>{' '}
+                      <span className="text-slate-500">integration{connectedIntegrations === 1 ? '' : 's'} connected</span>
+                    </span>
                   </p>
-                </div>
-              ) : (
-                <p className="text-sm text-slate-400 max-w-md mx-auto">
-                  You skipped choosing a route. Pick your plan anytime in Settings → Plan.
-                  Your workspace is ready to explore.
-                </p>
-              )}
+                )}
+                {connectedChannels.length === 0 && connectedIntegrations === 0 && !chosenPlan && (
+                  <p className="text-xs text-slate-500">
+                    You skipped the setup steps. Connect channels and integrations anytime in Settings.
+                  </p>
+                )}
+                {chosenPlan && chosenPlan.aiCreditsMonthly > 0 && (
+                  <p className="text-[11px] text-slate-500 border-t border-white/10 pt-3">
+                    {chosenPlan.aiCreditsMonthly.toLocaleString()} AI credits/month included. Change or cancel anytime in Settings → Plan.
+                  </p>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => finish(chosenMode, chosenPlan)}
