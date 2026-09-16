@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { createHmac, timingSafeEqual } from "crypto";
 import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
@@ -30,6 +31,30 @@ import {
   Channel,
 } from "./store";
 import { CHANNEL_SENDERS } from "./send";
+import {
+  TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN,
+} from "./secrets";
+import {
+  normalizePhone,
+  calculateSegments,
+  classifyKeyword,
+  complianceReply,
+  provisionTwilioNumber,
+  twilioSendSms,
+  getSmsConnection,
+  saveSmsConnection,
+  ensureAllowanceMonth,
+  getOptIn,
+  setOptIn,
+  countOptIns,
+  logSms,
+  chargeForSend,
+  persistInboundSms,
+  persistOutboundSms,
+  SMS_CREDITS_PER_SEGMENT,
+  SmsConnection,
+} from "./sms";
 
 initializeApp();
 
@@ -278,6 +303,398 @@ export const resetMonthlyCredits = onSchedule(
   { region: REGION, schedule: "0 0 1 * *", timeZone: "America/Phoenix" },
   async () => {
     await resetAllMonthlyCredits();
+  },
+);
+
+// ---------------------------------------------------------------------------
+// SMS via Twilio (ChatMize-owned account; billed via allowance then credits)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the workspace's SMS plan entitlement. Workspaces without an
+ * assigned plan are grandfathered in (allowed, zero allowance, pay per
+ * segment in credits). A plan without the `sms` feature is denied.
+ */
+async function smsPlanAllowance(workspaceId: string): Promise<number> {
+  const ws = await db().collection("workspaces").doc(workspaceId).get();
+  const planId = ws.data()?.planId as string | undefined;
+  if (!planId) {
+    logger.info("SMS: workspace has no plan; grandfathered with zero allowance", { workspaceId });
+    return 0;
+  }
+  const plan = await db().collection("plans").doc(planId).get();
+  const data = plan.data() as { features?: string[]; smsAllowanceMonthly?: number } | undefined;
+  if (!data?.features?.includes("sms")) {
+    throw new HttpsError("permission-denied", "Your plan does not include SMS.");
+  }
+  return data.smsAllowanceMonthly ?? 0;
+}
+
+/** Authenticated callable: real SMS connection state for the Settings UI. */
+export const getSmsStatus = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const conn = await ensureAllowanceMonth(workspaceId);
+  const optedIn = await countOptIns(workspaceId);
+  if (!conn) {
+    return { connected: false as const, optedIn };
+  }
+  return {
+    connected: true as const,
+    phoneNumber: conn.phoneNumber,
+    status: conn.status,
+    tenDlc: conn.compliance.tenDlc,
+    complianceNote: conn.compliance.note,
+    monthlyAllowance: conn.monthlyAllowance,
+    usedThisMonth: conn.usedThisMonth,
+    optedIn,
+  };
+});
+
+interface ProvisionSmsData {
+  workspaceId?: string;
+  /** Optional NANP area code for a local long-code number. Omit for toll-free. */
+  areaCode?: string;
+}
+
+/**
+ * Authenticated callable: provision the workspace's Twilio number.
+ * One number per workspace; re-running returns the existing one.
+ */
+export const provisionSmsNumber = onCall(
+  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN] },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    const { workspaceId, areaCode } = (request.data ?? {}) as ProvisionSmsData;
+    if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+    await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+
+    const existing = await getSmsConnection(workspaceId);
+    if (existing && existing.status === "active") {
+      return { phoneNumber: existing.phoneNumber, alreadyProvisioned: true };
+    }
+
+    const allowance = await smsPlanAllowance(workspaceId);
+    const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT ?? "";
+    const webhookUrl = `https://us-west2-${projectId}.cloudfunctions.net/smsWebhook?workspace=${workspaceId}`;
+    const { phoneNumber, sid } = await provisionTwilioNumber(workspaceId, webhookUrl, areaCode);
+
+    const conn: SmsConnection = {
+      workspaceId,
+      phoneNumber,
+      twilioSid: sid,
+      status: "active",
+      compliance: areaCode
+        ? {
+            tenDlc: "pending",
+            note: "Number active. 10DLC brand/campaign registration is completed by the ChatMize team before high-volume sending.",
+          }
+        : {
+            tenDlc: "not_required",
+            note: "Toll-free number: no 10DLC registration required. Toll-free verification is handled by the ChatMize team.",
+          },
+      monthlyAllowance: allowance,
+      usedThisMonth: 0,
+      usageMonth: new Date().toISOString().slice(0, 7),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await saveSmsConnection(conn);
+    logger.info("SMS number provisioned for workspace", { workspaceId, phoneNumber });
+    return { phoneNumber, alreadyProvisioned: false };
+  },
+);
+
+interface SetSmsOptInData {
+  workspaceId?: string;
+  phone?: string;
+  optedIn?: boolean;
+  source?: string;
+}
+
+/** Authenticated callable: record a contact's SMS opt-in/out (phone capture in flows). */
+export const setSmsOptIn = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, phone, optedIn, source } = (request.data ?? {}) as SetSmsOptInData;
+  if (!workspaceId || !phone || typeof optedIn !== "boolean") {
+    throw new HttpsError("invalid-argument", "workspaceId, phone, and optedIn are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const e164 = normalizePhone(phone);
+  if (!e164) throw new HttpsError("invalid-argument", "That phone number is not valid.");
+  await setOptIn(workspaceId, e164, optedIn, source ?? "manual");
+  return { ok: true, phone: e164, optedIn };
+});
+
+interface SendSmsData {
+  workspaceId?: string;
+  to?: string;
+  body?: string;
+  broadcastId?: string;
+}
+
+/**
+ * Authenticated callable: send one SMS. Requires an active number, an
+ * opted-in recipient, and either allowance or credits to cover the segments.
+ */
+export const sendSms = onCall(
+  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN] },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    const { workspaceId, to, body, broadcastId } = (request.data ?? {}) as SendSmsData;
+    if (!workspaceId || !to || !body) {
+      throw new HttpsError("invalid-argument", "workspaceId, to, and body are required.");
+    }
+    if (body.length > 1600) {
+      throw new HttpsError("invalid-argument", "Message is too long (max 1600 characters).");
+    }
+    await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+    await smsPlanAllowance(workspaceId);
+
+    const conn = await ensureAllowanceMonth(workspaceId);
+    if (!conn || conn.status !== "active") {
+      throw new HttpsError("failed-precondition", "SMS is not enabled for this workspace yet.");
+    }
+    const e164 = normalizePhone(to);
+    if (!e164) throw new HttpsError("invalid-argument", "That recipient number is not valid.");
+    const optIn = await getOptIn(workspaceId, e164);
+    if (!optIn?.optedIn) {
+      throw new HttpsError(
+        "failed-precondition",
+        "This contact has not opted in to SMS. Collect consent before sending.",
+      );
+    }
+
+    const segments = calculateSegments(body);
+    let charged: { chargedTo: "allowance" | "credits"; creditsCharged: number } =
+      { chargedTo: "allowance", creditsCharged: 0 };
+    try {
+      charged = await chargeForSend(workspaceId, segments, broadcastId ? `sms broadcast ${broadcastId}` : "sms send");
+    } catch (err) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "SMS allowance and credits are exhausted. Top up credits to keep sending.",
+      );
+    }
+
+    try {
+      const twilioSid = await twilioSendSms(conn.phoneNumber, e164, body);
+      await persistOutboundSms(workspaceId, conn.phoneNumber, e164, body, twilioSid);
+      await logSms({
+        workspaceId,
+        direction: "outbound",
+        to: e164,
+        from: conn.phoneNumber,
+        body,
+        segments,
+        creditsCharged: charged.creditsCharged,
+        twilioSid,
+        status: "sent",
+        broadcastId,
+      });
+      return { ok: true, twilioSid, segments, chargedTo: charged.chargedTo };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Twilio send failed.";
+      await logSms({
+        workspaceId,
+        direction: "outbound",
+        to: e164,
+        from: conn.phoneNumber,
+        body,
+        segments,
+        creditsCharged: 0,
+        status: "failed",
+        error: message,
+        broadcastId,
+      });
+      logger.error("SMS send failed", { workspaceId, error: message });
+      throw new HttpsError("internal", message);
+    }
+  },
+);
+
+interface SendSmsBroadcastData {
+  workspaceId?: string;
+  body?: string;
+  /** Explicit recipients. When omitted, broadcasts to every opted-in number. */
+  phones?: string[];
+}
+
+/**
+ * Authenticated callable: broadcast to opted-in numbers. Sequential sends
+ * with per-recipient opt-in re-checks; returns a delivery report.
+ */
+export const sendSmsBroadcast = onCall(
+  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN], timeoutSeconds: 540 },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    const { workspaceId, body, phones } = (request.data ?? {}) as SendSmsBroadcastData;
+    if (!workspaceId || !body) {
+      throw new HttpsError("invalid-argument", "workspaceId and body are required.");
+    }
+    if (body.length > 1600) {
+      throw new HttpsError("invalid-argument", "Message is too long (max 1600 characters).");
+    }
+    await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+    await smsPlanAllowance(workspaceId);
+
+    const conn = await ensureAllowanceMonth(workspaceId);
+    if (!conn || conn.status !== "active") {
+      throw new HttpsError("failed-precondition", "SMS is not enabled for this workspace yet.");
+    }
+
+    let recipients: string[];
+    if (phones && phones.length > 0) {
+      recipients = [...new Set(phones.map((p) => normalizePhone(p)).filter((p): p is string => !!p))];
+    } else {
+      const snap = await db()
+        .collection("sms_optins")
+        .where("workspaceId", "==", workspaceId)
+        .where("optedIn", "==", true)
+        .get();
+      recipients = snap.docs.map((d) => (d.data() as { phone: string }).phone);
+    }
+    if (recipients.length === 0) {
+      throw new HttpsError("failed-precondition", "No opted-in recipients to send to.");
+    }
+    if (recipients.length > 5000) {
+      throw new HttpsError("invalid-argument", "Broadcasts are limited to 5,000 recipients per run.");
+    }
+
+    const broadcastId = `bc_${Date.now().toString(36)}`;
+    const segments = calculateSegments(body);
+    let sent = 0;
+    let failed = 0;
+    let skipped = 0;
+    let creditsCharged = 0;
+    const errors: string[] = [];
+
+    for (const to of recipients) {
+      const optIn = await getOptIn(workspaceId, to);
+      if (!optIn?.optedIn) {
+        skipped += 1;
+        continue;
+      }
+      try {
+        const charged = await chargeForSend(workspaceId, segments, `sms broadcast ${broadcastId}`);
+        const twilioSid = await twilioSendSms(conn.phoneNumber, to, body);
+        creditsCharged += charged.creditsCharged;
+        sent += 1;
+        await persistOutboundSms(workspaceId, conn.phoneNumber, to, body, twilioSid);
+        await logSms({
+          workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
+          segments, creditsCharged: charged.creditsCharged, twilioSid, status: "sent", broadcastId,
+        });
+      } catch (err) {
+        failed += 1;
+        const message = err instanceof Error ? err.message : "send failed";
+        if (errors.length < 5) errors.push(`${to}: ${message}`);
+        await logSms({
+          workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
+          segments, creditsCharged: 0, status: "failed", error: message, broadcastId,
+        });
+        if (message.includes("exhausted") || message.includes("insufficient credits")) {
+          break; // stop burning through the list when billing is the problem
+        }
+      }
+    }
+
+    logger.info("SMS broadcast complete", { workspaceId, broadcastId, sent, failed, skipped });
+    return { ok: true, broadcastId, sent, failed, skipped, creditsCharged, errors };
+  },
+);
+
+/** Verify the X-Twilio-Signature header for an inbound webhook request. */
+function verifyTwilioSignature(req: {
+  headers: Record<string, string | string[] | undefined>;
+  originalUrl: string;
+  body: Record<string, string>;
+}): boolean {
+  const signature = req.headers["x-twilio-signature"];
+  if (typeof signature !== "string") return false;
+  const proto = (req.headers["x-forwarded-proto"] as string) || "https";
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  const url = `${proto}://${host}${req.originalUrl}`;
+  const authToken = TWILIO_AUTH_TOKEN.value();
+  const data =
+    url +
+    Object.keys(req.body)
+      .sort()
+      .map((k) => k + req.body[k])
+      .join("");
+  const expected = createHmac("sha1", authToken).update(data, "utf8").digest("base64");
+  if (expected.length !== signature.length) return false;
+  return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+}
+
+/**
+ * Twilio inbound webhook: replies land in the conversation thread;
+ * STOP/START/HELP keywords are handled for TCPA compliance.
+ *
+ * Configure as the number's SmsUrl:
+ *   https://us-west2-<project>.cloudfunctions.net/smsWebhook?workspace=<workspaceId>
+ */
+export const smsWebhook = onRequest(
+  { region: REGION, secrets: [TWILIO_AUTH_TOKEN] },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).send("Method not allowed");
+      return;
+    }
+    const workspaceId = req.query.workspace as string | undefined;
+    if (!workspaceId || !(await resolveWorkspace(workspaceId))) {
+      res.status(400).send("Unknown workspace");
+      return;
+    }
+    if (!verifyTwilioSignature(req as any)) {
+      logger.warn("SMS webhook: invalid Twilio signature", { workspaceId });
+      res.status(403).send("Forbidden");
+      return;
+    }
+
+    const from = normalizePhone(String(req.body.From ?? ""));
+    const to = String(req.body.To ?? "");
+    const body = String(req.body.Body ?? "");
+    const twilioSid = String(req.body.MessageSid ?? "");
+    if (!from) {
+      res.status(200).send("<Response/>");
+      return;
+    }
+
+    try {
+      await persistInboundSms(workspaceId, from, to, body, twilioSid || `in_${Date.now()}`);
+      await logSms({
+        workspaceId, direction: "inbound", to: from, from: to, body,
+        segments: calculateSegments(body), creditsCharged: 0, twilioSid, status: "received",
+      });
+
+      const keyword = classifyKeyword(body);
+      if (keyword) {
+        const conn = await getSmsConnection(workspaceId);
+        if (keyword === "opt_out") {
+          await setOptIn(workspaceId, from, false, "keyword_stop");
+        } else if (keyword === "opt_in") {
+          await setOptIn(workspaceId, from, true, "keyword_start");
+        }
+        if (conn) {
+          // Compliance replies are carrier-required and free to the workspace.
+          await twilioSendSms(conn.phoneNumber, from, complianceReply(keyword));
+        }
+      }
+    } catch (err) {
+      logger.error("SMS webhook handling failed", {
+        workspaceId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    res.status(200).set("Content-Type", "text/xml").send("<Response/>");
   },
 );
 

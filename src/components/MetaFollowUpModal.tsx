@@ -27,6 +27,7 @@ import {
   Zap 
 } from 'lucide-react';
 import { ContactRecord, updateContactField } from '../lib/firebase';
+import { sendSms, setSmsOptIn } from '../lib/sms';
 import { 
   MetaMessageTag, 
   validateMessageTagCompliance, 
@@ -35,11 +36,12 @@ import {
 
 interface MetaFollowUpModalProps {
   contact: ContactRecord;
+  workspaceId?: string;
   onClose: () => void;
   onSuccess?: () => void;
 }
 
-export function MetaFollowUpModal({ contact, onClose, onSuccess }: MetaFollowUpModalProps) {
+export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: MetaFollowUpModalProps) {
   const now = Date.now();
   const windowExpiryTime = contact.messagingWindowExpiresAt ? new Date(contact.messagingWindowExpiresAt).getTime() : 0;
   const is24hActive = windowExpiryTime > now;
@@ -93,16 +95,29 @@ export function MetaFollowUpModal({ contact, onClose, onSuccess }: MetaFollowUpM
   // Sending state
   const [isSending, setIsSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // Policy validation for Message Tag
   const tagValidation = validateMessageTagCompliance(messageBody, selectedTag);
 
   const handleSend = async () => {
     setIsSending(true);
+    setSendError(null);
 
     try {
-      // Simulate real Meta Graph API call to /v19.0/me/messages with appropriate payload
-      await new Promise(r => setTimeout(r, 600));
+      // Cross-channel SMS fallback sends for real through the backend
+      // (Twilio number, opt-in enforcement, credit billing).
+      if (selectedMode === 'cross_channel' && fallbackChannel === 'sms') {
+        if (!workspaceId) throw new Error('Workspace is not available for SMS sending.');
+        if (!contact.phone) throw new Error('This contact has no phone number on file.');
+        if (contact.smsConsent) {
+          await setSmsOptIn(workspaceId, contact.phone, true, 'contact_record');
+        }
+        await sendSms(workspaceId, contact.phone, fallbackText);
+      } else {
+        // Simulate real Meta Graph API call to /v19.0/me/messages with appropriate payload
+        await new Promise(r => setTimeout(r, 600));
+      }
 
       // Update contact in Firestore
       const updates: Partial<ContactRecord> = {
@@ -125,7 +140,10 @@ export function MetaFollowUpModal({ contact, onClose, onSuccess }: MetaFollowUpM
         onClose();
       }, 1200);
     } catch (err) {
-      console.error('Failed to dispatch Meta follow-up:', err);
+      console.error('Failed to dispatch follow-up:', err);
+      const message = err instanceof Error ? err.message : 'Send failed.';
+      // Callable errors come through as "FirebaseError: ..."; surface the human part.
+      setSendError(message.replace(/^.*?\]\s*/, '').replace(/^FirebaseError:\s*/, ''));
       setIsSending(false);
     }
   };
@@ -576,6 +594,10 @@ export function MetaFollowUpModal({ contact, onClose, onSuccess }: MetaFollowUpM
             >
               Cancel
             </button>
+
+            {sendError && (
+              <p className="text-[11px] text-red-400 max-w-[220px] leading-snug">{sendError}</p>
+            )}
 
             <button
               onClick={handleSend}

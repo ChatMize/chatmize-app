@@ -71,7 +71,7 @@ interface DynamicVarEntry {
   val: string;
 }
 
-export function AudienceView() {
+export function AudienceView({ workspaceId }: { workspaceId?: string }) {
   const [contacts, setContacts] = useState<ContactRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -2208,6 +2208,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
       {metaFollowUpContact && (
         <MetaFollowUpModal
           contact={metaFollowUpContact}
+          workspaceId={workspaceId}
           onClose={() => setMetaFollowUpContact(null)}
         />
       )}

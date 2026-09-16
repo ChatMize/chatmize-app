@@ -7,7 +7,8 @@ export type CreditReason =
   | "admin_adjust"
   | "copilot_session"
   | "ai_reply"
-  | "ai_content";
+  | "ai_content"
+  | "sms_send";
 
 export interface CreditBalance {
   workspaceId: string;

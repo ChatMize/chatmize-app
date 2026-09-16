@@ -90,6 +90,8 @@ export interface Plan {
   contactLimit: number | null;
   /** AI credits granted each month. DFU plans draw the service team's usage from this pool. */
   aiCreditsMonthly: number;
+  /** SMS segments included each month before credit billing kicks in. Draft default. */
+  smsAllowanceMonthly: number;
   features: PlanFeature[];
   /** DFU service line items, e.g. "We build your first 3 flows". */
   serviceInclusions: string[];
@@ -115,6 +117,7 @@ export const DEFAULT_PLANS: Plan[] = [
     priceMonthlyCents: 4900,
     contactLimit: 2500,
     aiCreditsMonthly: 0,
+    smsAllowanceMonthly: 0,
     features: ["messenger", "instagram", "flow_builder"],
     serviceInclusions: [],
     color: "from-blue-500/20 to-cyan-500/20 border-cyan-500/30",
@@ -130,6 +133,7 @@ export const DEFAULT_PLANS: Plan[] = [
     priceMonthlyCents: 12900,
     contactLimit: 10000,
     aiCreditsMonthly: 10000,
+    smsAllowanceMonthly: 500,
     features: [
       "messenger",
       "instagram",
@@ -157,6 +161,7 @@ export const DEFAULT_PLANS: Plan[] = [
     priceMonthlyCents: 29900,
     contactLimit: null,
     aiCreditsMonthly: 50000,
+    smsAllowanceMonthly: 5000,
     features: [
       "messenger",
       "instagram",
@@ -231,6 +236,11 @@ export function formatPrice(cents: number): string {
 
 const plansRef = collection(db, "plans");
 
+/** Backfill defaults for plan docs written before a field existed. */
+function normalizePlan(id: string, data: Omit<Plan, "id">): Plan {
+  return { id, smsAllowanceMonthly: 0, ...data };
+}
+
 export function subscribeToPlans(
   onUpdate: (plans: Plan[]) => void,
   onError?: (err: Error) => void,
@@ -239,7 +249,7 @@ export function subscribeToPlans(
     plansRef,
     (snap) => {
       const plans: Plan[] = [];
-      snap.forEach((d) => plans.push({ id: d.id, ...(d.data() as Omit<Plan, "id">) }));
+      snap.forEach((d) => plans.push(normalizePlan(d.id, d.data() as Omit<Plan, "id">)));
       onUpdate(plans);
     },
     (err) => {
@@ -277,7 +287,7 @@ export function subscribeToPublicPlans(
     q,
     (snap) => {
       const plans: Plan[] = [];
-      snap.forEach((d) => plans.push({ id: d.id, ...(d.data() as Omit<Plan, "id">) }));
+      snap.forEach((d) => plans.push(normalizePlan(d.id, d.data() as Omit<Plan, "id">)));
       onUpdate(plans);
     },
     (err) => {

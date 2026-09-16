@@ -20,6 +20,7 @@ import {
   Maximize2, 
   MessageCircle, 
   MessageSquare, 
+  MessageSquareText,
   Minus, 
   MoreHorizontal,
   MousePointer2, 
@@ -166,6 +167,9 @@ export interface FlowNode {
   buttons?: string[];
   quickReplies?: string[];
   actionTags?: string[];
+  // SMS action (sent via the workspace's provisioned Twilio number; requires opt-in)
+  smsMessage?: string;
+  smsCollectOptIn?: boolean;
   delayText?: string;
   delayHours?: number;
   conditionText?: string;
@@ -2707,6 +2711,18 @@ const NodeCard = React.memo(function NodeCard({
                 <span className="truncate">{tag}</span>
               </div>
             ))}
+          </div>
+        )}
+
+        {isAction && node.smsMessage && (
+          <div className="text-xs bg-amber-500/10 text-amber-100 px-2.5 py-1.5 rounded-lg border border-amber-500/20 flex items-start gap-2 mt-1.5">
+            <MessageSquareText className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <span className="line-clamp-2">SMS: {node.smsMessage}</span>
+          </div>
+        )}
+        {isAction && node.smsCollectOptIn && (
+          <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 mt-1.5">
+            Collects SMS opt-in
           </div>
         )}
 
@@ -5473,6 +5489,34 @@ function NodeEditor({
               >
                 <Plus className="w-3.5 h-3.5" /> Add
               </button>
+            </div>
+
+            {/* SMS action: sent via the workspace's Twilio number; requires opt-in */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <MessageSquareText className="w-3 h-3 text-amber-400" />
+                <span>Send SMS</span>
+              </label>
+              <textarea
+                value={node.smsMessage || ''}
+                onChange={(e) => onAutoUpdate({ smsMessage: e.target.value })}
+                rows={3}
+                maxLength={1600}
+                placeholder="Text message to send (leave empty for no SMS)..."
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-amber-500 transition-colors resize-none"
+              />
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!node.smsCollectOptIn}
+                  onChange={(e) => onAutoUpdate({ smsCollectOptIn: e.target.checked })}
+                  className="accent-amber-500"
+                />
+                Collect SMS opt-in at this step (asks for phone number + consent)
+              </label>
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Sends only to contacts who opted in. STOP/START/HELP are handled automatically.
+              </p>
             </div>
 
             {/* Active Integrations Cascading Configuration: Connection -> List -> Tags */}

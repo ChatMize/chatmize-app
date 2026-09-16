@@ -26,6 +26,7 @@ const blankPlan = (mode: PlanMode = 'diy'): Plan => ({
   priceMonthlyCents: 4900,
   contactLimit: 2500,
   aiCreditsMonthly: 1000,
+  smsAllowanceMonthly: 0,
   features: ['messenger', 'instagram', 'flow_builder'],
   serviceInclusions: [],
   isPublic: true,
@@ -152,6 +153,14 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, defaultM
               type="number" min={0} className={inputCls}
               value={form.aiCreditsMonthly}
               onChange={(e) => set('aiCreditsMonthly', Math.max(0, Number(e.target.value) || 0))}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>SMS segments / month</label>
+            <input
+              type="number" min={0} className={inputCls}
+              value={form.smsAllowanceMonthly ?? 0}
+              onChange={(e) => set('smsAllowanceMonthly', Math.max(0, Number(e.target.value) || 0))}
             />
           </div>
         </div>

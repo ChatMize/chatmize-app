@@ -39,6 +39,7 @@ import {
 export type { IntegrationApp };
 export { CHATMIZE_INTEGRATIONS };
 import { WorkspaceSilo } from '../types/workspace';
+import { SmsChannelCard } from '../components/channels/SmsChannelCard';
 import { usePlans, usePlan } from '../lib/entitlements';
 import { Plan, PlanMode, formatPrice } from '../lib/billing';
 import { RoutePicker } from '../components/onboarding/RoutePicker';
@@ -191,16 +192,6 @@ export function SettingsView({
       icon: <Globe className="w-6 h-6 text-cyan-400" />,
       connected: true,
       subscribers: '1,420 active contacts',
-      tier: 'expansion'
-    },
-    {
-      id: 'sms',
-      name: 'SMS & Mobile 10DLC Trunk',
-      accountName: '+1 (833) 734-6283',
-      description: 'Dedicated phone number for 2-way conversational bots, broadcast blasts, and automatic re-engagement when Meta 24-hr window expires.',
-      icon: <Smartphone className="w-6 h-6 text-amber-400" />,
-      connected: true,
-      subscribers: '950 active contacts',
       tier: 'expansion'
     },
   ]);
@@ -530,6 +521,7 @@ export function SettingsView({
                 </div>
               </div>
             ))}
+            {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
           </div>
         </div>
       )}

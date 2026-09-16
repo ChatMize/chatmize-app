@@ -70,6 +70,22 @@ service cloud.firestore {
         && (resource.data.createdByUid == request.auth.uid || isSuperAdmin());
     }
 
+    // SMS: connection + logs are backend-written; members can read their
+    // own workspace. Opt-ins are member-readable (audience counts).
+    match /sms_connections/{workspaceId} {
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+    match /sms_optins/{optInId} {
+      allow read: if isSignedIn()
+        && (isWorkspaceMember(resource.data.workspaceId) || isSuperAdmin());
+      allow write: if false;
+    }
+    match /sms_logs/{workspaceId}/entries/{entryId} {
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+
     // Legacy top-level collections (pre-tenancy data model). Authenticated-only;
     // Phase 3 migrates these under workspaces/{workspaceId}/... at which point
     // these branches are removed.

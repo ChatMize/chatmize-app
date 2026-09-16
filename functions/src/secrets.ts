@@ -7,6 +7,8 @@ import { defineSecret } from "firebase-functions/params";
 
 export const META_APP_SECRET = defineSecret("META_APP_SECRET");
 export const META_VERIFY_TOKEN = defineSecret("META_VERIFY_TOKEN");
+export const TWILIO_ACCOUNT_SID = defineSecret("TWILIO_ACCOUNT_SID");
+export const TWILIO_AUTH_TOKEN = defineSecret("TWILIO_AUTH_TOKEN");
 
 // Page-scoped access tokens are stored per workspace so each tenant's Meta
 // assets stay isolated. The secret name maps 1:1 to a workspace id; the
@@ -21,6 +23,8 @@ export const ALL_SECRETS = [
   META_PAGE_TOKEN_DEFAULT,
   WHATSAPP_TOKEN_DEFAULT,
   WHATSAPP_PHONE_NUMBER_ID,
+  TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN,
 ];
 
 /** Resolve the page token secret for a workspace (defaults when unmapped). */

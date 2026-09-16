@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   BellRing,
+  MessageSquareText,
   LogOut,
   ShieldCheck,
   ChevronDown,
@@ -61,6 +62,7 @@ import { TopNavBar } from './components/navigation/TopNavBar';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { SnapshotImportView } from './views/SnapshotImportView';
 import { SnapshotLibraryView } from './views/SnapshotLibraryView';
+import { SmsBroadcastView } from './views/SmsBroadcastView';
 import { WorkspaceSilo } from './types/workspace';
 import { DEFAULT_WORKSPACES } from './data/workspaceDefaults';
 
@@ -228,7 +230,7 @@ export default function App() {
       case 'agents':
         return <AIAgents />;
       case 'audience':
-        return <AudienceView />;
+        return <AudienceView workspaceId={activeWorkspace?.id} />;
       case 'conversations':
         return (
           <LiveConversationsView
@@ -321,6 +323,13 @@ export default function App() {
         );
       case 'broadcasts':
         return <RecurringNotificationBroadcastHub />;
+      case 'sms-broadcast':
+        return (
+          <SmsBroadcastView
+            workspace={activeWorkspace}
+            onEnableSms={() => setActiveTab('settings')}
+          />
+        );
       case 'super-admin':
         return (
           <SuperAdminView 
@@ -735,6 +744,14 @@ export default function App() {
               badge="Meta RN" 
               active={activeTab === 'broadcasts'} 
               onClick={() => setActiveTab('broadcasts')} 
+              collapsed={isSidebarCollapsed} 
+            />
+
+            <NavItem 
+              icon={<MessageSquareText className="w-4 h-4 text-amber-400" />} 
+              label="SMS Blasts" 
+              active={activeTab === 'sms-broadcast'} 
+              onClick={() => setActiveTab('sms-broadcast')} 
               collapsed={isSidebarCollapsed} 
             />
           </div>

@@ -14,6 +14,18 @@ export interface SmsConnection {
   autoKeywords?: string[];
 }
 
+/** Real SMS connection state returned by the backend (getSmsStatus). */
+export interface SmsStatus {
+  connected: boolean;
+  phoneNumber?: string;
+  status?: 'provisioning' | 'active' | 'suspended';
+  tenDlc?: 'not_required' | 'pending' | 'approved';
+  complianceNote?: string;
+  monthlyAllowance?: number;
+  usedThisMonth?: number;
+  optedIn?: number;
+}
+
 export interface StandaloneChatbotConnection {
   enabled: boolean;
   status: 'active' | 'deactivated';

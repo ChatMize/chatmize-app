@@ -32,13 +32,13 @@ export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
         status: 'active'
       },
       connectedSms: {
-        phoneNumber: '+1 (833) 734-6283',
+        phoneNumber: '',
         provider: 'twilio',
-        status: 'active',
-        connected: true,
-        compliant10dlc: true,
-        monthlyCredits: 25000,
-        autoKeywords: ['STOP', 'START', 'HELP', 'CHATMIZE', 'DEMO']
+        status: 'disabled',
+        connected: false,
+        compliant10dlc: false,
+        monthlyCredits: 0,
+        autoKeywords: ['STOP', 'START', 'HELP']
       },
       connectedStandaloneChat: {
         enabled: true,
@@ -57,10 +57,10 @@ export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
     connectedSms: {
       phoneNumber: '+1 (833) 734-6283',
       provider: 'twilio',
-      status: 'active',
-      connected: true,
-      compliant10dlc: true,
-      monthlyCredits: 25000,
+      status: 'disabled',
+      connected: false,
+      compliant10dlc: false,
+      monthlyCredits: 0,
       autoKeywords: ['STOP', 'START', 'HELP', 'CHATMIZE', 'DEMO']
     },
     connectedStandaloneChat: {
@@ -124,10 +124,10 @@ export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
       connectedSms: {
         phoneNumber: '+1 (512) 555-0199',
         provider: 'twilio',
-        status: 'active',
-        connected: true,
-        compliant10dlc: true,
-        monthlyCredits: 5000,
+        status: 'disabled',
+        connected: false,
+        compliant10dlc: false,
+        monthlyCredits: 0,
         autoKeywords: ['STOP', 'START', 'APPOINTMENT', 'CLEANING']
       },
       connectedStandaloneChat: {
@@ -147,10 +147,10 @@ export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
     connectedSms: {
       phoneNumber: '+1 (512) 555-0199',
       provider: 'twilio',
-      status: 'active',
-      connected: true,
-      compliant10dlc: true,
-      monthlyCredits: 5000,
+      status: 'disabled',
+      connected: false,
+      compliant10dlc: false,
+      monthlyCredits: 0,
       autoKeywords: ['STOP', 'START', 'APPOINTMENT', 'CLEANING']
     },
     connectedStandaloneChat: {
@@ -212,10 +212,10 @@ export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
       connectedSms: {
         phoneNumber: '+1 (310) 555-7427',
         provider: 'twilio',
-        status: 'active',
-        connected: true,
-        compliant10dlc: true,
-        monthlyCredits: 10000,
+        status: 'disabled',
+        connected: false,
+        compliant10dlc: false,
+        monthlyCredits: 0,
         autoKeywords: ['VIP', 'REPLAY', 'MASTERMIND', 'STOP']
       },
       connectedStandaloneChat: {
@@ -234,10 +234,10 @@ export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
     connectedSms: {
       phoneNumber: '+1 (310) 555-7427',
       provider: 'twilio',
-      status: 'active',
-      connected: true,
-      compliant10dlc: true,
-      monthlyCredits: 10000,
+      status: 'disabled',
+      connected: false,
+      compliant10dlc: false,
+      monthlyCredits: 0,
       autoKeywords: ['VIP', 'REPLAY', 'MASTERMIND', 'STOP']
     },
     connectedStandaloneChat: {
@@ -298,10 +298,10 @@ export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
       connectedSms: {
         phoneNumber: '+1 (415) 555-8821',
         provider: 'twilio',
-        status: 'active',
-        connected: true,
-        compliant10dlc: true,
-        monthlyCredits: 15000,
+        status: 'disabled',
+        connected: false,
+        compliant10dlc: false,
+        monthlyCredits: 0,
         autoKeywords: ['DEALS', 'DROPS', 'CART', 'STOP']
       },
       connectedStandaloneChat: {
@@ -320,10 +320,10 @@ export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
     connectedSms: {
       phoneNumber: '+1 (415) 555-8821',
       provider: 'twilio',
-      status: 'active',
-      connected: true,
-      compliant10dlc: true,
-      monthlyCredits: 15000,
+      status: 'disabled',
+      connected: false,
+      compliant10dlc: false,
+      monthlyCredits: 0,
       autoKeywords: ['DEALS', 'DROPS', 'CART', 'STOP']
     },
     connectedStandaloneChat: {
@@ -386,10 +386,10 @@ export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
       connectedSms: {
         phoneNumber: '+1 (800) 555-4400',
         provider: 'telnyx',
-        status: 'active',
-        connected: true,
-        compliant10dlc: true,
-        monthlyCredits: 50000,
+        status: 'disabled',
+        connected: false,
+        compliant10dlc: false,
+        monthlyCredits: 0,
         autoKeywords: ['AUDIT', 'GROWTH', 'CLIENT', 'STOP']
       },
       connectedStandaloneChat: {
@@ -408,10 +408,10 @@ export const DEFAULT_WORKSPACES: WorkspaceSilo[] = [
     connectedSms: {
       phoneNumber: '+1 (800) 555-4400',
       provider: 'telnyx',
-      status: 'active',
-      connected: true,
-      compliant10dlc: true,
-      monthlyCredits: 50000,
+      status: 'disabled',
+      connected: false,
+      compliant10dlc: false,
+      monthlyCredits: 0,
       autoKeywords: ['AUDIT', 'GROWTH', 'CLIENT', 'STOP']
     },
     connectedStandaloneChat: {
