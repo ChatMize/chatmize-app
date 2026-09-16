@@ -161,14 +161,23 @@ export const IntegrationsStep: React.FC<IntegrationsStepProps> = ({ onNext, onBa
         >
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
-        <button
-          type="button"
-          onClick={onNext}
-          className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-purple-500/20"
-        >
-          <span>{connectedIds.size > 0 ? 'Continue' : 'Skip for now'}</span>
-          <ArrowRight className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onNext}
+            className="text-[11px] font-semibold text-slate-500 hover:text-slate-300 underline underline-offset-2 cursor-pointer"
+          >
+            Skip this step
+          </button>
+          <button
+            type="button"
+            onClick={onNext}
+            className="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-purple-500/20"
+          >
+            <span>{connectedIds.size > 0 ? 'Continue' : 'Skip for now'}</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {activeApp && (
