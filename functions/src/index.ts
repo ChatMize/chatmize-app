@@ -17,6 +17,7 @@ import { aiComplete, projectTestCost, AI_SECRETS, ModelTier, ChatMessage } from 
 import {
   META_APP_SECRET,
   META_VERIFY_TOKEN,
+  META_PAGE_TOKEN_DEFAULT,
   WHATSAPP_TOKEN_DEFAULT,
   WHATSAPP_PHONE_NUMBER_ID,
   pageTokenSecretFor,
@@ -171,7 +172,7 @@ interface SendMessageData {
  * from Secret Manager; the client never sees them.
  */
 export const sendChannelMessage = onCall(
-  { region: REGION, secrets: [WHATSAPP_TOKEN_DEFAULT, WHATSAPP_PHONE_NUMBER_ID] },
+  { region: REGION, secrets: [WHATSAPP_TOKEN_DEFAULT, WHATSAPP_PHONE_NUMBER_ID, META_PAGE_TOKEN_DEFAULT] },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
