@@ -34,7 +34,11 @@ export type PlanFeature =
   | "subaccounts"
   | "migration_bridge"
   | "api_access"
-  | "priority_support";
+  | "priority_support"
+  | "dfu_onboarding"
+  | "done_for_you_flows"
+  | "managed_broadcasts"
+  | "dedicated_manager";
 
 export const FEATURE_LABELS: Record<PlanFeature, string> = {
   messenger: "Facebook Messenger channel",
@@ -52,21 +56,41 @@ export const FEATURE_LABELS: Record<PlanFeature, string> = {
   migration_bridge: "1-click migration bridge",
   api_access: "Direct Meta webhook event relays",
   priority_support: "Priority support",
+  dfu_onboarding: "Done-for-you onboarding",
+  done_for_you_flows: "Team builds your flows",
+  managed_broadcasts: "Managed broadcasts",
+  dedicated_manager: "Dedicated account manager",
 };
 
 export const ALL_FEATURES = Object.keys(FEATURE_LABELS) as PlanFeature[];
+
+/**
+ * Fulfillment track. DIY = self-service, the user spends their own credits.
+ * DFU (done-for-you) = white-glove, Karl's team operates the AI on the
+ * client's behalf out of the plan's credit pool.
+ */
+export type PlanMode = "diy" | "dfu";
+
+export const PLAN_MODE_LABELS: Record<PlanMode, string> = {
+  diy: "DIY Self-Service",
+  dfu: "Done-For-You",
+};
 
 export interface Plan {
   id: string;
   name: string;
   tagline?: string;
+  /** DIY self-service vs DFU white-glove fulfillment. */
+  mode: PlanMode;
   /** Monthly price in cents (4900 = $49). */
   priceMonthlyCents: number;
   /** Max active contacts; null = unlimited. */
   contactLimit: number | null;
-  /** AI credits granted each month. */
+  /** AI credits granted each month. DFU plans draw the service team's usage from this pool. */
   aiCreditsMonthly: number;
   features: PlanFeature[];
+  /** DFU service line items, e.g. "We build your first 3 flows". */
+  serviceInclusions: string[];
   badge?: string;
   color?: string;
   /** Stripe price id, wired when billing goes live. */
@@ -85,10 +109,12 @@ export const DEFAULT_PLANS: Plan[] = [
     id: "starter",
     name: "Starter Messenger",
     tagline: "For businesses starting with Messenger automation",
+    mode: "diy",
     priceMonthlyCents: 4900,
     contactLimit: 2500,
     aiCreditsMonthly: 1000,
     features: ["messenger", "instagram", "flow_builder"],
+    serviceInclusions: [],
     color: "from-blue-500/20 to-cyan-500/20 border-cyan-500/30",
     isPublic: true,
     subscribersCount: 184,
@@ -98,6 +124,7 @@ export const DEFAULT_PLANS: Plan[] = [
     id: "pro",
     name: "Pro Automation & Blasts",
     tagline: "Broadcasts, SMS, and AI agents for growing teams",
+    mode: "diy",
     priceMonthlyCents: 12900,
     contactLimit: 10000,
     aiCreditsMonthly: 10000,
@@ -113,6 +140,7 @@ export const DEFAULT_PLANS: Plan[] = [
       "webhooks",
       "priority_support",
     ],
+    serviceInclusions: [],
     badge: "Most Popular",
     color: "from-purple-500/20 to-indigo-500/20 border-purple-500/40",
     isPublic: true,
@@ -123,6 +151,7 @@ export const DEFAULT_PLANS: Plan[] = [
     id: "agency",
     name: "Agency & White-Label",
     tagline: "Sub-accounts and white-label for agencies",
+    mode: "diy",
     priceMonthlyCents: 29900,
     contactLimit: null,
     aiCreditsMonthly: 50000,
@@ -143,6 +172,7 @@ export const DEFAULT_PLANS: Plan[] = [
       "api_access",
       "priority_support",
     ],
+    serviceInclusions: [],
     badge: "Enterprise",
     color: "from-amber-500/20 to-orange-500/20 border-amber-500/40",
     isPublic: true,

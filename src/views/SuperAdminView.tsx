@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { SuperAdminKanban } from '../components/admin/SuperAdminKanban';
 import { PlanEditorModal } from '../components/admin/PlanEditorModal';
-import { Plan, FEATURE_LABELS, formatPrice, deletePlan } from '../lib/billing';
+import { Plan, PlanMode, PLAN_MODE_LABELS, FEATURE_LABELS, formatPrice, deletePlan } from '../lib/billing';
 import { usePlans } from '../lib/entitlements';
 
 interface SuperAdminViewProps {
@@ -106,6 +106,102 @@ const INITIAL_USERS: UserRecord[] = [
   }
 ];
 
+interface PlanTierCardProps {
+  plan: Plan;
+  onEdit: (plan: Plan) => void;
+}
+
+const PlanTierCard: React.FC<PlanTierCardProps> = ({ plan, onEdit }) => (
+  <div
+    className={`bg-slate-900/80 border rounded-3xl p-6 relative flex flex-col justify-between backdrop-blur-md shadow-xl ${plan.color || 'border-white/10'}`}
+  >
+    {plan.badge && (
+      <span className="absolute -top-3 right-6 px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[10px] font-extrabold uppercase tracking-wider rounded-full shadow-md">
+        {plan.badge}
+      </span>
+    )}
+    {!plan.isPublic && (
+      <span className="absolute -top-3 left-6 px-3 py-1 bg-slate-700 text-slate-300 text-[10px] font-extrabold uppercase tracking-wider rounded-full shadow-md">
+        Hidden
+      </span>
+    )}
+
+    <div>
+      <div className="flex items-center gap-2 mb-1">
+        <h3 className="text-xl font-bold text-white">{plan.name}</h3>
+      </div>
+      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+        plan.mode === 'dfu' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' : 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+      }`}>
+        {PLAN_MODE_LABELS[plan.mode] || 'DIY Self-Service'}
+      </span>
+      {plan.tagline && <p className="text-xs text-slate-500 mt-2">{plan.tagline}</p>}
+      <div className="flex items-baseline gap-1 my-3">
+        <span className="text-3xl font-black text-white">{formatPrice(plan.priceMonthlyCents)}</span>
+        <span className="text-xs text-slate-400">/month</span>
+      </div>
+      <div className="text-xs text-slate-400 mb-1 flex items-center gap-1.5">
+        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+        <span>{plan.subscribersCount} active paying subscribers</span>
+      </div>
+      <div className="text-xs text-slate-400 mb-4 flex items-center gap-1.5">
+        <span className="w-2 h-2 rounded-full bg-cyan-400" />
+        <span>
+          {plan.contactLimit === null ? 'Unlimited' : plan.contactLimit.toLocaleString()} contacts
+          {' · '}{plan.aiCreditsMonthly.toLocaleString()} AI credits/mo
+        </span>
+      </div>
+
+      <div className="space-y-2.5 mb-4 border-t border-white/10 pt-4">
+        {plan.features.map((feat) => (
+          <div key={feat} className="flex items-start gap-2 text-xs text-slate-300">
+            <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+            <span>{FEATURE_LABELS[feat]}</span>
+          </div>
+        ))}
+      </div>
+
+      {plan.serviceInclusions && plan.serviceInclusions.length > 0 && (
+        <div className="space-y-2 mb-6 border-t border-amber-500/20 pt-4">
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300/80">Your team does this</p>
+          {plan.serviceInclusions.map((item, idx) => (
+            <div key={idx} className="flex items-start gap-2 text-xs text-amber-100/80">
+              <Check className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {(!plan.serviceInclusions || plan.serviceInclusions.length === 0) && <div className="mb-6" />}
+    </div>
+
+    <div className="pt-4 border-t border-white/10 flex items-center gap-2">
+      <button
+        onClick={() => onEdit(plan)}
+        className="flex-1 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-bold transition-all text-center cursor-pointer flex items-center justify-center gap-1.5"
+      >
+        <Edit3 className="w-3.5 h-3.5" />
+        <span>Edit Tier & Limits</span>
+      </button>
+      <button
+        onClick={async () => {
+          if (window.confirm(`Delete the "${plan.name}" tier? Workspaces on it keep their subscription record but resolve to no plan.`)) {
+            try {
+              await deletePlan(plan.id);
+            } catch (e) {
+              alert(e instanceof Error ? e.message : 'Failed to delete plan.');
+            }
+          }
+        }}
+        title="Delete tier"
+        className="p-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl transition-all cursor-pointer"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  </div>
+);
+
 export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   initialTab = 'kanban'
 }) => {
@@ -114,7 +210,9 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const { plans, loading: plansLoading } = usePlans();
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
-  const [isCreatingPlan, setIsCreatingPlan] = useState(false);
+  const [createMode, setCreateMode] = useState<PlanMode | null>(null);
+  const diyPlans = plans.filter((p) => p.mode !== 'dfu');
+  const dfuPlans = plans.filter((p) => p.mode === 'dfu');
   
   // Platform Migration Simulation State
   const [legacyApiKey, setLegacyApiKey] = useState('');
@@ -394,105 +492,78 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
 
       {/* TAB 2: PLANS FOR SALE */}
       {activeSubTab === 'plans' && (
-        <div className="space-y-6">
+        <div className="space-y-8">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold text-white">Commercial Tier Configuration</h2>
               <p className="text-xs text-slate-400">Plans are live data: edits here update every pricing surface immediately, no deploy needed.</p>
             </div>
-            <button
-              onClick={() => setIsCreatingPlan(true)}
-              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-purple-500/20"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create New Tier</span>
-            </button>
           </div>
 
           {plansLoading ? (
             <div className="text-center py-12 text-slate-400 text-sm">Loading plans...</div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {plans.map((plan) => (
-                <div
-                  key={plan.id}
-                  className={`bg-slate-900/80 border rounded-3xl p-6 relative flex flex-col justify-between backdrop-blur-md shadow-xl ${plan.color || 'border-white/10'}`}
-                >
-                  {plan.badge && (
-                    <span className="absolute -top-3 right-6 px-3 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[10px] font-extrabold uppercase tracking-wider rounded-full shadow-md">
-                      {plan.badge}
-                    </span>
-                  )}
-                  {!plan.isPublic && (
-                    <span className="absolute -top-3 left-6 px-3 py-1 bg-slate-700 text-slate-300 text-[10px] font-extrabold uppercase tracking-wider rounded-full shadow-md">
-                      Hidden
-                    </span>
-                  )}
-
+            <>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-xl font-bold text-white mb-1">{plan.name}</h3>
-                    {plan.tagline && <p className="text-xs text-slate-500 mb-1">{plan.tagline}</p>}
-                    <div className="flex items-baseline gap-1 my-3">
-                      <span className="text-3xl font-black text-white">{formatPrice(plan.priceMonthlyCents)}</span>
-                      <span className="text-xs text-slate-400">/month</span>
-                    </div>
-                    <div className="text-xs text-slate-400 mb-1 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                      <span>{plan.subscribersCount} active paying subscribers</span>
-                    </div>
-                    <div className="text-xs text-slate-400 mb-4 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                      <span>
-                        {plan.contactLimit === null ? 'Unlimited' : plan.contactLimit.toLocaleString()} contacts
-                        {' · '}{plan.aiCreditsMonthly.toLocaleString()} AI credits/mo
-                      </span>
-                    </div>
-
-                    <div className="space-y-2.5 mb-6 border-t border-white/10 pt-4">
-                      {plan.features.map((feat) => (
-                        <div key={feat} className="flex items-start gap-2 text-xs text-slate-300">
-                          <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
-                          <span>{FEATURE_LABELS[feat]}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <h3 className="text-sm font-bold text-white">DIY Self-Service</h3>
+                    <p className="text-xs text-slate-500">The user operates the AI themselves out of their own credit pool.</p>
                   </div>
-
-                  <div className="pt-4 border-t border-white/10 flex items-center gap-2">
-                    <button
-                      onClick={() => setEditingPlan(plan)}
-                      className="flex-1 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-bold transition-all text-center cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>Edit Tier & Limits</span>
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (window.confirm(`Delete the "${plan.name}" tier? Workspaces on it keep their subscription record but resolve to no plan.`)) {
-                          try {
-                            await deletePlan(plan.id);
-                          } catch (e) {
-                            alert(e instanceof Error ? e.message : 'Failed to delete plan.');
-                          }
-                        }
-                      }}
-                      title="Delete tier"
-                      className="p-2.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-xl transition-all cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => setCreateMode('diy')}
+                    className="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/20"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Create DIY Tier</span>
+                  </button>
                 </div>
-              ))}
-            </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {diyPlans.map((plan) => (
+                    <PlanTierCard key={plan.id} plan={plan} onEdit={setEditingPlan} />
+                  ))}
+                </div>
+                {diyPlans.length === 0 && (
+                  <p className="text-xs text-slate-500 py-6 text-center">No DIY tiers yet.</p>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Done-For-You</h3>
+                    <p className="text-xs text-slate-500">White-glove: your team operates the AI on the client's behalf from the plan's credit pool.</p>
+                  </div>
+                  <button
+                    onClick={() => setCreateMode('dfu')}
+                    className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-amber-500/20"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Create DFU Tier</span>
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {dfuPlans.map((plan) => (
+                    <PlanTierCard key={plan.id} plan={plan} onEdit={setEditingPlan} />
+                  ))}
+                </div>
+                {dfuPlans.length === 0 && (
+                  <div className="border border-dashed border-white/15 rounded-3xl p-8 text-center">
+                    <p className="text-sm text-slate-400 mb-1">No DFU tiers yet</p>
+                    <p className="text-xs text-slate-500">Create your first white-glove tier: price, credit pool, and exactly what your team does for the client.</p>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
-          {(editingPlan || isCreatingPlan) && (
+          {(editingPlan || createMode) && (
             <PlanEditorModal
               plan={editingPlan}
+              defaultMode={createMode ?? 'diy'}
               onClose={() => {
                 setEditingPlan(null);
-                setIsCreatingPlan(false);
+                setCreateMode(null);
               }}
               onSaved={() => {}}
             />

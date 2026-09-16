@@ -3,6 +3,8 @@ import { X, Save } from 'lucide-react';
 import {
   Plan,
   PlanFeature,
+  PlanMode,
+  PLAN_MODE_LABELS,
   ALL_FEATURES,
   FEATURE_LABELS,
   savePlan,
@@ -10,27 +12,34 @@ import {
 
 interface PlanEditorModalProps {
   plan: Plan | null; // null = create new
+  /** Pre-select the fulfillment track when creating. */
+  defaultMode?: PlanMode;
   onClose: () => void;
   onSaved: () => void;
 }
 
-const blankPlan = (): Plan => ({
+const blankPlan = (mode: PlanMode = 'diy'): Plan => ({
   id: `plan_${Date.now()}`,
   name: '',
   tagline: '',
+  mode,
   priceMonthlyCents: 4900,
   contactLimit: 2500,
   aiCreditsMonthly: 1000,
   features: ['messenger', 'instagram', 'flow_builder'],
+  serviceInclusions: [],
   isPublic: true,
   subscribersCount: 0,
   updatedAt: new Date().toISOString(),
 });
 
-export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose, onSaved }) => {
-  const [form, setForm] = useState<Plan>(plan ? { ...plan, features: [...plan.features] } : blankPlan());
+export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, defaultMode = 'diy' as PlanMode, onClose, onSaved }) => {
+  const [form, setForm] = useState<Plan>(
+    plan ? { ...plan, features: [...plan.features], serviceInclusions: [...(plan.serviceInclusions || [])] } : blankPlan(defaultMode)
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [newInclusion, setNewInclusion] = useState('');
 
   const set = <K extends keyof Plan>(key: K, value: Plan[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -85,6 +94,30 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose,
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div className="sm:col-span-2">
+            <label className={labelCls}>Fulfillment track</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['diy', 'dfu'] as PlanMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => set('mode', mode)}
+                  className={`px-3 py-2.5 rounded-xl border text-xs font-bold transition-all ${
+                    form.mode === mode
+                      ? 'bg-purple-500/15 border-purple-500/40 text-white'
+                      : 'bg-slate-800/50 border-white/10 text-slate-400 hover:border-white/20'
+                  }`}
+                >
+                  {PLAN_MODE_LABELS[mode]}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1.5">
+              {form.mode === 'diy'
+                ? 'Self-service: the user spends their own credits.'
+                : 'White-glove: your team operates the AI on the client\u2019s behalf from this plan\u2019s credit pool.'}
+            </p>
+          </div>
           <div>
             <label className={labelCls}>Plan name</label>
             <input className={inputCls} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Pro Automation" />
@@ -144,6 +177,65 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose,
                 <span>{FEATURE_LABELS[feature]}</span>
               </label>
             ))}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <label className={labelCls}>Service inclusions {form.mode === 'diy' ? '(optional)' : ''}</label>
+          <p className="text-[11px] text-slate-500 mb-2">
+            {form.mode === 'dfu'
+              ? 'What your team does for the client, e.g. "We build your first 3 flows".'
+              : 'Extra white-glove line items, if any.'}
+          </p>
+          <div className="space-y-2 mb-2">
+            {form.serviceInclusions.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  className={inputCls}
+                  value={item}
+                  onChange={(e) => {
+                    const next = [...form.serviceInclusions];
+                    next[idx] = e.target.value;
+                    set('serviceInclusions', next);
+                  }}
+                  placeholder="We build your first 3 flows"
+                />
+                <button
+                  type="button"
+                  onClick={() => set('serviceInclusions', form.serviceInclusions.filter((_, i) => i !== idx))}
+                  className="p-2 text-slate-500 hover:text-red-400 transition-colors shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              className={inputCls}
+              value={newInclusion}
+              onChange={(e) => setNewInclusion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newInclusion.trim()) {
+                  e.preventDefault();
+                  set('serviceInclusions', [...form.serviceInclusions, newInclusion.trim()]);
+                  setNewInclusion('');
+                }
+              }}
+              placeholder="Add a service inclusion, Enter to add"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (newInclusion.trim()) {
+                  set('serviceInclusions', [...form.serviceInclusions, newInclusion.trim()]);
+                  setNewInclusion('');
+                }
+              }}
+              className="px-3 py-2 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-bold transition-all shrink-0"
+            >
+              Add
+            </button>
           </div>
         </div>
 
