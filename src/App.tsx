@@ -59,6 +59,8 @@ import { subscribeToAuthChanges, signOutUser, AppUser } from './lib/firebase';
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
+import { SnapshotImportView } from './views/SnapshotImportView';
+import { SnapshotLibraryView } from './views/SnapshotLibraryView';
 import { WorkspaceSilo } from './types/workspace';
 import { DEFAULT_WORKSPACES } from './data/workspaceDefaults';
 
@@ -155,6 +157,21 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Deep link: ?snapshot=<id> opens the snapshot import view.
+  const [deepSnapshotId, setDeepSnapshotId] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const id = new URLSearchParams(window.location.search).get('snapshot');
+      if (id) {
+        setDeepSnapshotId(id);
+        setActiveTab('snapshot');
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    } catch {
+      // ignore malformed URLs
+    }
+  }, []);
+
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -164,6 +181,7 @@ export default function App() {
         return (
           <BotListView 
             triggerCreateModal={createModalTrigger}
+            onOpenLibrary={() => setActiveTab('snapshot-library')}
             onOpenBotMap={(bot) => {
               setActiveBotId(bot.id);
               setActiveBotTitle(bot.name);
@@ -176,6 +194,23 @@ export default function App() {
             }}
           />
         );
+      case 'snapshot-library':
+        return (
+          <SnapshotLibraryView
+            workspace={activeWorkspace}
+            onImported={() => setActiveTab('bot-list')}
+            onUpgrade={() => { setSettingsInitialTab('plan'); setActiveTab('settings'); }}
+          />
+        );
+      case 'snapshot':
+        return deepSnapshotId ? (
+          <SnapshotImportView
+            snapshotId={deepSnapshotId}
+            workspaceName={activeWorkspace?.name || 'your workspace'}
+            onBack={() => setActiveTab('bot-list')}
+            onImported={() => setActiveTab('bot-list')}
+          />
+        ) : null;
       case 'flows':
         return (
           <FlowBuilder 

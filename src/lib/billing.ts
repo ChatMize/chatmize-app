@@ -38,7 +38,8 @@ export type PlanFeature =
   | "dfu_onboarding"
   | "done_for_you_flows"
   | "managed_broadcasts"
-  | "dedicated_manager";
+  | "dedicated_manager"
+  | "snapshot_library";
 
 export const FEATURE_LABELS: Record<PlanFeature, string> = {
   messenger: "Facebook Messenger channel",
@@ -60,6 +61,7 @@ export const FEATURE_LABELS: Record<PlanFeature, string> = {
   done_for_you_flows: "Team builds your flows",
   managed_broadcasts: "Managed broadcasts",
   dedicated_manager: "Dedicated account manager",
+  snapshot_library: "Snapshot template library",
 };
 
 export const ALL_FEATURES = Object.keys(FEATURE_LABELS) as PlanFeature[];
@@ -171,6 +173,7 @@ export const DEFAULT_PLANS: Plan[] = [
       "migration_bridge",
       "api_access",
       "priority_support",
+      "snapshot_library",
     ],
     serviceInclusions: [],
     badge: "Enterprise",

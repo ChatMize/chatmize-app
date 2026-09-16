@@ -34,9 +34,12 @@ import {
   LayoutGrid,
   MoreVertical,
   Edit2,
-  Activity
+  Activity,
+  Library,
+  Share2
 } from 'lucide-react';
 import { getFreshStarterBotMap, loadBotMapData, saveBotMapData } from '../utils/botMapStorage';
+import { ShareSnapshotModal } from '../components/snapshots/ShareSnapshotModal';
 
 export interface BotGroup {
   id: string;
@@ -225,9 +228,10 @@ interface BotListViewProps {
   onOpenBotMap: (bot: BotMapRecord) => void;
   onNewBotMap: (newBot: BotMapRecord) => void;
   triggerCreateModal?: number;
+  onOpenLibrary?: () => void;
 }
 
-export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal }: BotListViewProps) {
+export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onOpenLibrary }: BotListViewProps) {
   // Groups State & Persistence
   const [groups, setGroups] = useState<BotGroup[]>(() => {
     try {
@@ -282,6 +286,7 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal }: B
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'live' | 'draft' | 'paused'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'grouped' | 'table'>('grid');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [openGroupMenuBotId, setOpenGroupMenuBotId] = useState<string | null>(null);
 
@@ -592,6 +597,24 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal }: B
 
         {/* Primary Action Button */}
         <div className="flex items-center gap-2.5">
+          {onOpenLibrary && (
+            <button
+              onClick={onOpenLibrary}
+              title="Browse the snapshot template library"
+              className="px-4 py-2.5 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-200 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <Library className="w-4 h-4" />
+              <span className="hidden sm:inline">Library</span>
+            </button>
+          )}
+          <button
+            onClick={() => setShowShareModal(true)}
+            title="Share this workspace setup as a snapshot link"
+            className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <Share2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Share</span>
+          </button>
           <button
             onClick={() => setShowCreateModal(true)}
             className="px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg shadow-cyan-500/20 transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
@@ -1728,6 +1751,9 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal }: B
           </div>
         </div>
       )}
+
+      {/* Modal: Share Workspace Snapshot */}
+      {showShareModal && <ShareSnapshotModal onClose={() => setShowShareModal(false)} />}
 
     </div>
   );

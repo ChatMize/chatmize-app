@@ -59,6 +59,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Snapshots: any signed-in user can read (link sharing + template
+    // library). Owners can create/edit/delete their own; Super Admin can
+    // curate (feature templates, moderate).
+    match /snapshots/{snapshotId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.createdByUid == request.auth.uid;
+      allow update, delete: if isSignedIn()
+        && (resource.data.createdByUid == request.auth.uid || isSuperAdmin());
+    }
+
     // Legacy top-level collections (pre-tenancy data model). Authenticated-only;
     // Phase 3 migrates these under workspaces/{workspaceId}/... at which point
     // these branches are removed.

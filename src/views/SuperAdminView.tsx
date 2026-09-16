@@ -19,15 +19,17 @@ import {
   FileSpreadsheet,
   Check,
   Layers,
-  Calculator
+  Calculator,
+  Library
 } from 'lucide-react';
 import { SuperAdminKanban } from '../components/admin/SuperAdminKanban';
 import { PlanEditorModal } from '../components/admin/PlanEditorModal';
+import { SnapshotAdminTab } from '../components/admin/SnapshotAdminTab';
 import { Plan, PlanMode, PLAN_MODE_LABELS, FEATURE_LABELS, formatPrice, deletePlan } from '../lib/billing';
 import { usePlans } from '../lib/entitlements';
 
 interface SuperAdminViewProps {
-  initialTab?: 'kanban' | 'users' | 'plans' | 'migration';
+  initialTab?: 'kanban' | 'users' | 'plans' | 'migration' | 'snapshots';
 }
 
 interface UserRecord {
@@ -205,7 +207,7 @@ const PlanTierCard: React.FC<PlanTierCardProps> = ({ plan, onEdit }) => (
 export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   initialTab = 'kanban'
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration'>(initialTab);
+  const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration' | 'snapshots'>(initialTab);
   const [users, setUsers] = useState<UserRecord[]>(INITIAL_USERS);
   const [searchQuery, setSearchQuery] = useState('');
   const { plans, loading: plansLoading } = usePlans();
@@ -323,6 +325,17 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           >
             <CreditCard className="w-4 h-4" />
             <span>Plans for Sale</span>
+          </button>
+          <button
+            onClick={() => setActiveSubTab('snapshots')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeSubTab === 'snapshots'
+                ? 'bg-gradient-to-r from-purple-500 to-fuchsia-600 text-white shadow-md shadow-purple-500/25'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Library className="w-4 h-4" />
+            <span>Snapshot Library</span>
           </button>
           <button
             onClick={() => setActiveSubTab('migration')}
@@ -569,6 +582,11 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
             />
           )}
         </div>
+      )}
+
+      {/* TAB: SNAPSHOT LIBRARY CURATION */}
+      {activeSubTab === 'snapshots' && (
+        <SnapshotAdminTab />
       )}
 
       {/* TAB 3: PLATFORM MIGRATION BRIDGE */}
