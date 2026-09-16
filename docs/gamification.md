@@ -46,15 +46,19 @@ Money (the point of the tool):
 
 ### 3. Incentive program
 
-Badges unlock real value, not just pixels. Draft ladder:
+Badges unlock AI credit bonuses. Confirmed by Karl: credits are the
+incentive currency. Cheap for us, exciting for them, and it drives more
+usage which earns more badges. The loop feeds itself.
 
-- Early badges: AI credit bonuses (cheap for us, exciting for them)
-- Mid badges: plan discounts, founding member pricing locks
+Draft ladder on top of that:
+
+- Early badges: small credit drops (welcome to the game)
+- Mid badges: bigger credit bonuses, founding member pricing locks
 - Top badges: leaderboard placement, "power user" spotlight, revenue share
   on referrals
 
-Referrals deserve their own track: give credits for every referred workspace
-that activates. This is the cheapest growth channel we have.
+Referrals deserve their own track: credit bonuses for every referred
+workspace that activates. This is the cheapest growth channel we have.
 
 ## Mechanics
 
