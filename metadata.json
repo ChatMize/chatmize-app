@@ -1,0 +1,6 @@
+{
+  "name": "ChatMize",
+  "description": "AI-powered messaging platform with business workspace architecture (1 FB Page = 1 IG = 1 WhatsApp), agency whitelabeling, and Super Admin Kanban roadmap with ManyChat vs. SegMate pricing modeling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

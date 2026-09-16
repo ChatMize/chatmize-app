@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "contact": {
+      "title": "Contact",
+      "description": "A synced contact record captured from Meta (Messenger, Instagram, WhatsApp) and web channels",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the contact" },
+        "firstName": { "type": "string", "description": "First name from Meta Profile or user input" },
+        "lastName": { "type": "string", "description": "Last name from Meta Profile or user input" },
+        "avatarUrl": { "type": "string", "description": "Profile picture URL from Meta Graph" },
+        "channel": { "type": "string", "description": "Primary communication channel: messenger, instagram, whatsapp, or web" },
+        "metaPsid": { "type": "string", "description": "Meta Page-Scoped ID for Messenger" },
+        "metaIgsid": { "type": "string", "description": "Meta Instagram-Scoped ID for IG Direct" },
+        "metaWaId": { "type": "string", "description": "WhatsApp contact ID or phone number" },
+        "locale": { "type": "string", "description": "Contact locale from Meta Profile (e.g. en_US)" },
+        "timezone": { "type": "number", "description": "Timezone offset from Meta Profile" },
+        "gender": { "type": "string", "description": "Gender if provided by Meta" },
+        "adId": { "type": "string", "description": "Meta Click-to-Messenger/IG Ad ID" },
+        "adTitle": { "type": "string", "description": "Title or headline of the Meta Ad source" },
+        "adSource": { "type": "string", "description": "Source referral type (e.g. ADS, SHORTLINK, ORGANIC)" },
+        "adSetId": { "type": "string", "description": "Meta Ad Set identifier" },
+        "campaignId": { "type": "string", "description": "Meta Campaign identifier" },
+        "email": { "type": "string", "description": "Captured verified email address" },
+        "phone": { "type": "string", "description": "Captured mobile phone number" },
+        "company": { "type": "string", "description": "Company, organization, or brand name" },
+        "jobTitle": { "type": "string", "description": "Role or job title" },
+        "city": { "type": "string", "description": "City location" },
+        "state": { "type": "string", "description": "State or province" },
+        "country": { "type": "string", "description": "Country of residence" },
+        "zipCode": { "type": "string", "description": "Postal or ZIP code" },
+        "status": { "type": "string", "description": "Lifecycle status: lead, subscriber, customer, unsubscribed" },
+        "optInStatus": { "type": "string", "description": "Opt-in status: opted_in, pending, unsubscribed" },
+        "smsConsent": { "type": "boolean", "description": "Explicit TCPA consent for mobile SMS/WhatsApp" },
+        "emailConsent": { "type": "boolean", "description": "Consent for marketing emails" },
+        "messagingWindowExpiresAt": { "type": "string", "description": "Timestamp when Meta 24-hour standard messaging window closes" },
+        "humanAgentExpiresAt": { "type": "string", "description": "Timestamp when Meta 7-day Human Agent extension window expires" },
+        "recurringTokens": { "type": "string", "description": "Array of active Meta Recurring Notification / Marketing Messages opt-in tokens" },
+        "otnTokens": { "type": "string", "description": "Array of Meta One-Time Notification (OTN) tokens" },
+        "whatsappOptIn": { "type": "boolean", "description": "WhatsApp Business explicit opt-in confirmation" },
+        "tags": { "type": "string", "description": "JSON serialized or comma-separated tags applied to contact" },
+        "variables": { "type": "string", "description": "JSON dictionary of arbitrary dynamic captured bot variables and custom fields" },
+        "customFields": { "type": "string", "description": "JSON serialized custom bot attribute key-value pairs" },
+        "lastInteractionAt": { "type": "string", "description": "Timestamp of most recent contact activity" },
+        "createdAt": { "type": "string", "description": "Timestamp when contact first messaged the bot" },
+        "notes": { "type": "string", "description": "Internal CRM notes" }
+      },
+      "required": ["name", "channel", "createdAt"]
+    },
+    "deletion_audit_log": {
+      "title": "Deletion Audit Log",
+      "description": "Compliance proof record for Meta Data Deletion Policy, GDPR Right to Erasure (Article 17), and CCPA",
+      "type": "object",
+      "properties": {
+        "confirmationCode": { "type": "string", "description": "Unique cryptographically secure deletion confirmation tracking code" },
+        "deletedContactId": { "type": "string", "description": "Original ID of the purged contact record" },
+        "channel": { "type": "string", "description": "Originating channel: messenger, instagram, whatsapp, or web" },
+        "reason": { "type": "string", "description": "Reason for deletion: user_request, gdpr_erasure, ccpa_opt_out, admin_purge" },
+        "status": { "type": "string", "description": "Status of the purge: completed" },
+        "purgedAt": { "type": "string", "description": "Timestamp when all PII and dynamic variables were erased" }
+      },
+      "required": ["confirmationCode", "status", "purgedAt"]
+    },
+    "campaign": {
+      "title": "Campaign",
+      "description": "Broadcast, drip sequence, or recurring notification marketing campaign record",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Campaign title or name" },
+        "description": { "type": "string", "description": "Campaign purpose and details" },
+        "type": { "type": "string", "description": "Campaign type: one_time, recurring, drip, or date_specific" },
+        "channel": { "type": "string", "description": "Target communication channel: all, messenger, instagram, whatsapp" },
+        "status": { "type": "string", "description": "Campaign status: draft, active, scheduled, paused, completed" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Last updated timestamp" }
+      },
+      "required": ["name", "type", "channel", "status"]
+    },
+    "system_setting": {
+      "title": "System Setting",
+      "description": "Global admin configuration, kanban roadmap cards, and platform state",
+      "type": "object",
+      "properties": {
+        "cards": { "type": "string", "description": "JSON array of kanban roadmap cards" },
+        "updatedAt": { "type": "string", "description": "Last updated timestamp" }
+      }
+    }
+  },
+  "firestore": {
+    "/contacts/{contactId}": {
+      "schema": "contact",
+      "description": "Contacts and audience database synchronized with Meta channels and bot flows"
+    },
+    "/deletion_audit_logs/{logId}": {
+      "schema": "deletion_audit_log",
+      "description": "Immutable compliance logs of completed data erasure requests"
+    },
+    "/campaigns/{campaignId}": {
+      "schema": "campaign",
+      "description": "Marketing broadcasts, drip workflows, and recurring notification campaigns"
+    },
+    "/system_settings/{docId}": {
+      "schema": "system_setting",
+      "description": "Global admin configurations and kanban board cards"
+    }
+  }
+}
