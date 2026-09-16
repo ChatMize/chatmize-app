@@ -18,7 +18,7 @@ export interface CreditBalance {
   updatedAt: string;
 }
 
-const db = () => getFirestore();
+const db = () => getFirestore("chatmize-prod");
 const balanceRef = (workspaceId: string) =>
   db().collection("credit_balances").doc(workspaceId);
 const ledgerRef = (workspaceId: string) =>

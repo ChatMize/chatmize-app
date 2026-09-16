@@ -16,7 +16,7 @@ export interface NormalizedMessage {
   raw: unknown;
 }
 
-const db = () => getFirestore();
+const db = () => getFirestore("chatmize-prod");
 
 /**
  * Upsert the conversation and append the inbound message.

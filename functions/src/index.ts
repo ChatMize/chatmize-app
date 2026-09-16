@@ -60,7 +60,7 @@ import {
 
 initializeApp();
 
-const db = () => getFirestore();
+const db = () => getFirestore("chatmize-prod");
 const REGION = "us-west2";
 
 /** Resolve and validate the workspace for an inbound webhook call. */
@@ -228,6 +228,7 @@ export const sendChannelMessage = onCall(
 export const onInboundMessageCreated = onDocumentCreated(
   {
     region: REGION,
+    database: "chatmize-prod",
     document: "workspaces/{workspaceId}/conversations/{convoId}/messages/{messageId}",
   },
   async (event) => {

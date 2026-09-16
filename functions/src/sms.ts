@@ -39,7 +39,7 @@ export interface SmsOptIn {
   updatedAt: string;
 }
 
-const db = () => getFirestore();
+const db = () => getFirestore("chatmize-prod");
 const connRef = (workspaceId: string) => db().collection("sms_connections").doc(workspaceId);
 const optInRef = (workspaceId: string, phone: string) =>
   db().collection("sms_optins").doc(`${workspaceId}_${phone}`);
