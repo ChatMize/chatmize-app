@@ -399,19 +399,8 @@ export default function App() {
 
   const isFlows = activeTab === 'flows';
 
-  // Onboarding gate: a signed-in user whose workspace hasn't finished onboarding
-  // goes through the wizard (connect accounts -> choose DIY/DFU route -> tier).
-  if (!authLoading && currentUser && activeWorkspace && !activeWorkspace.onboardingComplete) {
-    return (
-      <OnboardingWizard
-        workspace={activeWorkspace}
-        onUpdateWorkspace={handleUpdateWorkspace}
-        onComplete={() => {}}
-      />
-    );
-  }
-
-  // Plan nudge: dismissible per workspace, persisted
+  // Plan nudge: dismissible per workspace, persisted.
+  // NOTE: these hooks must stay above the onboarding gate's early return.
   const planNudgeKey = `chatmize_plan_nudge_dismissed_${activeWorkspaceId}`;
   const [planNudgeDismissed, setPlanNudgeDismissed] = useState(() => {
     try { return localStorage.getItem(planNudgeKey) === '1'; } catch { return false; }
@@ -437,6 +426,19 @@ export default function App() {
       setGuideDismissed(localStorage.getItem(guideKey) === '1');
     } catch { /* ignore */ }
   }, [activeWorkspaceId]);
+
+  // Onboarding gate: a signed-in user whose workspace hasn't finished onboarding
+  // goes through the wizard (connect accounts -> choose DIY/DFU route -> tier).
+  if (!authLoading && currentUser && activeWorkspace && !activeWorkspace.onboardingComplete) {
+    return (
+      <OnboardingWizard
+        workspace={activeWorkspace}
+        onUpdateWorkspace={handleUpdateWorkspace}
+        onComplete={() => {}}
+      />
+    );
+  }
+
   const showGuide = Boolean(
     currentUser && activeWorkspace?.onboardingComplete && !guideDismissed
   );
