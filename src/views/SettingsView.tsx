@@ -38,17 +38,112 @@ import {
 
 export type { IntegrationApp };
 export { CHATMIZE_INTEGRATIONS };
+import { WorkspaceSilo } from '../types/workspace';
+import { usePlans, usePlan } from '../lib/entitlements';
+import { Plan, PlanMode, formatPrice } from '../lib/billing';
+import { RoutePicker } from '../components/onboarding/RoutePicker';
+
+function PlanTabContent({
+  workspace,
+  onUpdateWorkspace,
+}: {
+  workspace?: WorkspaceSilo;
+  onUpdateWorkspace?: (ws: WorkspaceSilo) => void;
+}) {
+  const { plans } = usePlans();
+  const currentPlan = usePlan(workspace?.planId);
+  const [changing, setChanging] = useState(false);
+
+  if (!workspace || !onUpdateWorkspace) {
+    return <p className="text-xs text-slate-500">Workspace context is unavailable.</p>;
+  }
+
+  const handleSelect = (mode: PlanMode, plan: Plan | null) => {
+    onUpdateWorkspace({ ...workspace, planMode: mode, planId: plan?.id });
+    setChanging(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-base font-bold text-white mb-1">Your plan</h3>
+        <p className="text-xs text-slate-400">
+          Upgrade, downgrade, or switch between DIY and Done-For-You anytime. Changes apply immediately;
+          billing proration lands on your next invoice once payments go live.
+        </p>
+      </div>
+
+      {!changing ? (
+        <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            {currentPlan ? (
+              <>
+                <div className="flex items-center gap-2 mb-1">
+                  <h4 className="text-lg font-black text-white">{currentPlan.name}</h4>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                    (workspace.planMode || currentPlan.mode) === 'dfu'
+                      ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                      : 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+                  }`}>
+                    {(workspace.planMode || currentPlan.mode) === 'dfu' ? 'Done-For-You' : 'DIY Self-Service'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  {formatPrice(currentPlan.priceMonthlyCents)}/month · {currentPlan.aiCreditsMonthly.toLocaleString()} AI credits/mo ·{' '}
+                  {currentPlan.contactLimit === null ? 'Unlimited' : currentPlan.contactLimit.toLocaleString()} contacts
+                </p>
+              </>
+            ) : (
+              <>
+                <h4 className="text-lg font-black text-white mb-1">No plan selected</h4>
+                <p className="text-xs text-slate-400">Choose DIY or Done-For-You to unlock the right limits and credit pool.</p>
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setChanging(true)}
+            className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold cursor-pointer shadow-lg shadow-purple-500/20 shrink-0"
+          >
+            {currentPlan ? 'Change plan' : 'Choose a plan'}
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-3xl border border-white/10 bg-slate-900/40 p-6">
+          <RoutePicker
+            plans={plans}
+            initialMode={workspace.planMode ?? currentPlan?.mode ?? undefined}
+            initialPlanId={workspace.planId}
+            onSelect={handleSelect}
+            submitLabel="Switch plan"
+          />
+          <button
+            type="button"
+            onClick={() => setChanging(false)}
+            className="mt-2 text-[11px] text-slate-500 hover:text-slate-300 underline underline-offset-2 cursor-pointer"
+          >
+            Keep my current plan
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function SettingsView({ 
   initialTab = 'channels', 
   initialDocId,
-  onNavigateToFlows 
+  onNavigateToFlows,
+  workspace,
+  onUpdateWorkspace,
 }: { 
-  initialTab?: 'general' | 'channels' | 'integrations' | 'docs' | 'api';
+  initialTab?: 'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan';
   initialDocId?: string;
   onNavigateToFlows?: () => void;
+  workspace?: WorkspaceSilo;
+  onUpdateWorkspace?: (ws: WorkspaceSilo) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan'>(initialTab);
 
   useEffect(() => {
     if (initialTab) {
@@ -339,6 +434,17 @@ export function SettingsView({
           >
             <Key className="w-3.5 h-3.5" />
             <span>API & Webhooks</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('plan')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+              activeTab === 'plan'
+                ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-md shadow-purple-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Plan</span>
           </button>
         </div>
       </div>
@@ -1136,6 +1242,13 @@ export function SettingsView({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Tab 6: Plan (upgrade / downgrade / switch track anytime) */}
+      {activeTab === 'plan' && (
+        <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6">
+          <PlanTabContent workspace={workspace} onUpdateWorkspace={onUpdateWorkspace} />
         </div>
       )}
     </div>

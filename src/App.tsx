@@ -58,6 +58,7 @@ import { AuthGateModal } from './components/AuthGateModal';
 import { subscribeToAuthChanges, signOutUser, AppUser } from './lib/firebase';
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
+import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { WorkspaceSilo } from './types/workspace';
 import { DEFAULT_WORKSPACES } from './data/workspaceDefaults';
 
@@ -128,6 +129,10 @@ export default function App() {
     localStorage.setItem('chatmize_workspaces', JSON.stringify(newWorkspaces));
   };
 
+  const handleUpdateWorkspace = (updated: WorkspaceSilo) => {
+    handleUpdateWorkspaces(workspaces.map((w) => (w.id === updated.id ? updated : w)));
+  };
+
   const handleSelectWorkspace = (id: string) => {
     setActiveWorkspaceId(id);
     localStorage.setItem('chatmize_active_workspace_id', id);
@@ -140,6 +145,7 @@ export default function App() {
   // localStorage bypass: a signed-out user sees the auth gate, period.
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan'>('general');
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges((user) => {
@@ -201,7 +207,14 @@ export default function App() {
           />
         );
       case 'settings':
-        return <SettingsView initialTab="general" onNavigateToFlows={() => setActiveTab('flows')} />;
+        return (
+          <SettingsView
+            initialTab={settingsInitialTab}
+            onNavigateToFlows={() => setActiveTab('flows')}
+            workspace={activeWorkspace}
+            onUpdateWorkspace={handleUpdateWorkspace}
+          />
+        );
       case 'support-chat':
       case 'support_widget':
         return (
@@ -297,16 +310,32 @@ export default function App() {
           />
         );
       case 'channels':
-        return <SettingsView initialTab="channels" onNavigateToFlows={() => setActiveTab('flows')} />;
+        return (
+          <SettingsView
+            initialTab="channels"
+            onNavigateToFlows={() => setActiveTab('flows')}
+            workspace={activeWorkspace}
+            onUpdateWorkspace={handleUpdateWorkspace}
+          />
+        );
       case 'integrations':
-        return <SettingsView initialTab="integrations" onNavigateToFlows={() => setActiveTab('flows')} />;
+        return (
+          <SettingsView
+            initialTab="integrations"
+            onNavigateToFlows={() => setActiveTab('flows')}
+            workspace={activeWorkspace}
+            onUpdateWorkspace={handleUpdateWorkspace}
+          />
+        );
       case 'docs':
       case 'knowledge-base':
         return (
-          <SettingsView 
-            initialTab="docs" 
-            initialDocId={selectedDocId} 
-            onNavigateToFlows={() => setActiveTab('flows')} 
+          <SettingsView
+            initialTab="docs"
+            initialDocId={selectedDocId}
+            onNavigateToFlows={() => setActiveTab('flows')}
+            workspace={activeWorkspace}
+            onUpdateWorkspace={handleUpdateWorkspace}
           />
         );
       default:
@@ -323,6 +352,22 @@ export default function App() {
   };
 
   const isFlows = activeTab === 'flows';
+
+  // Onboarding gate: a signed-in user whose workspace hasn't finished onboarding
+  // goes through the wizard (connect accounts -> choose DIY/DFU route -> tier).
+  if (!authLoading && currentUser && activeWorkspace && !activeWorkspace.onboardingComplete) {
+    return (
+      <OnboardingWizard
+        workspace={activeWorkspace}
+        onUpdateWorkspace={handleUpdateWorkspace}
+        onComplete={() => {}}
+      />
+    );
+  }
+
+  const showPlanNudge = Boolean(
+    activeWorkspace?.onboardingComplete && !activeWorkspace.planId
+  );
 
   return (
     <div className="h-screen w-screen bg-slate-950 text-slate-50 flex overflow-hidden font-sans relative selection:bg-blue-500/30">
@@ -705,8 +750,7 @@ export default function App() {
               icon={<Settings className="w-4 h-4" />} 
               label="Settings" 
               active={activeTab === 'settings' || activeTab === 'channels'} 
-              onClick={() => setActiveTab('settings')} 
-              collapsed={isSidebarCollapsed} 
+              onClick={() => { setSettingsInitialTab('general'); setActiveTab('settings'); }}               collapsed={isSidebarCollapsed} 
             />
           </div>
 
@@ -765,6 +809,20 @@ export default function App() {
 
         {/* View Viewport */}
         <main className={`flex-1 min-w-0 flex flex-col relative ${isFlows || activeTab === 'conversations' ? 'overflow-hidden p-0 h-full' : 'overflow-y-auto p-3.5 sm:p-5 md:p-6 lg:p-8'}`}>
+          {showPlanNudge && (
+            <button
+              onClick={() => { setSettingsInitialTab('plan'); setActiveTab('settings'); }}
+              className="mb-4 w-full text-left px-4 py-3 rounded-2xl bg-gradient-to-r from-purple-600/15 to-indigo-600/15 border border-purple-500/30 hover:border-purple-500/50 transition-all cursor-pointer flex items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Sparkles className="w-4 h-4 text-purple-300 shrink-0" />
+                <p className="text-xs text-slate-200 truncate">
+                  <span className="font-bold text-white">Choose your route:</span> DIY self-service or Done-For-You. You can switch anytime.
+                </p>
+              </div>
+              <span className="text-[11px] font-bold text-purple-200 bg-purple-500/20 px-2.5 py-1 rounded-lg shrink-0">Pick a plan</span>
+            </button>
+          )}
           {renderContent()}
         </main>
       </div>

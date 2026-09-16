@@ -87,6 +87,12 @@ export interface Workspace {
     broadcastsCount: number;
   };
   createdAt: string;
+  /** Set once the new-user onboarding wizard has been completed. */
+  onboardingComplete?: boolean;
+  /** Firestore plan id chosen during onboarding (or later in Settings). */
+  planId?: string;
+  /** Fulfillment track of the chosen plan: diy self-service or dfu white-glove. */
+  planMode?: 'diy' | 'dfu';
 }
 
 // Backward-compatible alias
