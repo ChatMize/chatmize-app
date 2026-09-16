@@ -1,0 +1,1 @@
+{"compilerOptions":{"esModuleInterop":true,"lib":["ES2022"],"module":"NodeNext","moduleResolution":"NodeNext","noEmitOnError":true,"outDir":"lib","skipLibCheck":true,"sourceMap":true,"strict":true,"target":"ES2022"},"exclude":["node_modules"],"include":["src"]}
