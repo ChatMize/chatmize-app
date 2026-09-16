@@ -17,15 +17,9 @@ export const META_PAGE_TOKEN_DEFAULT = defineSecret("META_PAGE_TOKEN_DEFAULT");
 export const WHATSAPP_TOKEN_DEFAULT = defineSecret("WHATSAPP_TOKEN_DEFAULT");
 export const WHATSAPP_PHONE_NUMBER_ID = defineSecret("WHATSAPP_PHONE_NUMBER_ID");
 
-export const ALL_SECRETS = [
-  META_APP_SECRET,
-  META_VERIFY_TOKEN,
-  META_PAGE_TOKEN_DEFAULT,
-  WHATSAPP_TOKEN_DEFAULT,
-  WHATSAPP_PHONE_NUMBER_ID,
-  TWILIO_ACCOUNT_SID,
-  TWILIO_AUTH_TOKEN,
-];
+// NOTE: there is intentionally no ALL_SECRETS bundle. Each function declares
+// only the secrets it actually reads (least privilege, and avoids mounting
+// placeholder values where they are not needed).
 
 /** Resolve the page token secret for a workspace (defaults when unmapped). */
 export function pageTokenSecretFor(_workspaceId: string) {

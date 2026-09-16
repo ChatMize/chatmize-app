@@ -15,7 +15,6 @@ import {
 } from "./credits";
 import { aiComplete, projectTestCost, AI_SECRETS, ModelTier, ChatMessage } from "./ai/router";
 import {
-  ALL_SECRETS,
   META_APP_SECRET,
   META_VERIFY_TOKEN,
   WHATSAPP_TOKEN_DEFAULT,
@@ -96,7 +95,7 @@ async function requireWorkspaceAccess(
  *   https://us-west2-<project>.cloudfunctions.net/metaWebhook?workspace=<workspaceId>
  */
 export const metaWebhook = onRequest(
-  { region: REGION, secrets: ALL_SECRETS },
+  { region: REGION, secrets: [META_APP_SECRET, META_VERIFY_TOKEN] },
   async (req, res) => {
     // 1. Verification handshake
     if (req.method === "GET") {
@@ -172,7 +171,7 @@ interface SendMessageData {
  * from Secret Manager; the client never sees them.
  */
 export const sendChannelMessage = onCall(
-  { region: REGION, secrets: ALL_SECRETS },
+  { region: REGION, secrets: [WHATSAPP_TOKEN_DEFAULT, WHATSAPP_PHONE_NUMBER_ID] },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -787,7 +786,7 @@ function verifyTwilioSignature(req: {
  *   https://us-west2-<project>.cloudfunctions.net/smsWebhook?workspace=<workspaceId>
  */
 export const smsWebhook = onRequest(
-  { region: REGION, secrets: [TWILIO_AUTH_TOKEN] },
+  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN] },
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method not allowed");
