@@ -2,6 +2,40 @@ export type OverlayType = 'popup_modal' | 'slider' | 'page_takeover' | 'sticky_b
 
 export type OverlayTrigger = 'exit_intent' | 'time_delay' | 'scroll_depth' | 'button_click' | 'immediate';
 
+/**
+ * Triggers that work on mobile. `exit_intent` is desktop-only (no cursor to
+ * track); mobile overlays use timed, scroll-depth, click, or immediate triggers.
+ */
+export type MobileTriggerType = 'time_delay' | 'scroll_depth' | 'button_click' | 'immediate';
+
+/**
+ * Per-device trigger config. The overlay's top-level `triggerType` /
+ * `triggerDelaySeconds` / `triggerScrollPercent` / `exitIntentSensitivity`
+ * fields are the DESKTOP config. `mobileTrigger` overrides for mobile visitors.
+ */
+export interface MobileTriggerConfig {
+  enabled: boolean;
+  triggerType: MobileTriggerType;
+  delaySeconds: number;
+  scrollPercent: number;
+}
+
+export type OverlayCtaAction = 'open_bot' | 'lead_form' | 'redirect_url' | 'enter_contest';
+
+/**
+ * STUB — Contest entities don't exist yet (see viral-contests-spec.md).
+ * This shape is the contract the overlay builder codes against; when the
+ * Contests module ships, its real entities replace these stubs and the
+ * overlay's `contestId` resolves against them. Entering a contest IS the
+ * capture event: entry feeds referral tracking + the leaderboard.
+ */
+export interface ContestStub {
+  id: string;
+  name: string;
+  status: 'active' | 'draft' | 'ended';
+  entriesCount: number;
+}
+
 export type OverlayPosition = 'center' | 'bottom_right' | 'bottom_left' | 'top_bar' | 'bottom_bar';
 
 export interface WebsiteOverlay {
@@ -14,21 +48,31 @@ export interface WebsiteOverlay {
   badgeText?: string;
   offerCode?: string;
   ctaText: string;
-  ctaAction: 'open_bot' | 'lead_form' | 'redirect_url';
+  ctaAction: OverlayCtaAction;
   redirectUrl?: string;
+  /** Set when ctaAction === 'enter_contest'. Resolves against Contest entities once the Contests module ships. */
+  contestId?: string;
+  contestName?: string;
   brandColor: string;
   theme: 'dark' | 'light';
   position: OverlayPosition;
+  /** Desktop trigger. `exit_intent` is desktop-only. */
   triggerType: OverlayTrigger;
   triggerDelaySeconds: number;
   triggerScrollPercent: number;
   exitIntentSensitivity?: 'medium' | 'high' | 'low';
+  /** Mobile trigger override. Undefined = mirror desktop trigger on mobile (exit_intent falls back to time_delay). */
+  mobileTrigger?: MobileTriggerConfig;
   connectedBotId: string;
   botName: string;
   requireEmailCapture: boolean;
   requireNameCapture: boolean;
   removeBranding: boolean;
   whitelistedDomains: string[];
+  // EXTENSION POINTS (not yet implemented — see convertmate-comparison.md):
+  // - page/URL targeting + frequency capping (display rules)
+  // - A/B variant traffic splitting + per-variant stats
+  // - real embed SDK runtime (overlays.js) + Firestore backend
   totalViews: number;
   totalInteractions: number;
   totalLeads: number;

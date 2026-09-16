@@ -22,9 +22,11 @@ import {
   Zap,
   Tag,
   Monitor,
-  Smartphone
+  Smartphone,
+  Trophy,
+  Gift
 } from 'lucide-react';
-import { WebsiteOverlay, OverlayType, OverlayTrigger, OverlayPosition } from '../../types/growthTools';
+import { WebsiteOverlay, OverlayType, OverlayTrigger, OverlayPosition, OverlayCtaAction, MobileTriggerType, MobileTriggerConfig, ContestStub } from '../../types/growthTools';
 import { DEFAULT_WEBSITE_OVERLAYS } from '../../data/growthToolsDefaults';
 
 interface WebsiteOverlaysViewProps {
@@ -132,9 +134,96 @@ export const OVERLAY_PRESETS = [
     offerCode: "EARLYBIRD",
     ctaText: "Explore What's New",
     brandColor: '#ec4899',
-    triggerType: 'delay' as OverlayTrigger
+    triggerType: 'time_delay' as OverlayTrigger
   }
 ];
+
+/**
+ * STUB contest list for the "Enter Contest / Giveaway" CTA picker.
+ * Contest entities don't exist yet (see viral-contests-spec.md) — when the
+ * Contests module ships, this is replaced by the real contest list and the
+ * overlay's `contestId` resolves against it.
+ */
+export const STUB_CONTESTS: ContestStub[] = [
+  { id: 'contest-stub-summer-giveaway', name: 'Summer Giveaway', status: 'active', entriesCount: 1284 },
+  { id: 'contest-stub-vip-launch', name: 'VIP Launch Raffle', status: 'draft', entriesCount: 0 }
+];
+
+/** Sensible mobile fallback: mirrors the desktop delay, never exit_intent. */
+const defaultMobileTrigger = (delaySeconds: number, scrollPercent: number): MobileTriggerConfig => ({
+  enabled: true,
+  triggerType: 'time_delay',
+  delaySeconds,
+  scrollPercent
+});
+
+/** Mini wireframe preview shown inside each format-picker card. */
+const FormatPreview: React.FC<{ type: OverlayType; brandColor: string }> = ({ type, brandColor }) => {
+  const bar = { backgroundColor: brandColor };
+  if (type === 'popup_modal') {
+    return (
+      <div className="h-14 rounded-md bg-slate-950/80 border border-white/10 flex items-center justify-center p-1.5 mb-2">
+        <div className="w-3/5 h-full rounded bg-slate-800 border border-white/15 p-1 space-y-1">
+          <div className="h-1.5 w-4/5 rounded-full bg-slate-600" />
+          <div className="h-1 w-3/5 rounded-full bg-slate-700" />
+          <div className="h-2 w-full rounded" style={bar} />
+        </div>
+      </div>
+    );
+  }
+  if (type === 'slider') {
+    return (
+      <div className="h-14 rounded-md bg-slate-950/80 border border-white/10 p-1.5 mb-2 flex justify-end">
+        <div className="w-1/2 h-full rounded bg-slate-800 border border-white/15 p-1 space-y-1">
+          <div className="h-1.5 w-4/5 rounded-full bg-slate-600" />
+          <div className="h-2 w-full rounded" style={bar} />
+        </div>
+      </div>
+    );
+  }
+  if (type === 'sticky_bar') {
+    return (
+      <div className="h-14 rounded-md bg-slate-950/80 border border-white/10 p-1.5 mb-2 space-y-1">
+        <div className="h-4 w-full rounded flex items-center justify-between px-1.5" style={bar}>
+          <div className="h-1.5 w-2/5 rounded-full bg-white/70" />
+          <div className="h-2.5 w-8 rounded bg-slate-950/80" />
+        </div>
+        <div className="h-1.5 w-3/5 rounded-full bg-slate-700" />
+        <div className="h-1.5 w-4/5 rounded-full bg-slate-700" />
+      </div>
+    );
+  }
+  return (
+    <div className="h-14 rounded-md border border-white/10 p-1.5 mb-2 space-y-1.5" style={{ backgroundColor: `${brandColor}18` }}>
+      <div className="h-1.5 w-1/3 rounded-full bg-slate-500 mx-auto" />
+      <div className="h-2 w-2/3 rounded-full bg-slate-400 mx-auto" />
+      <div className="h-2.5 w-1/2 rounded mx-auto" style={bar} />
+    </div>
+  );
+};
+
+const MOBILE_TRIGGER_OPTIONS: Array<{ value: MobileTriggerType; label: string }> = [
+  { value: 'time_delay', label: 'Time Delay (Wait X seconds on page)' },
+  { value: 'scroll_depth', label: 'Scroll Depth (Scrolled X% of page)' },
+  { value: 'button_click', label: 'On Click (Attached to page button)' },
+  { value: 'immediate', label: 'Immediate (Show on page load)' }
+];
+
+const describeMobileTrigger = (o: WebsiteOverlay): string => {
+  const m = o.mobileTrigger;
+  if (!m || !m.enabled) return 'Mobile: follows desktop';
+  if (m.triggerType === 'time_delay') return `Mobile: ${m.delaySeconds}s delay`;
+  if (m.triggerType === 'scroll_depth') return `Mobile: ${m.scrollPercent}% scroll`;
+  return `Mobile: ${m.triggerType.replace('_', ' ')}`;
+};
+
+/** CTA button label — shows a trophy when the action is a contest entry. */
+const CtaLabel: React.FC<{ overlay: WebsiteOverlay }> = ({ overlay }) => (
+  <span className="inline-flex items-center justify-center gap-1.5">
+    {overlay.ctaAction === 'enter_contest' && <Trophy className="w-3.5 h-3.5" />}
+    <span>{overlay.ctaText}</span>
+  </span>
+);
 
 export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
   availableBots = [
@@ -171,6 +260,21 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
 
   const currentOverlay = overlays.find(o => o.id === selectedOverlayId) || overlays[0];
 
+  // Simulator: which trigger actually fires depends on the previewed device.
+  const simMobileCfg = currentOverlay?.mobileTrigger;
+  const simMobileActive = simDevice === 'mobile' && simMobileCfg?.enabled !== false;
+  const simEffTrigger: string = currentOverlay
+    ? (simMobileActive
+        ? (simMobileCfg?.triggerType || (currentOverlay.triggerType === 'exit_intent' ? 'time_delay' : currentOverlay.triggerType))
+        : currentOverlay.triggerType)
+    : 'time_delay';
+  const simEffDelay = currentOverlay
+    ? (simMobileActive ? (simMobileCfg?.delaySeconds ?? currentOverlay.triggerDelaySeconds) : currentOverlay.triggerDelaySeconds)
+    : 0;
+  const simEffScroll = currentOverlay
+    ? (simMobileActive ? (simMobileCfg?.scrollPercent ?? currentOverlay.triggerScrollPercent) : currentOverlay.triggerScrollPercent)
+    : 0;
+
   const persistOverlays = (newOverlays: WebsiteOverlay[]) => {
     setOverlays(newOverlays);
     localStorage.setItem('chatmize_website_overlays', JSON.stringify(newOverlays));
@@ -206,6 +310,8 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
       triggerDelaySeconds: 4,
       triggerScrollPercent: 40,
       exitIntentSensitivity: 'medium',
+      // Mobile never gets exit_intent — default to a timed trigger instead.
+      mobileTrigger: defaultMobileTrigger(4, 40),
       connectedBotId: availableBots[0]?.id || 'bot-lead-magnet-optin',
       botName: 'Deal Concierge',
       requireEmailCapture: true,
@@ -280,12 +386,24 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
     }
   };
 
+  /** Patch the mobile trigger config, creating a sane default if none exists yet. */
+  const updateMobileTrigger = (patch: Partial<MobileTriggerConfig>) => {
+    if (!editingOverlay) return;
+    const current = editingOverlay.mobileTrigger
+      || defaultMobileTrigger(editingOverlay.triggerDelaySeconds, editingOverlay.triggerScrollPercent);
+    setEditingOverlay({ ...editingOverlay, mobileTrigger: { ...current, ...patch } });
+  };
+
   const getEmbedCode = (o: WebsiteOverlay) => {
+    const mobile = o.mobileTrigger;
     return `<!-- ChatMize Website Overlay Embed (${o.type}) -->
-<script 
-  src="https://cdn.chatmize.com/sdk/overlays.js" 
-  data-overlay-id="${o.id}" 
-  data-trigger="${o.triggerType}" 
+<script
+  src="https://cdn.chatmize.com/sdk/overlays.js"
+  data-overlay-id="${o.id}"
+  data-trigger="${o.triggerType}"
+  data-mobile-trigger="${mobile && mobile.enabled ? mobile.triggerType : o.triggerType === 'exit_intent' ? 'time_delay' : o.triggerType}"
+  data-mobile-delay="${mobile?.delaySeconds ?? o.triggerDelaySeconds}"
+  data-mobile-scroll="${mobile?.scrollPercent ?? o.triggerScrollPercent}"
   data-color="${o.brandColor}"
   async>
 </script>`;
@@ -470,7 +588,11 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                             <span className="capitalize">{info.name}</span>
                             <span>•</span>
                             <span className="font-mono text-cyan-400">
-                              Trigger: {overlay.triggerType.replace('_', ' ')}
+                              Desktop: {overlay.triggerType.replace('_', ' ')}
+                            </span>
+                            <span>•</span>
+                            <span className="font-mono text-violet-300">
+                              {describeMobileTrigger(overlay)}
                             </span>
                           </div>
                         </div>
@@ -670,20 +792,25 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                     <button
                       key={type}
                       type="button"
-                      onClick={() => setEditingOverlay({ 
-                        ...editingOverlay, 
-                        type: type, 
+                      onClick={() => setEditingOverlay({
+                        ...editingOverlay,
+                        type: type,
                         position: info.defaultPosition,
-                        triggerType: type === 'popup_modal' ? 'exit_intent' : type === 'slider' ? 'scroll_depth' : 'immediate'
+                        triggerType: type === 'popup_modal' ? 'exit_intent' : type === 'slider' ? 'scroll_depth' : 'immediate',
+                        // Switching to an exit-intent format? Make sure mobile has its own trigger.
+                        mobileTrigger: editingOverlay.mobileTrigger || defaultMobileTrigger(editingOverlay.triggerDelaySeconds, editingOverlay.triggerScrollPercent)
                       })}
                       className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                        isSelected 
-                          ? 'border-blue-500 bg-blue-500/10 text-white font-bold ring-1 ring-blue-500/30' 
+                        isSelected
+                          ? 'border-blue-500 bg-blue-500/10 text-white font-bold ring-1 ring-blue-500/30'
                           : 'border-white/10 bg-slate-950/60 text-slate-400 hover:border-white/20'
                       }`}
                     >
-                      <Icon className={`w-4 h-4 mb-2 ${isSelected ? 'text-blue-400' : 'text-slate-500'}`} />
-                      <span className="text-xs block leading-tight">{info.name}</span>
+                      <FormatPreview type={type} brandColor={editingOverlay.brandColor} />
+                      <div className="flex items-center gap-1.5">
+                        <Icon className={`w-4 h-4 ${isSelected ? 'text-blue-400' : 'text-slate-500'}`} />
+                        <span className="text-xs block leading-tight">{info.name}</span>
+                      </div>
                     </button>
                   );
                 })}
@@ -717,10 +844,16 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
             </div>
 
             {/* Trigger Behavior Rules */}
-            <div className="space-y-3 p-4 rounded-xl bg-slate-950/60 border border-white/5">
+            <div className="space-y-4 p-4 rounded-xl bg-slate-950/60 border border-white/5">
               <div className="flex items-center gap-2 text-xs font-bold text-white">
                 <Clock className="w-4 h-4 text-blue-400" />
                 <span>Behavioral Trigger Rules</span>
+              </div>
+
+              {/* Desktop trigger — exit intent is desktop-only */}
+              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300">
+                <Monitor className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Desktop Trigger</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -728,13 +861,24 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                   <label className="text-[11px] text-slate-400">Trigger Event</label>
                   <select
                     value={editingOverlay.triggerType}
-                    onChange={(e) => setEditingOverlay({ ...editingOverlay, triggerType: e.target.value as any })}
+                    onChange={(e) => {
+                      const next = e.target.value as OverlayTrigger;
+                      setEditingOverlay({
+                        ...editingOverlay,
+                        triggerType: next,
+                        // First time picking a desktop-only trigger? Give mobile its own trigger.
+                        mobileTrigger: editingOverlay.mobileTrigger || (next === 'exit_intent'
+                          ? defaultMobileTrigger(editingOverlay.triggerDelaySeconds, editingOverlay.triggerScrollPercent)
+                          : undefined)
+                      });
+                    }}
                     className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
                   >
-                    <option value="exit_intent">Exit Intent (Visitor moves cursor to leave)</option>
+                    <option value="exit_intent">Exit Intent (cursor leaves page) — desktop only</option>
                     <option value="time_delay">Time Delay (Wait X seconds on page)</option>
                     <option value="scroll_depth">Scroll Depth (Scrolled X% of page)</option>
                     <option value="button_click">On Click (Attached to page button)</option>
+                    <option value="immediate">Immediate (Show on page load)</option>
                   </select>
                 </div>
 
@@ -780,6 +924,91 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                       className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
                     />
                   </div>
+                )}
+              </div>
+
+              {editingOverlay.triggerType === 'exit_intent' && (
+                <p className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                  Exit intent is desktop-only (there's no cursor on phones). Mobile visitors use the mobile trigger below.
+                </p>
+              )}
+
+              {/* Mobile trigger — phones get timed / scroll / click triggers, never exit intent */}
+              <div className="space-y-3 pt-3 border-t border-white/5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300">
+                    <Smartphone className="w-3.5 h-3.5 text-violet-400" />
+                    <span>Mobile Trigger</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = editingOverlay.mobileTrigger;
+                      if (current?.enabled) {
+                        updateMobileTrigger({ enabled: false });
+                      } else {
+                        updateMobileTrigger({ enabled: true });
+                      }
+                    }}
+                    className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${
+                      editingOverlay.mobileTrigger?.enabled !== false ? 'bg-violet-500' : 'bg-slate-700'
+                    }`}
+                    title="Toggle mobile trigger"
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+                      editingOverlay.mobileTrigger?.enabled !== false ? 'left-4' : 'left-0.5'
+                    }`} />
+                  </button>
+                </div>
+
+                {editingOverlay.mobileTrigger?.enabled !== false ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-slate-400">Mobile Trigger Event</label>
+                      <select
+                        value={editingOverlay.mobileTrigger?.triggerType || 'time_delay'}
+                        onChange={(e) => updateMobileTrigger({ triggerType: e.target.value as MobileTriggerType })}
+                        className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-violet-500 focus:outline-none"
+                      >
+                        {MOBILE_TRIGGER_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {(editingOverlay.mobileTrigger?.triggerType || 'time_delay') === 'time_delay' && (
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] text-slate-400">Mobile Delay Seconds</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="60"
+                          value={editingOverlay.mobileTrigger?.delaySeconds ?? editingOverlay.triggerDelaySeconds}
+                          onChange={(e) => updateMobileTrigger({ delaySeconds: parseInt(e.target.value) || 2 })}
+                          className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-violet-500 focus:outline-none"
+                        />
+                      </div>
+                    )}
+
+                    {editingOverlay.mobileTrigger?.triggerType === 'scroll_depth' && (
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] text-slate-400">Mobile Scroll Depth (%)</label>
+                        <input
+                          type="number"
+                          min="10"
+                          max="90"
+                          step="5"
+                          value={editingOverlay.mobileTrigger?.scrollPercent ?? editingOverlay.triggerScrollPercent}
+                          onChange={(e) => updateMobileTrigger({ scrollPercent: parseInt(e.target.value) || 40 })}
+                          className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-violet-500 focus:outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    Off — mobile visitors follow the desktop trigger.{editingOverlay.triggerType === 'exit_intent' ? ' Exit intent falls back to a timed trigger on mobile.' : ''}
+                  </p>
                 )}
               </div>
             </div>
@@ -850,12 +1079,13 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                   <label className="text-[11px] text-slate-400">Action On Click</label>
                   <select
                     value={editingOverlay.ctaAction}
-                    onChange={(e) => setEditingOverlay({ ...editingOverlay, ctaAction: e.target.value as any })}
+                    onChange={(e) => setEditingOverlay({ ...editingOverlay, ctaAction: e.target.value as OverlayCtaAction })}
                     className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
                   >
                     <option value="open_bot">Open Conversational Bot</option>
                     <option value="lead_form">Submit Lead Form</option>
                     <option value="redirect_url">Redirect to URL</option>
+                    <option value="enter_contest">Enter Contest / Giveaway</option>
                   </select>
                 </div>
               </div>
@@ -870,6 +1100,38 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                     placeholder="https://..."
                     className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
                   />
+                </div>
+              )}
+
+              {editingOverlay.ctaAction === 'enter_contest' && (
+                <div className="space-y-2 pt-1">
+                  <label className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                    <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Contest to Enter</span>
+                  </label>
+                  <select
+                    value={editingOverlay.contestId || ''}
+                    onChange={(e) => {
+                      const contest = STUB_CONTESTS.find(c => c.id === e.target.value);
+                      setEditingOverlay({
+                        ...editingOverlay,
+                        contestId: contest?.id || '',
+                        contestName: contest?.name || ''
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-amber-500 focus:outline-none"
+                  >
+                    <option value="">Select a contest...</option>
+                    {STUB_CONTESTS.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} — {c.status === 'active' ? `${c.entriesCount.toLocaleString()} entries` : c.status}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
+                    <Gift className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-slate-500" />
+                    <span>Stub list — real contests from the Contests module will appear here. Entering is the capture event: the entrant feeds referral tracking and the leaderboard.</span>
+                  </p>
                 </div>
               )}
             </div>
@@ -965,7 +1227,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                     className="w-full py-2.5 px-4 rounded-xl font-bold text-xs text-white shadow-lg cursor-pointer"
                     style={{ backgroundColor: editingOverlay.brandColor }}
                   >
-                    {editingOverlay.ctaText}
+                    <CtaLabel overlay={editingOverlay} />
                   </button>
                 </div>
               )}
@@ -984,7 +1246,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                     className="w-full py-2 px-3 rounded-xl font-bold text-xs text-white shadow-md cursor-pointer"
                     style={{ backgroundColor: editingOverlay.brandColor }}
                   >
-                    {editingOverlay.ctaText}
+                    <CtaLabel overlay={editingOverlay} />
                   </button>
                 </div>
               )}
@@ -998,7 +1260,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                     <p className="text-xs font-bold truncate">{editingOverlay.headline}</p>
                   </div>
                   <button className="px-3 py-1.5 rounded-lg bg-slate-950 text-white font-bold text-xs flex-shrink-0 cursor-pointer">
-                    {editingOverlay.ctaText}
+                    <CtaLabel overlay={editingOverlay} />
                   </button>
                 </div>
               )}
@@ -1019,7 +1281,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                     className="py-2.5 px-6 rounded-xl font-bold text-xs text-white shadow-xl cursor-pointer"
                     style={{ backgroundColor: editingOverlay.brandColor }}
                   >
-                    {editingOverlay.ctaText}
+                    <CtaLabel overlay={editingOverlay} />
                   </button>
                 </div>
               )}
@@ -1037,16 +1299,42 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
         <div className="space-y-4">
           
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-slate-900 border border-white/10 rounded-2xl">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="text-xs text-slate-400">Testing Overlay:</span>
               <span className="text-xs font-bold text-white">{currentOverlay.name}</span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 font-mono">
-                Trigger: {currentOverlay.triggerType}
+                Desktop: {currentOverlay.triggerType.replace('_', ' ')}
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 font-mono">
+                {describeMobileTrigger(currentOverlay)}
               </span>
             </div>
 
             {/* Trigger Simulation Controls */}
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Device toggle — shows which trigger fires per device */}
+              <div className="flex rounded-xl overflow-hidden border border-white/10">
+                <button
+                  onClick={() => setSimDevice('desktop')}
+                  className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    simDevice === 'desktop' ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                  <span>Desktop</span>
+                </button>
+                <button
+                  onClick={() => setSimDevice('mobile')}
+                  className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    simDevice === 'mobile' ? 'bg-violet-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Mobile</span>
+                </button>
+              </div>
+
+              {simDevice === 'desktop' && (
               <button
                 onClick={() => {
                   setSimOverlayActive(false);
@@ -1062,31 +1350,38 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                 <MousePointer className="w-3.5 h-3.5" />
                 <span>Simulate Exit Intent</span>
               </button>
+              )}
+
+              {simDevice === 'mobile' && (
+                <span className="text-[11px] text-violet-300 bg-violet-500/10 border border-violet-500/20 rounded-xl px-3 py-1.5">
+                  No cursor on mobile — firing on: {simEffTrigger.replace('_', ' ')}
+                </span>
+              )}
 
               <button
                 onClick={() => {
                   setSimOverlayActive(false);
                   setSimLeadSubmitted(false);
-                  setSimTriggerStatus('Simulating visitor scrolling down 50%...');
+                  setSimTriggerStatus(`Simulating visitor scrolling down ${simEffScroll}%...`);
                   setTimeout(() => {
                     setSimOverlayActive(true);
-                    setSimTriggerStatus('Scroll depth reached: 50% down page!');
+                    setSimTriggerStatus(`Scroll depth reached: ${simEffScroll}% down page!`);
                   }, 500);
                 }}
                 className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
               >
                 <Sliders className="w-3.5 h-3.5" />
-                <span>Simulate 50% Scroll</span>
+                <span>Simulate {simEffScroll}% Scroll</span>
               </button>
 
               <button
                 onClick={() => {
                   setSimOverlayActive(false);
                   setSimLeadSubmitted(false);
-                  setSimTriggerStatus('Simulating 2s page view delay...');
+                  setSimTriggerStatus(`Simulating ${simEffDelay}s page view delay...`);
                   setTimeout(() => {
                     setSimOverlayActive(true);
-                    setSimTriggerStatus('Time delay reached: 2.0s elapsed!');
+                    setSimTriggerStatus(`Time delay reached: ${simEffDelay}s elapsed!`);
                   }, 1200);
                 }}
                 className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
@@ -1183,7 +1478,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                   {simLeadSubmitted ? (
                     <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold space-y-1">
                       <CheckCircle2 className="w-6 h-6 mx-auto mb-1 text-emerald-400" />
-                      <span>🎉 Offer Claimed! Lead recorded in CRM.</span>
+                      <span>{currentOverlay.ctaAction === 'enter_contest' ? "🎉 You're entered! Contest entry recorded." : '🎉 Offer Claimed! Lead recorded in CRM.'}</span>
                     </div>
                   ) : (
                     <div className="space-y-2 pt-2">
@@ -1214,7 +1509,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                         className="w-full py-3 px-4 rounded-xl font-bold text-xs text-white shadow-xl cursor-pointer hover:opacity-95 transition-opacity"
                         style={{ backgroundColor: currentOverlay.brandColor }}
                       >
-                        {currentOverlay.ctaText}
+                        <CtaLabel overlay={currentOverlay} />
                       </button>
                     </div>
                   )}
@@ -1273,8 +1568,13 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
             </div>
 
             <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-slate-300">
-              <span className="font-bold text-blue-300 block mb-1">Exit-Intent &amp; Mobile Responsive:</span>
-              <p className="text-slate-400">The script automatically handles mouseout exit detection on desktop and back-button / scroll triggers on mobile devices.</p>
+              <span className="font-bold text-blue-300 block mb-1">Per-Device Triggers:</span>
+              <p className="text-slate-400">
+                Desktop fires on <span className="font-mono text-cyan-300">{embedModalOverlay.triggerType.replace('_', ' ')}</span>
+                {embedModalOverlay.triggerType === 'exit_intent' ? ' (desktop-only — no cursor on phones)' : ''};
+                mobile fires on <span className="font-mono text-violet-300">{describeMobileTrigger(embedModalOverlay).replace('Mobile: ', '')}</span>.
+                The snippet carries both configs for the embed SDK.
+              </p>
             </div>
 
             <div className="flex justify-end pt-2">
