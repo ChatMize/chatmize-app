@@ -170,6 +170,22 @@ export const CHATMIZE_INTEGRATIONS: IntegrationApp[] = [
       { name: 'apiKey', label: 'Ontraport API Key', placeholder: 'Enter API Key', type: 'password' },
     ],
   },
+  {
+    id: 'gohighlevel',
+    name: 'GoHighLevel',
+    category: 'crm',
+    tagline: 'All-in-one sales & marketing platform',
+    description: 'Push chatbot leads into GoHighLevel as contacts, trigger workflows, and sync pipeline stages.',
+    logoBg: 'bg-[#0F52BA]',
+    logoTextColor: 'text-white',
+    initials: 'GH',
+    connected: false,
+    authType: 'API Key',
+    fields: [
+      { name: 'apiKey', label: 'GoHighLevel API Key', placeholder: 'Enter your GoHighLevel API key', type: 'password', helpText: 'GoHighLevel > Settings > Integrations > API Key' },
+      { name: 'locationId', label: 'Location ID', placeholder: 'Enter Location ID', helpText: 'GoHighLevel > Settings > Business Info' },
+    ],
+  },
 
   // Webinar Platforms
   {
