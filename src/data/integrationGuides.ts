@@ -15,6 +15,8 @@ export interface IntegrationGuide {
     title: string;
     description: string;
     tip?: string;
+    url?: string;
+    linkLabel?: string;
   }[];
   howItWorksInFlows: string;
   examplePayload?: string;
@@ -70,6 +72,8 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
         title: 'Step 2: Generate an API Key',
         description: 'Click "API keys", scroll down to "Your API keys", and click "Create A Key". Name it "Chatmize Bot Integration".',
         tip: 'Mailchimp API keys look like md-xxxxxxxxxxxxxxxxxxxxxx-us19 (ending with your datacenter prefix).',
+        url: 'https://admin.mailchimp.com/account/api/',
+        linkLabel: 'Open Mailchimp API Keys',
       },
       {
         title: 'Step 3: Save and test connection',
@@ -96,6 +100,8 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
       {
         title: 'Step 2: Access the Advanced tab',
         description: 'Scroll the left settings menu down to "Advanced". Here you will find both your API Key and API Secret.',
+        url: 'https://app.kit.com/account_settings/developer_settings',
+        linkLabel: 'Open Kit Developer Settings',
       },
       {
         title: 'Step 3: Reveal and copy credentials',
@@ -118,6 +124,8 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
       {
         title: 'Step 1: Navigate to Integrations & API',
         description: 'Click the menu icon at the top left of GetResponse and choose "Integrations & API".',
+        url: 'https://app.getresponse.com/api',
+        linkLabel: 'Open GetResponse API Settings',
       },
       {
         title: 'Step 2: Generate an API Key',
@@ -144,6 +152,8 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
       {
         title: 'Step 1: Authorize Application',
         description: 'Click the AWeber authorization link to sign in and grant Chatmize read/write permissions to your subscriber lists.',
+        url: 'https://labs.aweber.com/apps',
+        linkLabel: 'Open AWeber Developer Apps',
       },
       {
         title: 'Step 2: Copy the Authorization Code',
@@ -169,6 +179,8 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
       {
         title: 'Step 1: Go to API Keys in SendGrid',
         description: 'In your SendGrid console, navigate to Settings > API Keys.',
+        url: 'https://app.sendgrid.com/settings/api_keys',
+        linkLabel: 'Open SendGrid API Keys',
       },
       {
         title: 'Step 2: Create a Key with Mail Send permissions',
@@ -194,10 +206,14 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
       {
         title: 'Step 1: Find your Account ID',
         description: 'In Drip, go to Settings > Account. Copy your 7-digit Account ID.',
+        url: 'https://www.getdrip.com/settings/site',
+        linkLabel: 'Open Drip Account Settings',
       },
       {
         title: 'Step 2: Get your User API Token',
         description: 'Go to User Settings > API Token and copy your private token.',
+        url: 'https://www.getdrip.com/user/edit',
+        linkLabel: 'Open Drip User Settings',
       },
     ],
     howItWorksInFlows: 'Record events like "Started Checkout from Instagram Story" or "Claimed Discount Code".',
@@ -289,6 +305,8 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
       {
         title: 'Step 1: Authorize GoTo account',
         description: 'Sign into the GoTo Developer center or click the OAuth prompt to grant attendee registration rights.',
+        url: 'https://developer.goto.com',
+        linkLabel: 'Open GoTo Developer Center',
       },
       {
         title: 'Step 2: Save Access Token',
@@ -308,6 +326,8 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
       {
         title: 'Step 1: Create a new Zap in Zapier',
         description: 'In Zapier, click "Create Zap". Select "Webhooks by Zapier" as the trigger.',
+        url: 'https://zapier.com/app/editor',
+        linkLabel: 'Open Zapier Editor',
       },
       {
         title: 'Step 2: Choose "Catch Hook"',
@@ -403,6 +423,8 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
       {
         title: 'Step 2: Generate API Key',
         description: 'Copy your account API Key from your developer profile.',
+        url: 'https://perkzilla.com/developer/',
+        linkLabel: 'Open PerkZilla Developer API',
       },
     ],
     howItWorksInFlows: 'Issue unique referral links to users inside Messenger or Instagram DM.',
@@ -426,6 +448,34 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
     ],
     howItWorksInFlows: 'Unlock lesson modules and deliver instant magic login links inside chat.',
     troubleshooting: ['Verify membership level ID corresponds with an active course package.'],
+  },
+  moosend: {
+    appId: 'moosend',
+    appName: 'Moosend',
+    category: 'Email Marketing & Automation',
+    authMethod: 'API Key',
+    summary: 'Subscribe chatbot leads to Moosend mailing lists and trigger automated campaigns.',
+    steps: [
+      {
+        title: 'Step 1: Open the Moosend API Key page',
+        description: 'Log into Moosend, click the Settings icon in the top-right corner, then choose "API Key" from the left menu.',
+        url: 'https://docs.moosend.com/user-guide/articles/KnowledgeBase/54498-use-the-api-key-to-connect-to-the-moosend-web-api?lang=en_US',
+        linkLabel: 'How to get your Moosend API key',
+      },
+      {
+        title: 'Step 2: Copy or generate your API key',
+        description: 'Copy your existing API key, or click "Generate API Key" to create a new one.',
+      },
+      {
+        title: 'Step 3: Save inside Chatmize',
+        description: 'Paste the key into Chatmize Settings > Integrations > Moosend and click "Save & Verify".',
+      },
+    ],
+    howItWorksInFlows: 'After collecting an email in a flow, add a Moosend action to subscribe the contact to your target mailing list.',
+    troubleshooting: [
+      'Keep your API key private and never share it publicly.',
+      'If verification fails, regenerate the key in Moosend and paste the new one.',
+    ],
   },
 };
 

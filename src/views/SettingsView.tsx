@@ -954,6 +954,19 @@ export function SettingsView({
                         Tip: {step.tip}
                       </p>
                     )}
+                    {step.url && (
+                      <div className="mt-2">
+                        <a
+                          href={step.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] font-bold text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5 transition-colors"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>{step.linkLabel || 'Open settings page'}</span>
+                        </a>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -13,6 +13,8 @@ export interface TriggerKnowledgeGuide {
     title: string;
     description: string;
     tip?: string;
+    url?: string;
+    linkLabel?: string;
   }[];
   howItWorksInFlows: string;
   examplePayload?: string;
@@ -266,6 +268,8 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
       {
         title: 'Step 1: Create Ad Campaign in Meta Ads Manager',
         description: 'Set Campaign Objective to "Engagement" -> "Messaging Apps" -> select your Instagram account.',
+        url: 'https://adsmanager.facebook.com/',
+        linkLabel: 'Open Meta Ads Manager',
       },
       {
         title: 'Step 2: Copy JSON Setup Payload from Chatmize',
@@ -439,6 +443,8 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
       {
         title: 'Step 1: Create Messenger Ad in Ads Manager',
         description: 'Select Campaign Objective "Engagement" or "Leads" -> Destination "Messenger".',
+        url: 'https://adsmanager.facebook.com/',
+        linkLabel: 'Open Meta Ads Manager',
       },
       {
         title: 'Step 2: Copy Setup JSON from Chatmize',
@@ -644,6 +650,8 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
       {
         title: 'Step 1: Set Up Click-to-WhatsApp Ad',
         description: 'In Ads Manager, select "Engagement" objective and choose WhatsApp as the destination.',
+        url: 'https://adsmanager.facebook.com/',
+        linkLabel: 'Open Meta Ads Manager',
       },
       {
         title: 'Step 2: Link Campaign in Chatmize',
