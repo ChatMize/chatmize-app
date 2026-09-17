@@ -48,6 +48,10 @@ const OAUTH_SCOPES = [
   "pages_show_list",
   "pages_messaging",
   "pages_manage_metadata",
+  // Lets /me/accounts include pages whose access comes via a Business
+  // portfolio, not just direct page roles. (SegMate's older app sees those;
+  // without this scope the new granular model filters them out.)
+  "business_management",
 ];
 // NOTE (2026-09-17): instagram_basic + instagram_manage_messages were requested
 // here but Facebook's login dialog rejects them as "Invalid Scopes" for this
