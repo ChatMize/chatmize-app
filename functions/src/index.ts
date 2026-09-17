@@ -31,7 +31,7 @@ import {
   storePendingPages,
   selectWorkspacePage,
   resolvePageToken,
-  getLinkedInstagram,
+  getPageSocialProfile,
   appReturnUrl,
 } from "./metaOAuth";
 import { normalizeEntry } from "./handlers";
@@ -1042,15 +1042,24 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     status?: string;
     pageId?: string;
     pageName?: string;
-    instagram?: { id: string; username: string } | null;
+    pagePictureUrl?: string | null;
+    instagram?: { id: string; username: string; pictureUrl: string | null } | null;
   };
-  let instagram: { id: string; username: string } | null = conn.instagram ?? null;
-  if (conn.status === "connected" && conn.pageId && conn.instagram === undefined) {
-    // Backfill for pages connected before IG-link detection shipped.
+  let instagram: { id: string; username: string; pictureUrl: string | null } | null =
+    conn.instagram ?? null;
+  let pagePictureUrl: string | null = conn.pagePictureUrl ?? null;
+  if (
+    conn.status === "connected" &&
+    conn.pageId &&
+    (conn.instagram === undefined || conn.pagePictureUrl === undefined)
+  ) {
+    // Backfill for pages connected before social-profile detection shipped.
     const token = await resolvePageToken(workspaceId, "");
     if (token) {
-      instagram = await getLinkedInstagram(conn.pageId, token);
-      await snap.ref.set({ instagram }, { merge: true });
+      const social = await getPageSocialProfile(conn.pageId, token);
+      instagram = social.instagram;
+      pagePictureUrl = social.pictureUrl;
+      await snap.ref.set({ instagram, pagePictureUrl }, { merge: true });
     }
   }
   return {
@@ -1058,6 +1067,7 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     pending: conn.status === "pending",
     pageId: conn.pageId ?? null,
     pageName: conn.pageName ?? null,
+    pagePictureUrl,
     instagram,
   };
 });

@@ -8,8 +8,10 @@ export interface MetaOAuthStatus {
   pending: boolean;
   pageId: string | null;
   pageName: string | null;
+  /** Facebook Page profile picture URL; null when unavailable. */
+  pagePictureUrl: string | null;
   /** Instagram business/creator account linked to the page; null when none is linked. */
-  instagram: { id: string; username: string } | null;
+  instagram: { id: string; username: string; pictureUrl: string | null } | null;
 }
 
 export interface MetaPage {

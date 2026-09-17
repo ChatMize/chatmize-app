@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Facebook, Instagram, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Search, X } from 'lucide-react';
+import { Facebook, Instagram, MessageCircle, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Search, X } from 'lucide-react';
 import {
   startMetaOAuth,
   getMetaOAuthStatus,
@@ -168,9 +168,17 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
       <div>
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-slate-900/80 rounded-xl border border-white/10">
-              <Facebook className="w-6 h-6 text-blue-500" />
-            </div>
+            {connected && status?.pagePictureUrl ? (
+              <img
+                src={status.pagePictureUrl}
+                alt={status.pageName ?? 'Facebook Page'}
+                className="w-12 h-12 rounded-xl object-cover border border-white/10"
+              />
+            ) : (
+              <div className="p-3 bg-slate-900/80 rounded-xl border border-white/10">
+                <Facebook className="w-6 h-6 text-blue-500" />
+              </div>
+            )}
             <div>
               <h3 className="font-bold text-white text-sm">Facebook Page (Meta Anchor)</h3>
               <p className="text-xs font-mono text-slate-400">
@@ -201,20 +209,59 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
         )}
 
         {connected && (
-          status?.instagram ? (
-            <p className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300">
-              <Instagram className="w-3.5 h-3.5" />
-              Instagram @{status.instagram.username} linked
+          <div className="mb-4">
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              Connected channels
             </p>
-          ) : (
-            <p className="mb-3 flex items-start gap-1.5 text-[11px] text-amber-300/90">
-              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
-              <span>
-                No Instagram account linked. Link one in the Page's Facebook Settings
-                to enable Instagram DMs.
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                {status?.pagePictureUrl ? (
+                  <img src={status.pagePictureUrl} alt="" className="w-6 h-6 rounded-full object-cover" />
+                ) : (
+                  <Facebook className="w-4 h-4 text-blue-400 ml-1" />
+                )}
+                <span className="text-[11px] font-medium text-emerald-200">
+                  {status?.pageName ?? 'Facebook Page'}
+                </span>
               </span>
-            </p>
-          )
+              {status?.instagram ? (
+                <span className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                  {status.instagram.pictureUrl ? (
+                    <img src={status.instagram.pictureUrl} alt="" className="w-6 h-6 rounded-full object-cover" />
+                  ) : (
+                    <Instagram className="w-4 h-4 text-pink-400 ml-1" />
+                  )}
+                  <span className="text-[11px] font-medium text-emerald-200">
+                    @{status.instagram.username}
+                  </span>
+                </span>
+              ) : (
+                <span
+                  className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-white/5 border border-dashed border-white/15"
+                  title="Link an Instagram account in the Page's Facebook Settings"
+                >
+                  <Instagram className="w-4 h-4 text-slate-500 ml-1" />
+                  <span className="text-[11px] text-slate-500">Instagram not linked</span>
+                </span>
+              )}
+              <span
+                className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-white/5 border border-dashed border-white/15"
+                title="WhatsApp Business Cloud API — coming soon"
+              >
+                <MessageCircle className="w-4 h-4 text-slate-500 ml-1" />
+                <span className="text-[11px] text-slate-500">WhatsApp soon</span>
+              </span>
+            </div>
+            {!status?.instagram && (
+              <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-300/90">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                <span>
+                  No Instagram account linked. Link one in the Page's Facebook Settings
+                  to enable Instagram DMs.
+                </span>
+              </p>
+            )}
+          </div>
         )}
 
         {error && (

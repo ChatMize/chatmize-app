@@ -223,34 +223,55 @@ export async function consumeOAuthState(state: string): Promise<OAuthState> {
 export interface LinkedInstagram {
   id: string;
   username: string;
+  pictureUrl: string | null;
+}
+
+/** Page profile picture + linked Instagram, captured at connect time. */
+export interface PageSocialProfile {
+  pictureUrl: string | null;
+  instagram: LinkedInstagram | null;
 }
 
 /**
- * Look up the Instagram business/creator account linked to a Page.
- * Returns null when no account is linked (or the lookup fails) — never throws,
- * so a missing link can never break page connection.
+ * Fetch a Page's profile picture and its linked Instagram business/creator
+ * account (with the IG profile picture). Never throws: missing pieces come
+ * back null so a failed lookup can never break page connection.
  */
-export async function getLinkedInstagram(
+export async function getPageSocialProfile(
   pageId: string,
   pageToken: string,
-): Promise<LinkedInstagram | null> {
+): Promise<PageSocialProfile> {
+  let pictureUrl: string | null = null;
+  let instagram: LinkedInstagram | null = null;
   try {
     const data = (await graphGet(
-      `/${pageId}?fields=instagram_business_account{id,username}`,
+      `/${pageId}?fields=picture.width(200).height(200){url},instagram_business_account{id,username}`,
       pageToken,
     )) as {
+      picture?: { data?: { url?: string } };
       instagram_business_account?: { id?: string; username?: string };
     };
+    pictureUrl = data.picture?.data?.url ?? null;
     const ig = data.instagram_business_account;
-    if (ig?.id) return { id: ig.id, username: ig.username ?? ig.id };
-    return null;
+    if (ig?.id) {
+      let igPic: string | null = null;
+      try {
+        const igData = (await graphGet(`/${ig.id}?fields=profile_picture_url`, pageToken)) as {
+          profile_picture_url?: string;
+        };
+        igPic = igData.profile_picture_url ?? null;
+      } catch {
+        // IG picture is a nice-to-have; the link itself is what matters.
+      }
+      instagram = { id: ig.id, username: ig.username ?? ig.id, pictureUrl: igPic };
+    }
   } catch (e) {
-    logger.warn("Instagram link lookup failed", {
+    logger.warn("Page social profile lookup failed", {
       pageId,
       err: (e as Error).message,
     });
-    return null;
   }
+  return { pictureUrl, instagram };
 }
 
 async function graphGet(path: string, accessToken: string): Promise<unknown> {
@@ -406,9 +427,9 @@ export async function selectWorkspacePage(
     throw new Error("Could not store the page token securely. Please try again.");
   }
 
-  // Detect the Instagram account linked to this page (null when none).
-  // Never blocks the connection: a failed lookup just records null.
-  const linkedIg = await getLinkedInstagram(page.id, page.token);
+  // Detect the page's profile picture and linked Instagram account
+  // (nulls when missing). Never blocks the connection.
+  const social = await getPageSocialProfile(page.id, page.token);
 
   await ref.set(
     {
@@ -416,7 +437,8 @@ export async function selectWorkspacePage(
       pageId: page.id,
       pageName: page.name,
       secretName: secretId,
-      instagram: linkedIg,
+      pagePictureUrl: social.pictureUrl,
+      instagram: social.instagram,
       connectedAt: FieldValue.serverTimestamp(),
       connectedBy: uid,
       // Drop the raw tokens now that the chosen one lives in Secret Manager.
