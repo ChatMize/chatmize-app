@@ -188,11 +188,12 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
 
       {showPicker && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm"
           onClick={closePicker}
         >
+          <div className="flex min-h-full items-center justify-center p-4">
           <div
-            className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-2xl shadow-2xl max-h-[90vh] flex flex-col relative"
+            className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-2xl shadow-2xl flex flex-col relative my-4"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -219,7 +220,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
                 className="w-full pl-9 pr-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500/60"
               />
             </div>
-            <div className="space-y-2 overflow-y-auto min-h-0 flex-1">
+            <div className="space-y-2 overflow-y-auto max-h-[50vh] pr-1">
               {pages
                 .filter((page) => {
                   const q = pageQuery.trim().toLowerCase();
@@ -250,6 +251,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
             >
               Cancel
             </button>
+          </div>
           </div>
         </div>
       )}
