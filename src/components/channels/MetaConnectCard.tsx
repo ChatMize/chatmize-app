@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Facebook, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Search, X } from 'lucide-react';
+import { Facebook, Instagram, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Search, X } from 'lucide-react';
 import {
   startMetaOAuth,
   getMetaOAuthStatus,
@@ -200,6 +200,23 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
           <p className="text-[11px] text-slate-500 font-mono mb-3">Page ID {status.pageId}</p>
         )}
 
+        {connected && (
+          status?.instagram ? (
+            <p className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300">
+              <Instagram className="w-3.5 h-3.5" />
+              Instagram @{status.instagram.username} linked
+            </p>
+          ) : (
+            <p className="mb-3 flex items-start gap-1.5 text-[11px] text-amber-300/90">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+              <span>
+                No Instagram account linked. Link one in the Page's Facebook Settings
+                to enable Instagram DMs.
+              </span>
+            </p>
+          )
+        )}
+
         {error && (
           <div className="mb-3 p-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-red-300 text-xs flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -210,7 +227,11 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
 
       <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs">
         <span className="text-slate-400">
-          {connected ? 'Messenger + Instagram ready' : 'Ready to authenticate'}
+          {connected
+            ? status?.instagram
+              ? 'Messenger + Instagram ready'
+              : 'Messenger ready · Instagram not linked'
+            : 'Ready to authenticate'}
         </span>
         <button
           onClick={handleConnect}

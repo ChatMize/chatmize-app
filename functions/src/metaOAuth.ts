@@ -219,6 +219,40 @@ export async function consumeOAuthState(state: string): Promise<OAuthState> {
   return data;
 }
 
+/** Instagram business/creator account linked to a Page (null when none). */
+export interface LinkedInstagram {
+  id: string;
+  username: string;
+}
+
+/**
+ * Look up the Instagram business/creator account linked to a Page.
+ * Returns null when no account is linked (or the lookup fails) — never throws,
+ * so a missing link can never break page connection.
+ */
+export async function getLinkedInstagram(
+  pageId: string,
+  pageToken: string,
+): Promise<LinkedInstagram | null> {
+  try {
+    const data = (await graphGet(
+      `/${pageId}?fields=instagram_business_account{id,username}`,
+      pageToken,
+    )) as {
+      instagram_business_account?: { id?: string; username?: string };
+    };
+    const ig = data.instagram_business_account;
+    if (ig?.id) return { id: ig.id, username: ig.username ?? ig.id };
+    return null;
+  } catch (e) {
+    logger.warn("Instagram link lookup failed", {
+      pageId,
+      err: (e as Error).message,
+    });
+    return null;
+  }
+}
+
 async function graphGet(path: string, accessToken: string): Promise<unknown> {
   const sep = path.includes("?") ? "&" : "?";
   const res = await fetch(`${GRAPH_BASE}${path}${sep}access_token=${encodeURIComponent(accessToken)}`);
@@ -372,12 +406,17 @@ export async function selectWorkspacePage(
     throw new Error("Could not store the page token securely. Please try again.");
   }
 
+  // Detect the Instagram account linked to this page (null when none).
+  // Never blocks the connection: a failed lookup just records null.
+  const linkedIg = await getLinkedInstagram(page.id, page.token);
+
   await ref.set(
     {
       status: "connected",
       pageId: page.id,
       pageName: page.name,
       secretName: secretId,
+      instagram: linkedIg,
       connectedAt: FieldValue.serverTimestamp(),
       connectedBy: uid,
       // Drop the raw tokens now that the chosen one lives in Secret Manager.

@@ -31,6 +31,7 @@ import {
   storePendingPages,
   selectWorkspacePage,
   resolvePageToken,
+  getLinkedInstagram,
   appReturnUrl,
 } from "./metaOAuth";
 import { normalizeEntry } from "./handlers";
@@ -1041,12 +1042,23 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     status?: string;
     pageId?: string;
     pageName?: string;
+    instagram?: { id: string; username: string } | null;
   };
+  let instagram: { id: string; username: string } | null = conn.instagram ?? null;
+  if (conn.status === "connected" && conn.pageId && conn.instagram === undefined) {
+    // Backfill for pages connected before IG-link detection shipped.
+    const token = await resolvePageToken(workspaceId, "");
+    if (token) {
+      instagram = await getLinkedInstagram(conn.pageId, token);
+      await snap.ref.set({ instagram }, { merge: true });
+    }
+  }
   return {
     connected: conn.status === "connected",
     pending: conn.status === "pending",
     pageId: conn.pageId ?? null,
     pageName: conn.pageName ?? null,
+    instagram,
   };
 });
 

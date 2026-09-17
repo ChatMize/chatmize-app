@@ -8,6 +8,8 @@ export interface MetaOAuthStatus {
   pending: boolean;
   pageId: string | null;
   pageName: string | null;
+  /** Instagram business/creator account linked to the page; null when none is linked. */
+  instagram: { id: string; username: string } | null;
 }
 
 export interface MetaPage {
