@@ -149,10 +149,14 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
   const connected = status?.connected ?? false;
 
   const pageQueryLower = pageQuery.trim().toLowerCase();
+  // Normalize: ignore spaces, dashes, and other punctuation so
+  // "tester555121" matches "Tester 555121", "Tester-555121", etc.
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const queryNorm = normalize(pageQueryLower);
   const filteredPages = pages.filter(
     (page) =>
-      !pageQueryLower ||
-      page.name.toLowerCase().includes(pageQueryLower) ||
+      !queryNorm ||
+      normalize(page.name).includes(queryNorm) ||
       page.id.includes(pageQueryLower),
   );
 
