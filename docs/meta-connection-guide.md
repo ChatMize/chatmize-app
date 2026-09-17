@@ -46,3 +46,45 @@ Work through these in order:
   pages_messaging, pages_manage_metadata, business_management. The last one
   is what surfaces business portfolio pages.
 - Instagram messaging setup is separate and comes after the Page is connected.
+
+---
+
+# Connecting Instagram directly (no Facebook Page needed)
+
+For IG-first businesses and creators. Uses Instagram Login through the
+ChatMize-IG app. The long-lived Instagram token is stored encrypted and
+scoped to the workspace; only the IG id/username/picture ever reach the app.
+
+## Steps
+
+1. In ChatMize, open **Settings → Channels** and click **Connect Instagram**
+   on the Instagram Direct & Comments card.
+2. Log in with the Instagram professional (business or creator) account you
+   want to connect, and approve the requested permissions.
+3. You're returned to ChatMize. The card shows the connected `@username`
+   with its profile picture.
+
+## Requirements on the Instagram account
+
+- It must be a **professional** account (business or creator), not personal.
+- While the Meta app is in development mode, the IG account must be added
+  as a tester: Meta app dashboard → Roles → add the account as an
+  **Instagram Tester**, and accept the invite from the IG account.
+- Turn on **Allow access to messages** in the IG account's privacy settings,
+  otherwise DMs can't reach ChatMize.
+
+## Upgrade path
+
+An IG-only workspace can later connect a Facebook Page as its Meta anchor
+(Settings → Channels → Connect with Facebook). If the Instagram account is
+linked to that Page, both channels merge under the one workspace and
+Messenger unlocks too.
+
+## Developer setup (ChatMize team only)
+
+- Instagram app: ChatMize-IG (Meta app dashboard).
+- Valid OAuth Redirect URI on the Instagram app:
+  `https://app.chatmize.com/metaOAuthCallback` (shared with the Page flow;
+  the backend routes by login state).
+- App secret stored as `META_INSTAGRAM_APP_SECRET` in Google Secret Manager;
+  the IG token per workspace lives in its own `IG_TOKEN_WS_<id>` secret.
