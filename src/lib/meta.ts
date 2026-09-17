@@ -12,6 +12,14 @@ export interface MetaOAuthStatus {
   pagePictureUrl: string | null;
   /** Instagram business/creator account linked to the page; null when none is linked. */
   instagram: { id: string; username: string; pictureUrl: string | null } | null;
+  /** IG-only anchor (Instagram Login, no Facebook Page). Present when the backend ships it. */
+  instagramOnly?: {
+    connected: boolean;
+    igUserId: string | null;
+    username: string | null;
+    pictureUrl: string | null;
+    expiresAtMs: number | null;
+  };
 }
 
 export interface MetaPage {

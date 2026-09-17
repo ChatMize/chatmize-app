@@ -17,8 +17,9 @@ import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 
 /** ChatMize-IG Instagram app id (public, from the Meta app dashboard). */
 const INSTAGRAM_APP_ID = "458803055480627";
+/** Shared OAuth callback (also serves Instagram Login; routed by state). */
 export const INSTAGRAM_OAUTH_CALLBACK_URL =
-  "https://app.chatmize.com/instagramOAuthCallback";
+  "https://app.chatmize.com/metaOAuthCallback";
 const APP_RETURN_URL = "https://app.chatmize.com/";
 
 /** Permissions for IG DMs + comments via Instagram Login. */
@@ -98,6 +99,16 @@ export async function buildInstagramLoginUrl(
     state,
   });
   return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
+}
+
+/** Peek whether a state belongs to the Instagram Login flow (no consume). */
+export async function isInstagramOAuthState(state: string): Promise<boolean> {
+  try {
+    const snap = await db().collection("instagram_oauth_states").doc(state).get();
+    return snap.exists;
+  } catch {
+    return false;
+  }
 }
 
 interface InstagramOAuthState {
@@ -272,6 +283,44 @@ export async function refreshIgTokenIfNeeded(
       err: (e as Error).message,
     });
   }
+}
+
+export interface InstagramConnection {
+  connected: boolean;
+  igUserId: string | null;
+  username: string | null;
+  pictureUrl: string | null;
+  expiresAtMs: number | null;
+}
+
+/** Read the IG-only connection doc (no tokens leave the server). */
+export async function getInstagramConnection(workspaceId: string): Promise<InstagramConnection> {
+  const snap = await db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("integrations")
+    .doc("instagram")
+    .get();
+  const conn = (snap.data() ?? {}) as {
+    status?: string;
+    igUserId?: string;
+    username?: string;
+    pictureUrl?: string | null;
+    secretName?: string;
+    expiresAtMs?: number;
+  };
+  const connected = conn.status === "connected" && !!conn.igUserId;
+  if (connected) {
+    // Keep the long-lived token alive while the user keeps the app open.
+    await refreshIgTokenIfNeeded(workspaceId, conn).catch(() => undefined);
+  }
+  return {
+    connected,
+    igUserId: conn.igUserId ?? null,
+    username: conn.username ?? null,
+    pictureUrl: conn.pictureUrl ?? null,
+    expiresAtMs: conn.expiresAtMs ?? null,
+  };
 }
 
 /** Step 3: persist the IG token as the workspace's own secret + connection doc. */

@@ -50,13 +50,6 @@
           }
         },
         {
-          "source": "/instagramOAuthCallback",
-          "function": {
-            "functionId": "instagramOAuthCallback",
-            "region": "us-west2"
-          }
-        },
-        {
           "source": "**",
           "destination": "/index.html"
         }

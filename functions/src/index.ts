@@ -37,9 +37,10 @@ import {
 import {
   buildInstagramLoginUrl,
   consumeInstagramOAuthState,
+  isInstagramOAuthState,
   exchangeInstagramCode,
   connectInstagramAccount,
-  refreshIgTokenIfNeeded,
+  getInstagramConnection,
   instagramAppReturnUrl,
 } from "./instagramOAuth";
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
@@ -984,93 +985,22 @@ export const testAiRouter = onCall(
 // ---------------------------------------------------------------------------
 
 /** Step 1: return the Facebook Login URL for this workspace (authed). */
-/** Step 1: IG-only login start (Instagram Login via the ChatMize-IG app). */
-export const instagramOAuthStart = onCall({ region: REGION }, async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { workspaceId, returnTo } = (request.data ?? {}) as { workspaceId?: string; returnTo?: string };
-  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
-  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
-  const url = await buildInstagramLoginUrl(workspaceId, uid, returnTo);
-  logger.info("Instagram OAuth started", { workspaceId, uid });
-  return { url };
-});
-
-/** Step 2: Instagram redirects here with ?code&state. Public; state is single-use. */
-export const instagramOAuthCallback = onRequest(
-  { region: REGION, secrets: [META_INSTAGRAM_APP_SECRET] },
-  async (req, res) => {
-    const code = req.query["code"];
-    const state = req.query["state"];
-    try {
-      if (typeof code !== "string" || typeof state !== "string") {
-        throw new Error("Missing code or state.");
-      }
-      const { workspaceId, uid, returnTo } = await consumeInstagramOAuthState(state);
-      const profile = await exchangeInstagramCode(code);
-      await connectInstagramAccount(workspaceId, uid, profile);
-      logger.info("Instagram OAuth callback ok", {
-        workspaceId,
-        igUserId: profile.id,
-        username: profile.username,
-      });
-      res.redirect(302, instagramAppReturnUrl("success", undefined, returnTo));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Login failed.";
-      logger.warn("Instagram OAuth callback failed", { message });
-      let returnTo: string | undefined;
-      try {
-        if (typeof state === "string") {
-          const snap = await db().collection("instagram_oauth_states").doc(state).get();
-          returnTo = snap.data()?.returnTo;
-        }
-      } catch { /* ignore */ }
-      res.redirect(302, instagramAppReturnUrl("error", message, returnTo));
-    }
-  },
-);
-
-/** IG-only connection status for the client (no tokens leave the server). */
-export const instagramOAuthStatus = onCall({ region: REGION }, async (request) => {
-  const uid = request.auth?.uid;
-  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
-  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
-  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
-  const snap = await db()
-    .collection("workspaces")
-    .doc(workspaceId)
-    .collection("integrations")
-    .doc("instagram")
-    .get();
-  const conn = (snap.data() ?? {}) as {
-    status?: string;
-    igUserId?: string;
-    username?: string;
-    pictureUrl?: string | null;
-    secretName?: string;
-    expiresAtMs?: number;
-  };
-  const connected = conn.status === "connected" && !!conn.igUserId;
-  if (connected) {
-    // Keep the long-lived token alive while the user keeps the app open.
-    await refreshIgTokenIfNeeded(workspaceId, conn).catch(() => undefined);
-  }
-  return {
-    connected,
-    igUserId: conn.igUserId ?? null,
-    username: conn.username ?? null,
-    pictureUrl: conn.pictureUrl ?? null,
-    expiresAtMs: conn.expiresAtMs ?? null,
-  };
-});
-
 export const metaOAuthStart = onCall({ region: REGION }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { workspaceId, returnTo } = (request.data ?? {}) as { workspaceId?: string; returnTo?: string };
+  const { workspaceId, returnTo, provider } = (request.data ?? {}) as {
+    workspaceId?: string;
+    returnTo?: string;
+    provider?: string;
+  };
   if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
   await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  // IG-only path: Instagram Login via the ChatMize-IG app (no Facebook Page needed).
+  if (provider === "instagram") {
+    const url = await buildInstagramLoginUrl(workspaceId, uid, returnTo);
+    logger.info("Instagram OAuth started", { workspaceId, uid });
+    return { url };
+  }
   const url = await buildLoginUrl(workspaceId, uid, returnTo);
   logger.info("Meta OAuth started", { workspaceId, uid });
   return { url };
@@ -1078,13 +1008,26 @@ export const metaOAuthStart = onCall({ region: REGION }, async (request) => {
 
 /** Step 2: Meta redirects here with ?code&state. Public; state is single-use. */
 export const metaOAuthCallback = onRequest(
-  { region: REGION, secrets: [META_APP_SECRET] },
+  { region: REGION, secrets: [META_APP_SECRET, META_INSTAGRAM_APP_SECRET] },
   async (req, res) => {
     const code = req.query["code"];
     const state = req.query["state"];
     try {
       if (typeof code !== "string" || typeof state !== "string") {
         throw new Error("Missing code or state.");
+      }
+      // Route by state: Instagram Login states live in their own collection.
+      if (await isInstagramOAuthState(state)) {
+        const { workspaceId, uid, returnTo } = await consumeInstagramOAuthState(state);
+        const profile = await exchangeInstagramCode(code);
+        await connectInstagramAccount(workspaceId, uid, profile);
+        logger.info("Instagram OAuth callback ok", {
+          workspaceId,
+          igUserId: profile.id,
+          username: profile.username,
+        });
+        res.redirect(302, instagramAppReturnUrl("success", undefined, returnTo));
+        return;
       }
       const { workspaceId, uid, returnTo } = await consumeOAuthState(state);
       const result = await exchangeCodeForPages(code);
@@ -1104,13 +1047,19 @@ export const metaOAuthCallback = onRequest(
       // On failure the state was already consumed, so returnTo may be unknown;
       // try to read it without consuming (best effort, never throws).
       let returnTo: string | undefined;
+      let isIg = false;
       try {
         if (typeof state === "string") {
-          const snap = await db().collection("meta_oauth_states").doc(state).get();
+          isIg = await isInstagramOAuthState(state);
+          const coll = isIg ? "instagram_oauth_states" : "meta_oauth_states";
+          const snap = await db().collection(coll).doc(state).get();
           returnTo = snap.data()?.returnTo;
         }
       } catch { /* ignore */ }
-      res.redirect(302, appReturnUrl("error", message, returnTo));
+      const url = isIg
+        ? instagramAppReturnUrl("error", message, returnTo)
+        : appReturnUrl("error", message, returnTo);
+      res.redirect(302, url);
     }
   },
 );
@@ -1159,6 +1108,8 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     pageName: conn.pageName ?? null,
     pagePictureUrl,
     instagram,
+    // IG-only anchor (Instagram Login, no Facebook Page required).
+    instagramOnly: await getInstagramConnection(workspaceId),
   };
 });
 
