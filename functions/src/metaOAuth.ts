@@ -48,6 +48,10 @@ const OAUTH_SCOPES = [
   "pages_show_list",
   "pages_messaging",
   "pages_manage_metadata",
+  // Needed for Instagram DMs on IG accounts linked to the selected Page.
+  // (Requires App Review for production; works in dev mode for app roles.)
+  "instagram_basic",
+  "instagram_manage_messages",
 ];
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -358,6 +362,33 @@ export async function selectWorkspacePage(
     // merge:true is required for FieldValue.delete() sentinels in set().
     { merge: true }
   );
+
+  // Subscribe the app to the page so Messenger inbound webhooks flow.
+  // (Instagram DMs arrive via the app-level Instagram webhook subscription
+  // in the Meta app dashboard for the linked IG account.)
+  const subRes = await fetch(`${GRAPH_BASE}/${page.id}/subscribed_apps`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      access_token: page.token,
+      subscribed_fields: "messages,messaging_postbacks,message_deliveries,message_reads",
+    }),
+  });
+  if (!subRes.ok) {
+    const errText = await subRes.text().catch(() => "");
+    logger.error("Page app subscription failed", {
+      workspaceId,
+      pageId: page.id,
+      status: subRes.status,
+      err: errText.slice(0, 300),
+    });
+    throw new Error(
+      "Page connected, but Meta refused the message subscription. " +
+        "Inbound messages won't arrive. Please try selecting the page again."
+    );
+  }
+  logger.info("Page app subscribed", { workspaceId, pageId: page.id });
+
   cache.delete(`pagetoken:${workspaceId}`);
   return { pageId: page.id, pageName: page.name };
 }
