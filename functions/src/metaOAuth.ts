@@ -343,17 +343,21 @@ export async function selectWorkspacePage(
     throw new Error("Could not store the page token securely. Please try again.");
   }
 
-  await ref.set({
-    status: "connected",
-    pageId: page.id,
-    pageName: page.name,
-    secretName: secretId,
-    connectedAt: FieldValue.serverTimestamp(),
-    connectedBy: uid,
-    // Drop the raw tokens now that the chosen one lives in Secret Manager.
-    pages: FieldValue.delete(),
-    pendingExpiresAtMs: FieldValue.delete(),
-  });
+  await ref.set(
+    {
+      status: "connected",
+      pageId: page.id,
+      pageName: page.name,
+      secretName: secretId,
+      connectedAt: FieldValue.serverTimestamp(),
+      connectedBy: uid,
+      // Drop the raw tokens now that the chosen one lives in Secret Manager.
+      pages: FieldValue.delete(),
+      pendingExpiresAtMs: FieldValue.delete(),
+    },
+    // merge:true is required for FieldValue.delete() sentinels in set().
+    { merge: true }
+  );
   cache.delete(`pagetoken:${workspaceId}`);
   return { pageId: page.id, pageName: page.name };
 }
