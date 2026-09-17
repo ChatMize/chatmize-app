@@ -84,6 +84,19 @@ export async function parkDeadLetter(
     });
 }
 
+/** Park a webhook event that could not be routed to any workspace. */
+export async function parkGlobalDeadLetter(
+  reason: string,
+  payload: unknown,
+): Promise<void> {
+  await db().collection("webhook_dead_letter").add({
+    reason,
+    payload,
+    createdAt: FieldValue.serverTimestamp(),
+    status: "pending_retry",
+  });
+}
+
 /** Record an outbound send attempt and its Meta result. */
 export async function recordOutboundMessage(
   workspaceId: string,

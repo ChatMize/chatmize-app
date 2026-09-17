@@ -47,7 +47,7 @@ import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
 import {
   persistInboundMessage,
-  parkDeadLetter,
+  parkGlobalDeadLetter,
   recordOutboundMessage,
   Channel,
 } from "./store";
@@ -89,6 +89,34 @@ async function resolveWorkspace(workspaceId: unknown): Promise<string | null> {
   if (typeof workspaceId !== "string" || workspaceId.length === 0) return null;
   const snap = await db().collection("workspaces").doc(workspaceId).get();
   return snap.exists ? workspaceId : null;
+}
+
+/**
+ * Route a webhook entry to its workspace by the receiving Meta account id.
+ * Meta allows exactly one callback URL per app, so with many workspaces the
+ * event itself must say where it belongs: entry.id is the Page id for
+ * `page` events and the IG business account id for `instagram` events.
+ * Matches only connections with status "connected".
+ */
+async function resolveWorkspaceByAccount(
+  object: string,
+  accountId: string,
+): Promise<string | null> {
+  if (!accountId) return null;
+  const field =
+    object === "instagram" ? "igUserId" : object === "page" ? "pageId" : null;
+  if (!field) return null;
+  const snap = await db()
+    .collectionGroup("integrations")
+    .where(field, "==", accountId)
+    .limit(5)
+    .get();
+  for (const doc of snap.docs) {
+    if ((doc.data() as { status?: string }).status === "connected") {
+      return doc.ref.parent.parent?.id ?? null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -164,13 +192,10 @@ export const metaWebhook = onRequest(
       return;
     }
 
-    // 3. Route to the workspace carried on the callback URL.
-    const workspaceId = await resolveWorkspace(req.query.workspace);
-    if (!workspaceId) {
-      logger.warn("Webhook rejected: unknown workspace", { query: req.query.workspace });
-      res.sendStatus(400);
-      return;
-    }
+    // 3. Route each entry to its workspace. Meta allows one callback URL
+    //    per app, so the event's receiving account id decides — not the URL.
+    //    ?workspace= remains as an explicit override (testing / WhatsApp).
+    const overrideWorkspaceId = await resolveWorkspace(req.query.workspace);
 
     // 4. Normalize + persist. Always answer 200 fast so Meta does not retry
     //    storms; failures are parked in the dead-letter collection.
@@ -179,16 +204,31 @@ export const metaWebhook = onRequest(
       const object = body.object ?? "page";
       let received = 0;
       for (const entry of body.entry ?? []) {
+        const accountId = typeof entry.id === "string" ? entry.id : "";
+        const workspaceId =
+          overrideWorkspaceId ?? (await resolveWorkspaceByAccount(object, accountId));
+        if (!workspaceId) {
+          logger.warn("Webhook entry unroutable: no workspace for account", {
+            object,
+            accountId,
+          });
+          await parkGlobalDeadLetter("unroutable_entry", {
+            object,
+            accountId,
+            entry,
+          }).catch(() => {});
+          continue;
+        }
         for (const msg of normalizeEntry(entry, object)) {
           await persistInboundMessage(workspaceId, msg);
           received += 1;
         }
       }
-      logger.info("Webhook processed", { workspaceId, object, received });
+      logger.info("Webhook processed", { object, received });
       res.sendStatus(200);
     } catch (err) {
-      logger.error("Webhook processing failed", { workspaceId, err });
-      await parkDeadLetter(workspaceId, "processing_error", req.body).catch(() => {});
+      logger.error("Webhook processing failed", { err });
+      await parkGlobalDeadLetter("processing_error", req.body).catch(() => {});
       res.sendStatus(200); // still 200: the failure is recorded, not Meta's problem
     }
   },

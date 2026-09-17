@@ -7,7 +7,7 @@ interface MetaEntry {
     sender?: { id?: string };
     recipient?: { id?: string };
     timestamp?: number;
-    message?: { mid?: string; text?: string };
+    message?: { mid?: string; text?: string; is_echo?: boolean };
   }>;
   changes?: Array<{
     field?: string;
@@ -40,6 +40,9 @@ export function normalizeEntry(entry: MetaEntry, object: string): NormalizedMess
   const channel = object === "instagram" ? "instagram" : "messenger";
 
   for (const m of entry.messaging ?? []) {
+    // Skip echoes of our own outbound sends so a reply never lands
+    // back in the inbox as a new inbound message.
+    if (m.message?.is_echo) continue;
     const senderId = m.sender?.id;
     const mid = m.message?.mid;
     if (!senderId || !mid) continue;
