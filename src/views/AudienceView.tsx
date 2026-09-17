@@ -508,9 +508,9 @@ data subject, Meta Developer Compliance, and regulatory authorities.
         variables: variablesDict,
         customFields: variablesDict,
         meta: {
-          psid: modalChannel === 'messenger' ? `9${Date.now()}` : undefined,
-          igsid: modalChannel === 'instagram' ? `1784${Date.now().toString().slice(-8)}` : undefined,
-          waId: modalChannel === 'whatsapp' ? modalPhone.replace(/\D/g, '') : undefined,
+          ...(modalChannel === 'messenger' ? { psid: `9${Date.now()}` } : {}),
+          ...(modalChannel === 'instagram' ? { igsid: `1784${Date.now().toString().slice(-8)}` } : {}),
+          ...(modalChannel === 'whatsapp' ? { waId: modalPhone.replace(/\D/g, '') } : {}),
           locale: 'en_US',
           timezone: -5,
           adId: modalAdId,

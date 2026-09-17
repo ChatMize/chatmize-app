@@ -382,12 +382,24 @@ export function subscribeToContacts(
 export async function saveContact(contact: ContactRecord): Promise<void> {
   const contactRef = doc(db, 'contacts', contact.id);
   const vars = contact.variables || contact.customFields || {};
-  await setDoc(contactRef, {
+  // Strip undefined values (Firestore rejects them)
+  const clean = (obj: any): any => {
+    if (Array.isArray(obj)) return obj.map(clean);
+    if (obj && typeof obj === 'object') {
+      return Object.fromEntries(
+        Object.entries(obj)
+          .filter(([_, v]) => v !== undefined)
+          .map(([k, v]) => [k, clean(v)])
+      );
+    }
+    return obj;
+  };
+  await setDoc(contactRef, clean({
     ...contact,
     variables: vars,
     customFields: vars,
     lastInteractionAt: new Date().toISOString(),
-  }, { merge: true });
+  }), { merge: true });
 }
 
 // Update specific fields on a contact
@@ -919,7 +931,19 @@ export async function saveCampaign(campaign: CampaignRecord): Promise<void> {
   const campaignRef = doc(db, 'campaigns', campaign.id);
   const data = { ...campaign };
   delete (data as any).id;
-  await setDoc(campaignRef, data, { merge: true });
+  // Strip undefined values (Firestore rejects them)
+  const clean = (obj: any): any => {
+    if (Array.isArray(obj)) return obj.map(clean);
+    if (obj && typeof obj === 'object') {
+      return Object.fromEntries(
+        Object.entries(obj)
+          .filter(([_, v]) => v !== undefined)
+          .map(([k, v]) => [k, clean(v)])
+      );
+    }
+    return obj;
+  };
+  await setDoc(campaignRef, clean(data), { merge: true });
 }
 
 // Delete campaign
