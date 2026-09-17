@@ -196,7 +196,7 @@ export default function App() {
       if (rt) return rt;
       // Fallback: a successful OAuth without a return address still means the
       // user was mid-connect in onboarding, so land them on the connect step.
-      if (params.get('meta_oauth') === 'success') return 'onboarding:connect';
+      if (params.get('meta_oauth') === 'success' || params.get('instagram_oauth') === 'success') return 'onboarding:connect';
       return null;
     } catch {
       return null;

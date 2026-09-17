@@ -40,6 +40,7 @@ export { CHATMIZE_INTEGRATIONS };
 import { WorkspaceSilo } from '../types/workspace';
 import { SmsChannelCard } from '../components/channels/SmsChannelCard';
 import { MetaConnectCard } from '../components/channels/MetaConnectCard';
+import { InstagramConnectCard } from '../components/channels/InstagramConnectCard';
 import { getMetaOAuthStatus, startMetaOAuth } from '../lib/meta';
 import { usePlans, usePlan } from '../lib/entitlements';
 import { Plan, PlanMode, formatPrice } from '../lib/billing';
@@ -157,13 +158,6 @@ export function SettingsView({
   // Page anchor (MetaConnectCard below) and SMS (SmsChannelCard below) have live
   // status. Nothing here claims to be connected until its setup really exists.
   const [channels] = useState([
-    {
-      id: 'instagram',
-      name: 'Instagram Direct & Comments',
-      description: 'Automate DM triggers, story mentions, and post comment keyword replies. Runs on your Facebook Page anchor once an Instagram professional account is linked to the Page.',
-      icon: <Instagram className="w-6 h-6 text-pink-400" />,
-      note: 'Instagram account linking coming soon',
-    },
     {
       id: 'whatsapp',
       name: 'WhatsApp Business Cloud API',
@@ -474,7 +468,7 @@ export function SettingsView({
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  One Facebook Page anchors each business workspace{anchor.connected && anchor.pageName ? ` (connected: ${anchor.pageName})` : ''}. Instagram, WhatsApp and SMS build on that anchor.
+                  One Facebook Page or Instagram account anchors each business workspace{anchor.connected && anchor.pageName ? ` (connected: ${anchor.pageName})` : ''}. The Page anchor unlocks Messenger, Instagram, and WhatsApp; the Instagram anchor unlocks DMs and comments for IG-first businesses.
                 </p>
               </div>
             </div>
@@ -496,6 +490,7 @@ export function SettingsView({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {workspace?.id && <MetaConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={refreshAnchor} />}
+            {workspace?.id && <InstagramConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" hasPageAnchor={anchor.connected} />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
             {channels.map(channel => (
               <div
