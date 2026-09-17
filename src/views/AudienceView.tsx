@@ -2196,11 +2196,10 @@ data subject, Meta Developer Compliance, and regulatory authorities.
               </button>
               <button
                 type="button"
-                onClick={() => { console.log('[DIAG] Save clicked via inline'); handleCreateContact(); }}
-                disabled={simulating || (!modalFirstName.trim() && !modalLastName.trim())}
+                onClick={() => alert('TEST: Button click works!')}
                 className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer"
               >
-                {simulating ? 'Recording to Firestore...' : 'Save Lead & Variables'}
+                {simulating ? 'Recording to Firestore...' : 'Save Lead & Variables (TEST)'}
               </button>
             </div>
           </div>
