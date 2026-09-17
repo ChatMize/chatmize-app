@@ -295,13 +295,25 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
                   key={page.id}
                   onClick={() => handleSelect(page.id)}
                   disabled={selecting !== null}
-                  className="w-full text-left p-3 rounded-xl border border-white/10 bg-white/5 hover:border-blue-500/40 hover:bg-blue-500/5 transition-all cursor-pointer disabled:opacity-60 flex items-center justify-between gap-3"
+                  className="w-full text-left p-3 rounded-xl border border-white/10 bg-white/5 hover:border-blue-500/40 hover:bg-blue-500/5 transition-all cursor-pointer disabled:opacity-60 flex items-center gap-3"
                 >
-                  <div>
-                    <div className="text-sm font-semibold text-white">{page.name}</div>
+                  <span className="relative w-9 h-9 flex-shrink-0 rounded-full overflow-hidden bg-blue-600/20 flex items-center justify-center">
+                    <Facebook className="w-4 h-4 text-blue-400" />
+                    <img
+                      src={`https://graph.facebook.com/${page.id}/picture?type=large`}
+                      alt=""
+                      loading="lazy"
+                      className="absolute inset-0 w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.remove();
+                      }}
+                    />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-white truncate">{page.name}</div>
                     <div className="text-[11px] font-mono text-slate-500">{page.id}</div>
                   </div>
-                  {selecting === page.id && <Loader2 className="w-4 h-4 animate-spin text-blue-400" />}
+                  {selecting === page.id && <Loader2 className="w-4 h-4 animate-spin text-blue-400 flex-shrink-0" />}
                 </button>
               ))}
             </div>
