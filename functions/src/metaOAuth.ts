@@ -232,7 +232,9 @@ export interface OAuthPage {
 }
 
 /** Step 2b: code -> short-lived user token -> long-lived user token -> pages. */
-export async function exchangeCodeForPages(code: string): Promise<OAuthPage[]> {
+export async function exchangeCodeForPages(
+  code: string,
+): Promise<{ user: { id: string; name: string }; pages: OAuthPage[] }> {
   const appSecret = META_APP_SECRET.value();
   // Short-lived user token
   const shortParams = new URLSearchParams({
@@ -264,19 +266,36 @@ export async function exchangeCodeForPages(code: string): Promise<OAuthPage[]> {
   if (!longRes.ok || !longData.access_token) {
     throw new Error(`Long-lived token exchange failed: ${longData.error?.message ?? longRes.status}`);
   }
-  // Pages with their (non-expiring) page access tokens
-  const accounts = (await graphGet(
-    "/me/accounts?fields=id,name,access_token&limit=50",
-    longData.access_token,
-  )) as { data?: Array<{ id: string; name: string; access_token: string }> };
-  return (accounts.data ?? []).map((p) => ({ id: p.id, name: p.name, token: p.access_token }));
+  // Who logged in (surfaced in the picker so a wrong FB account is obvious).
+  const me = (await graphGet("/me?fields=id,name", longData.access_token)) as {
+    id?: string;
+    name?: string;
+  };
+  const user = { id: me.id ?? "", name: me.name ?? "" };
+  // Pages with their (non-expiring) page access tokens. Follow paging so
+  // accounts past the first 50 are not silently dropped.
+  const pages: OAuthPage[] = [];
+  let path: string | null = "/me/accounts?fields=id,name,access_token&limit=100";
+  while (path) {
+    const accounts = (await graphGet(path, longData.access_token)) as {
+      data?: Array<{ id: string; name: string; access_token: string }>;
+      paging?: { next?: string };
+    };
+    for (const p of accounts.data ?? []) {
+      pages.push({ id: p.id, name: p.name, token: p.access_token });
+    }
+    // paging.next is a full URL; strip back to a path for graphGet.
+    const next: string | undefined = accounts.paging?.next;
+    path = next ? next.replace(GRAPH_BASE, "") : null;
+  }
+  return { user, pages };
 }
 
 /** Step 2c: stash the pages as a short-lived pending connection (server only). */
 export async function storePendingPages(
   workspaceId: string,
   uid: string,
-  pages: OAuthPage[],
+  result: { user: { id: string; name: string }; pages: OAuthPage[] },
 ): Promise<void> {
   await db()
     .collection("workspaces")
@@ -286,7 +305,8 @@ export async function storePendingPages(
     .set(
       {
         status: "pending",
-        pages,
+        pages: result.pages,
+        oauthUser: result.user,
         oauthBy: uid,
         pendingAt: FieldValue.serverTimestamp(),
         pendingExpiresAtMs: Date.now() + STATE_TTL_MS,

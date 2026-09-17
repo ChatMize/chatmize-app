@@ -34,13 +34,15 @@ export async function getMetaOAuthStatus(workspaceId: string): Promise<MetaOAuth
   return res.data;
 }
 
-export async function listMetaOAuthPages(workspaceId: string): Promise<MetaPage[]> {
-  const fn = httpsCallable<{ workspaceId: string }, { pages: MetaPage[] }>(
+export async function listMetaOAuthPages(
+  workspaceId: string,
+): Promise<{ pages: MetaPage[]; connectedAs?: string }> {
+  const fn = httpsCallable<{ workspaceId: string }, { pages: MetaPage[]; connectedAs?: string }>(
     functions,
     'metaOAuthListPages',
   );
   const res = await fn({ workspaceId });
-  return res.data.pages;
+  return res.data;
 }
 
 export async function selectMetaOAuthPage(

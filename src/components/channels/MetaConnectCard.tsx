@@ -35,6 +35,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
   const [pageQuery, setPageQuery] = useState('');
   const [pagesLoading, setPagesLoading] = useState(false);
   const [pagesError, setPagesError] = useState<string | null>(null);
+  const [connectedAs, setConnectedAs] = useState<string | null>(null);
   // Close the page picker on Escape.
   useEffect(() => {
     if (!showPicker) return;
@@ -58,13 +59,15 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
     setPagesLoading(true);
     setPagesError(null);
     try {
-      let p = await listMetaOAuthPages(workspaceId);
-      if (p.length === 0) {
+      let result = await listMetaOAuthPages(workspaceId);
+      if (result.pages.length === 0) {
         // One automatic retry: the pending write can lag the redirect by a beat.
         await new Promise((r) => setTimeout(r, 1500));
-        p = await listMetaOAuthPages(workspaceId);
+        result = await listMetaOAuthPages(workspaceId);
       }
+      const p = result.pages;
       setPages(p);
+      setConnectedAs(result.connectedAs ?? null);
       if (openOnSuccess && p.length > 0) setShowPicker(true);
       if (p.length === 0) {
         setPagesError('No pages came back from Facebook. Check that you granted the Pages permission, then try again.');
@@ -257,6 +260,12 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
               Pick the Page ChatMize should send and receive messages as.
               {pages.length > 0 && (
                 <span className="text-slate-500"> {pages.length} found.</span>
+              )}
+              {connectedAs && (
+                <span className="block mt-1 text-slate-500">
+                  Logged in as <span className="text-slate-300 font-medium">{connectedAs}</span>
+                  <span className="text-slate-600"> — missing a Page? Reconnect and make sure it is checked on the Facebook permission screen.</span>
+                </span>
               )}
             </p>
             <div className="relative mb-3">

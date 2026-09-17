@@ -996,12 +996,16 @@ export const metaOAuthCallback = onRequest(
         throw new Error("Missing code or state.");
       }
       const { workspaceId, uid, returnTo } = await consumeOAuthState(state);
-      const pages = await exchangeCodeForPages(code);
-      if (pages.length === 0) {
+      const result = await exchangeCodeForPages(code);
+      if (result.pages.length === 0) {
         throw new Error("No Facebook Pages found on this account.");
       }
-      await storePendingPages(workspaceId, uid, pages);
-      logger.info("Meta OAuth callback ok", { workspaceId, pageCount: pages.length });
+      await storePendingPages(workspaceId, uid, result);
+      logger.info("Meta OAuth callback ok", {
+        workspaceId,
+        pageCount: result.pages.length,
+        fbUser: result.user.name || result.user.id,
+      });
       res.redirect(302, appReturnUrl("success", undefined, returnTo));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed.";
@@ -1062,12 +1066,16 @@ export const metaOAuthListPages = onCall({ region: REGION }, async (request) => 
   const conn = (snap.data() ?? {}) as {
     status?: string;
     pages?: Array<{ id: string; name: string }>;
+    oauthUser?: { id: string; name: string };
     pendingExpiresAtMs?: number;
   };
   if (conn.status !== "pending" || !conn.pages || (conn.pendingExpiresAtMs ?? 0) < Date.now()) {
     return { pages: [] };
   }
-  return { pages: conn.pages.map((p) => ({ id: p.id, name: p.name })) };
+  return {
+    pages: conn.pages.map((p) => ({ id: p.id, name: p.name })),
+    connectedAs: conn.oauthUser?.name || conn.oauthUser?.id || undefined,
+  };
 });
 
 /** Step 4: store the chosen page token as the workspace's own secret. */
