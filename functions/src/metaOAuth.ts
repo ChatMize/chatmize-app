@@ -48,11 +48,12 @@ const OAUTH_SCOPES = [
   "pages_show_list",
   "pages_messaging",
   "pages_manage_metadata",
-  // Needed for Instagram DMs on IG accounts linked to the selected Page.
-  // (Requires App Review for production; works in dev mode for app roles.)
-  "instagram_basic",
-  "instagram_manage_messages",
 ];
+// NOTE (2026-09-17): instagram_basic + instagram_manage_messages were requested
+// here but Facebook's login dialog rejects them as "Invalid Scopes" for this
+// app (they must first be enabled under App Review > Permissions and Features).
+// Reverted to keep login working; IG DMs need the dashboard step before the
+// scopes can be re-added.
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
