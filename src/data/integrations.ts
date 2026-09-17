@@ -140,6 +140,21 @@ export const CHATMIZE_INTEGRATIONS: IntegrationApp[] = [
     ],
   },
   {
+    id: 'moosend',
+    name: 'Moosend',
+    category: 'email',
+    tagline: 'Email marketing & automation',
+    description: 'Subscribe chatbot leads to Moosend mailing lists and trigger automated campaigns.',
+    logoBg: 'bg-[#2F80ED]',
+    logoTextColor: 'text-white',
+    initials: 'MS',
+    connected: false,
+    authType: 'API Key',
+    fields: [
+      { name: 'apiKey', label: 'Moosend API Key', placeholder: 'Enter your Moosend API key', type: 'password', helpText: 'Moosend > Settings (top-right menu) > API Key' },
+    ],
+  },
+  {
     id: 'ontraport',
     name: 'Ontraport',
     category: 'crm',
