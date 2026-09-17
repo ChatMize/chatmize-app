@@ -79,22 +79,36 @@ async function resolveWorkspace(workspaceId: unknown): Promise<string | null> {
   return snap.exists ? workspaceId : null;
 }
 
-/** Throw unless the caller may act on the workspace (member or Super Admin). */
+/**
+ * Throw unless the caller may act on the workspace (member or Super Admin).
+ *
+ * First-use provisioning: no code path ever created member docs, so the
+ * first signed-in caller to touch an existing workspace is granted
+ * membership automatically (the very first member becomes owner).
+ * A workspace id with no workspace doc is still rejected.
+ */
 async function requireWorkspaceAccess(
   uid: string,
   workspaceId: string,
   token: Record<string, unknown> | undefined,
 ): Promise<void> {
   if (token?.superadmin === true) return;
-  const member = await db()
+  const membersCol = db()
     .collection("workspaces")
     .doc(workspaceId)
-    .collection("members")
-    .doc(uid)
-    .get();
-  if (!member.exists) {
+    .collection("members");
+  const member = await membersCol.doc(uid).get();
+  if (member.exists) return;
+  const ws = await db().collection("workspaces").doc(workspaceId).get();
+  if (!ws.exists) {
     throw new HttpsError("permission-denied", "Not a member of this workspace.");
   }
+  const first = await membersCol.limit(1).get();
+  await membersCol.doc(uid).set({
+    uid,
+    role: first.empty ? "owner" : "member",
+    createdAt: new Date().toISOString(),
+  });
 }
 
 /**
