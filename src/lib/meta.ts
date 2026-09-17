@@ -16,12 +16,12 @@ export interface MetaPage {
 }
 
 /** Step 1: get the Facebook Login URL and redirect the browser to it. */
-export async function startMetaOAuth(workspaceId: string): Promise<string> {
-  const fn = httpsCallable<{ workspaceId: string }, { url: string }>(
+export async function startMetaOAuth(workspaceId: string, returnTo?: string): Promise<string> {
+  const fn = httpsCallable<{ workspaceId: string; returnTo?: string }, { url: string }>(
     functions,
     'metaOAuthStart',
   );
-  const res = await fn({ workspaceId });
+  const res = await fn({ workspaceId, returnTo });
   return res.data.url;
 }
 

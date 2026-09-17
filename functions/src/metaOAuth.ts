@@ -31,7 +31,7 @@ const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
 const PROJECT_ID = "gen-lang-client-0433776094";
 
 export const OAUTH_CALLBACK_URL =
-  "https://us-west2-gen-lang-client-0433776094.cloudfunctions.net/metaOAuthCallback";
+  "https://app.chatmize.com/metaOAuthCallback";
 const APP_RETURN_URL = "https://app.chatmize.com/";
 
 /**
@@ -151,10 +151,21 @@ export async function resolvePageToken(
   return defaultToken;
 }
 
+/** Where to send the user after the OAuth round-trip. Opaque descriptor like
+ *  "onboarding:connect" or "app:settings_channels" — validated strictly so the
+ *  callback can't be turned into an open redirect. */
+const RETURN_TO_RE = /^[a-z]+:[a-z_]+$/;
+
+function sanitizeReturnTo(value: unknown): string | undefined {
+  if (typeof value !== "string" || !RETURN_TO_RE.test(value)) return undefined;
+  return value;
+}
+
 /** Step 1: create a one-time state and return the Facebook Login URL. */
 export async function buildLoginUrl(
   workspaceId: string,
   uid: string,
+  returnTo?: unknown,
 ): Promise<string> {
   const { randomUUID } = await import("crypto");
   const state = randomUUID().replace(/-/g, "");
@@ -162,6 +173,7 @@ export async function buildLoginUrl(
   await db().collection("meta_oauth_states").doc(state).set({
     workspaceId,
     uid,
+    returnTo: sanitizeReturnTo(returnTo),
     createdAt: FieldValue.serverTimestamp(),
     expiresAtMs: now + STATE_TTL_MS,
     used: false,
@@ -179,6 +191,7 @@ export async function buildLoginUrl(
 interface OAuthState {
   workspaceId: string;
   uid: string;
+  returnTo?: string;
   expiresAtMs: number;
   used?: boolean;
 }
@@ -278,9 +291,11 @@ export async function storePendingPages(
     );
 }
 
-export function appReturnUrl(outcome: "success" | "error", message?: string): string {
+export function appReturnUrl(outcome: "success" | "error", message?: string, returnTo?: string): string {
   const params = new URLSearchParams({ meta_oauth: outcome });
   if (message) params.set("meta_oauth_error", message.slice(0, 200));
+  const safeReturnTo = sanitizeReturnTo(returnTo);
+  if (safeReturnTo) params.set("return_to", safeReturnTo);
   return `${APP_RETURN_URL}?${params.toString()}`;
 }
 

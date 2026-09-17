@@ -15,6 +15,8 @@ interface OnboardingWizardProps {
   workspace: WorkspaceSilo;
   onUpdateWorkspace: (ws: WorkspaceSilo) => void;
   onComplete: () => void;
+  /** Start the wizard on a later step (e.g. after returning from an OAuth round-trip). */
+  initialStep?: Step;
 }
 
 type Step = 'welcome' | 'connect' | 'integrations' | 'route' | 'done';
@@ -38,8 +40,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   workspace,
   onUpdateWorkspace,
   onComplete,
+  initialStep,
 }) => {
-  const [step, setStep] = useState<Step>('welcome');
+  const [step, setStep] = useState<Step>(initialStep ?? 'welcome');
   const [chosenMode, setChosenMode] = useState<PlanMode | null>(workspace.planMode ?? null);
   const [chosenPlan, setChosenPlan] = useState<Plan | null>(null);
   const [claimingBonus, setClaimingBonus] = useState(false);

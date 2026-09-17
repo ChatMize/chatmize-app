@@ -184,6 +184,34 @@ export default function App() {
     }
   }, []);
 
+  // OAuth round-trip return: ?return_to=<area:detail> restores where the user
+  // was when they started connecting (set by MetaConnectCard via the backend
+  // OAuth state). Read once during first render so the onboarding wizard can
+  // start on the right step; the meta_oauth params are left for the card.
+  const [oauthReturnTo] = useState<string | null>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('return_to');
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    if (!oauthReturnTo) return;
+    if (oauthReturnTo === 'app:settings_channels') {
+      setSettingsInitialTab('channels');
+      setActiveTab('settings');
+    }
+    try {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('return_to');
+      const rest = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''));
+    } catch {
+      // ignore malformed URLs
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -443,6 +471,7 @@ export default function App() {
         workspace={activeWorkspace}
         onUpdateWorkspace={handleUpdateWorkspace}
         onComplete={() => {}}
+        initialStep={oauthReturnTo === 'onboarding:connect' ? 'connect' : undefined}
       />
     );
   }

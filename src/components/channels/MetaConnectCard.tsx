@@ -13,6 +13,9 @@ interface MetaConnectCardProps {
   workspaceId: string;
   /** Fired after a Page is picked and the token is stored. Lets parents (e.g. onboarding) sync local state. */
   onConnected?: (pageName: string, pageId: string) => void;
+  /** Opaque descriptor of where the user was, e.g. "onboarding:connect" or "app:settings_channels".
+   *  Sent through the OAuth state and returned as ?return_to= so the app can restore the spot. */
+  returnTo?: string;
 }
 
 /**
@@ -20,7 +23,7 @@ interface MetaConnectCardProps {
  * connect -> pick one of the user's Pages -> the page token is stored as the
  * workspace's own Secret Manager secret. Powers Messenger + Instagram.
  */
-export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, onConnected }) => {
+export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, onConnected, returnTo }) => {
   const [status, setStatus] = useState<MetaOAuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -72,7 +75,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
     setStarting(true);
     setError(null);
     try {
-      const url = await startMetaOAuth(workspaceId);
+      const url = await startMetaOAuth(workspaceId, returnTo);
       window.location.href = url;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not start Facebook login.');

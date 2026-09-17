@@ -522,7 +522,7 @@ export function SettingsView({
                 </div>
               </div>
             ))}
-            {workspace?.id && <MetaConnectCard workspaceId={workspace.id} />}
+            {workspace?.id && <MetaConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
           </div>
         </div>

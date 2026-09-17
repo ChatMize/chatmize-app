@@ -22,7 +22,15 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
   const [waNumber, setWaNumber] = useState(page?.connectedWhatsApp?.phoneNumber || '');
   const [smsNumber, setSmsNumber] = useState(workspace.connectedSms?.phoneNumber || '');
   const [smsProvider, setSmsProvider] = useState<SmsConnection['provider']>(workspace.connectedSms?.provider || 'twilio');
-  const [editing, setEditing] = useState<'messenger' | 'instagram' | 'whatsapp' | 'sms' | null>(null);
+  // After the Facebook OAuth round-trip the page reloads: if Meta sent us back
+  // (meta_oauth in the URL), open the Messenger card so the page picker shows.
+  const [editing, setEditing] = useState<'messenger' | 'instagram' | 'whatsapp' | 'sms' | null>(() => {
+    try {
+      return new URLSearchParams(window.location.search).has('meta_oauth') ? 'messenger' : null;
+    } catch {
+      return null;
+    }
+  });
 
   const messengerConnected = Boolean(page?.pageId);
   const instagramConnected = Boolean(page?.connectedIg?.connected);
@@ -140,6 +148,7 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
           {which === 'messenger' && (
             <MetaConnectCard
               workspaceId={workspace.id}
+              returnTo="onboarding:connect"
               onConnected={(pageName, connectedPageId) => {
                 onUpdate({
                   ...workspace,

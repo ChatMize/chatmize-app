@@ -937,10 +937,10 @@ export const testAiRouter = onCall(
 export const metaOAuthStart = onCall({ region: REGION }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  const { workspaceId, returnTo } = (request.data ?? {}) as { workspaceId?: string; returnTo?: string };
   if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
   await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
-  const url = await buildLoginUrl(workspaceId, uid);
+  const url = await buildLoginUrl(workspaceId, uid, returnTo);
   logger.info("Meta OAuth started", { workspaceId, uid });
   return { url };
 });
@@ -955,18 +955,27 @@ export const metaOAuthCallback = onRequest(
       if (typeof code !== "string" || typeof state !== "string") {
         throw new Error("Missing code or state.");
       }
-      const { workspaceId, uid } = await consumeOAuthState(state);
+      const { workspaceId, uid, returnTo } = await consumeOAuthState(state);
       const pages = await exchangeCodeForPages(code);
       if (pages.length === 0) {
         throw new Error("No Facebook Pages found on this account.");
       }
       await storePendingPages(workspaceId, uid, pages);
       logger.info("Meta OAuth callback ok", { workspaceId, pageCount: pages.length });
-      res.redirect(302, appReturnUrl("success"));
+      res.redirect(302, appReturnUrl("success", undefined, returnTo));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed.";
       logger.warn("Meta OAuth callback failed", { message });
-      res.redirect(302, appReturnUrl("error", message));
+      // On failure the state was already consumed, so returnTo may be unknown;
+      // try to read it without consuming (best effort, never throws).
+      let returnTo: string | undefined;
+      try {
+        if (typeof state === "string") {
+          const snap = await db().collection("meta_oauth_states").doc(state).get();
+          returnTo = snap.data()?.returnTo;
+        }
+      } catch { /* ignore */ }
+      res.redirect(302, appReturnUrl("error", message, returnTo));
     }
   },
 );
