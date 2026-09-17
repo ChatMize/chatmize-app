@@ -39,7 +39,11 @@ service cloud.firestore {
     // now; Phase 3 restricts this to the superadmin custom claim once client
     // role gating lands, so Karl's access never breaks mid-migration.
     match /system_settings/{docId} {
-      allow read, write: if isSignedIn();
+      // Read: any signed-in user (admin UI reads). Write: Super Admin only.
+      // The one-time bootstrap doc is written by the bootstrapSuperAdmin
+      // callable via the Admin SDK (bypasses rules).
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
     }
 
     // Commercial plans: public read (pricing page), Super Admin write.

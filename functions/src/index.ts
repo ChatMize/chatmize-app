@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
 import { createHmac, timingSafeEqual } from "crypto";
 import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
@@ -302,6 +303,31 @@ interface AdjustCreditsData {
   reason?: CreditReason;
   note?: string;
 }
+
+/**
+ * One-time bootstrap: grants the Super Admin claim to the first caller.
+ * After one account holds it, this permanently refuses. The claim unlocks
+ * superadmin-gated rules (plans writes, system_settings writes) and the
+ * superadmin bypass in the callables. Run once from the account that
+ * should own the system, then it can never be claimed again.
+ */
+export const bootstrapSuperAdmin = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const flagRef = db().collection("system_settings").doc("superadmin_bootstrap");
+  const first = await db().runTransaction(async (tx) => {
+    const snap = await tx.get(flagRef);
+    if (snap.exists) return false;
+    tx.set(flagRef, { superAdminUid: uid, claimedAt: new Date().toISOString() });
+    return true;
+  });
+  if (!first) {
+    throw new HttpsError("failed-precondition", "Super Admin has already been claimed.");
+  }
+  await getAuth().setCustomUserClaims(uid, { superadmin: true });
+  logger.info("Super Admin bootstrapped", { uid });
+  return { ok: true };
+});
 
 /**
  * Super Admin only: grant or deduct credits (top-ups, corrections).

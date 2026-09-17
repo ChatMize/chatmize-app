@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { getApp } from 'firebase/app';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
   Users, 
   ShieldAlert, 
@@ -222,6 +224,24 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   const [migrationLogs, setMigrationLogs] = useState<string[]>([]);
   const [migrationStep, setMigrationStep] = useState<'idle' | 'scanning' | 'converting' | 'completed'>('idle');
 
+  // Super Admin claim bootstrap state
+  const [claimState, setClaimState] = useState<'idle' | 'working' | 'done' | 'taken' | 'error'>('idle');
+
+  const handleClaimSuperAdmin = async () => {
+    setClaimState('working');
+    try {
+      const fn = httpsCallable<Record<string, never>, { ok: boolean }>(
+        getFunctions(getApp(), 'us-west2'),
+        'bootstrapSuperAdmin',
+      );
+      await fn({});
+      setClaimState('done');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      setClaimState(msg.includes('already been claimed') ? 'taken' : 'error');
+    }
+  };
+
   const filteredUsers = users.filter(u => 
     u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -289,6 +309,18 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           <p className="text-sm text-slate-400 mt-0.5">
             Manage platform users, commercial pricing tiers, and migration bridges.
           </p>
+          <button
+            onClick={handleClaimSuperAdmin}
+            disabled={claimState === 'working' || claimState === 'done'}
+            className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-amber-500/15 text-amber-300 border border-amber-500/40 hover:bg-amber-500/25 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-default"
+          >
+            <Crown className="w-4 h-4" />
+            {claimState === 'idle' && 'Claim Super Admin'}
+            {claimState === 'working' && 'Claiming...'}
+            {claimState === 'done' && 'Super Admin claimed. Sign out and back in to activate.'}
+            {claimState === 'taken' && 'Super Admin already claimed'}
+            {claimState === 'error' && 'Claim failed. Try again.'}
+          </button>
         </div>
 
         {/* Sub-Tabs Selector */}

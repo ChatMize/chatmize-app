@@ -1,7 +1,8 @@
 {
   "firestore": {
     "indexes": "firestore.indexes.json",
-    "rules": "firestore.rules"
+    "rules": "firestore.rules",
+    "database": "chatmize-prod"
   },
   "functions": [
     {
