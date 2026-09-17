@@ -321,10 +321,14 @@ export async function selectWorkspacePage(
 
   const secretId = workspacePageTokenSecretId(workspaceId);
   // Create the secret if needed (409 = already exists is fine).
-  const create = await secretManager("POST", `projects/${PROJECT_ID}/secrets`, {
-    secretId,
-    replication: { automatic: {} },
-  });
+  // NOTE: secretId is a query parameter on secrets.create, not a body field.
+  const create = await secretManager(
+    "POST",
+    `projects/${PROJECT_ID}/secrets?secretId=${encodeURIComponent(secretId)}`,
+    {
+      replication: { automatic: {} },
+    },
+  );
   if (create.status !== 200 && create.status !== 409) {
     logger.error("Secret Manager create failed", { workspaceId, status: create.status });
     throw new Error("Could not store the page token securely. Please try again.");
