@@ -7,6 +7,10 @@ import { defineSecret } from "firebase-functions/params";
 
 export const META_APP_SECRET = defineSecret("META_APP_SECRET");
 export const META_VERIFY_TOKEN = defineSecret("META_VERIFY_TOKEN");
+
+// Instagram Login (IG-only workspaces): the ChatMize-IG app's secret, used
+// server-side to exchange the Instagram OAuth code for a token.
+export const META_INSTAGRAM_APP_SECRET = defineSecret("META_INSTAGRAM_APP_SECRET");
 export const TWILIO_ACCOUNT_SID = defineSecret("TWILIO_ACCOUNT_SID");
 export const TWILIO_AUTH_TOKEN = defineSecret("TWILIO_AUTH_TOKEN");
 
