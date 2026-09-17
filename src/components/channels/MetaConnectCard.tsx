@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Facebook, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Search } from 'lucide-react';
+import { Facebook, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Search, X } from 'lucide-react';
 import {
   startMetaOAuth,
   getMetaOAuthStatus,
@@ -32,6 +32,23 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
   const [selecting, setSelecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageQuery, setPageQuery] = useState('');
+  // Close the page picker on Escape.
+  useEffect(() => {
+    if (!showPicker) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowPicker(false);
+        setPageQuery('');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showPicker]);
+
+  const closePicker = () => {
+    setShowPicker(false);
+    setPageQuery('');
+  };
 
   const refresh = async (): Promise<MetaOAuthStatus | null> => {
     try {
@@ -170,9 +187,22 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
       </div>
 
       {showPicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-2xl shadow-2xl">
-            <div className="flex items-center gap-2 mb-1">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={closePicker}
+        >
+          <div
+            className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-2xl shadow-2xl max-h-[90vh] flex flex-col relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={closePicker}
+              aria-label="Close"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-2 mb-1 pr-8">
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
               <h3 className="font-bold text-white">Choose your Facebook Page</h3>
             </div>
@@ -189,7 +219,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
                 className="w-full pl-9 pr-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500/60"
               />
             </div>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+            <div className="space-y-2 overflow-y-auto min-h-0 flex-1">
               {pages
                 .filter((page) => {
                   const q = pageQuery.trim().toLowerCase();
@@ -215,8 +245,8 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
               <p className="text-xs text-slate-500">No pages found on this Facebook account.</p>
             )}
             <button
-              onClick={() => { setShowPicker(false); setPageQuery(''); }}
-              className="mt-4 w-full py-2 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all cursor-pointer"
+              onClick={closePicker}
+              className="mt-4 w-full py-2 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all cursor-pointer shrink-0"
             >
               Cancel
             </button>
