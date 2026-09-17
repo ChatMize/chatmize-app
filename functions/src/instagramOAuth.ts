@@ -16,7 +16,7 @@ import { randomUUID } from "crypto";
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 
 /** ChatMize-IG Instagram app id (public, from the Meta app dashboard). */
-const INSTAGRAM_APP_ID = "458803055480627";
+const INSTAGRAM_APP_ID = "4588030554806270";
 /** Shared OAuth callback (also serves Instagram Login; routed by state). */
 export const INSTAGRAM_OAUTH_CALLBACK_URL =
   "https://app.chatmize.com/metaOAuthCallback";
