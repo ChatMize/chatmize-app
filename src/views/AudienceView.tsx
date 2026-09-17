@@ -528,7 +528,6 @@ data subject, Meta Developer Compliance, and regulatory authorities.
       setSelectedContact(newRecord);
     } catch (err) {
       console.error("Failed to capture contact:", err);
-      alert(`Failed to save lead: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again or contact support.`);
     } finally {
       setSimulating(false);
     }
@@ -2194,7 +2193,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
               </button>
               <button
                 type="button"
-                onClick={() => handleCreateContact()}
+                onClick={handleCreateContact}
                 disabled={simulating || (!modalFirstName.trim() && !modalLastName.trim())}
                 className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer"
               >
