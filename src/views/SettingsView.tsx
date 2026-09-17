@@ -12,7 +12,6 @@ import {
   Layers, 
   Mail, 
   MessageCircle, 
-  MessageSquare, 
   Radio, 
   RefreshCw, 
   Search, 
@@ -41,6 +40,7 @@ export { CHATMIZE_INTEGRATIONS };
 import { WorkspaceSilo } from '../types/workspace';
 import { SmsChannelCard } from '../components/channels/SmsChannelCard';
 import { MetaConnectCard } from '../components/channels/MetaConnectCard';
+import { getMetaOAuthStatus, startMetaOAuth } from '../lib/meta';
 import { usePlans, usePlan } from '../lib/entitlements';
 import { Plan, PlanMode, formatPrice } from '../lib/billing';
 import { RoutePicker } from '../components/onboarding/RoutePicker';
@@ -153,49 +153,68 @@ export function SettingsView({
     }
   }, [initialTab]);
 
-  // Channels State (Architecture: FB Page Anchor -> IG & WhatsApp, plus SMS & Standalone Chatbot)
-  const [channels, setChannels] = useState([
-    {
-      id: 'messenger',
-      name: 'Facebook Messenger (Page Anchor)',
-      accountName: 'Chatmize Official / Austin Center',
-      description: 'The root Meta anchor token for this workspace. All Instagram & WhatsApp accounts attach directly under this Facebook Page.',
-      icon: <MessageSquare className="w-6 h-6 text-blue-400" />,
-      connected: true,
-      subscribers: '4,280 active contacts',
-      tier: 'meta_anchor'
-    },
+  // Channel placeholders. These describe the architecture honestly: only the Meta
+  // Page anchor (MetaConnectCard below) and SMS (SmsChannelCard below) have live
+  // status. Nothing here claims to be connected until its setup really exists.
+  const [channels] = useState([
     {
       id: 'instagram',
       name: 'Instagram Direct & Comments',
-      accountName: '@chatmize',
-      description: 'Automate DM triggers, story mentions, and post comment keyword replies linked 1-to-1 via Facebook Page.',
+      description: 'Automate DM triggers, story mentions, and post comment keyword replies. Runs on your Facebook Page anchor once an Instagram professional account is linked to the Page.',
       icon: <Instagram className="w-6 h-6 text-pink-400" />,
-      connected: true,
-      subscribers: '3,890 active contacts',
-      tier: 'meta_anchor'
+      note: 'Instagram account linking coming soon',
     },
     {
       id: 'whatsapp',
       name: 'WhatsApp Business Cloud API',
-      accountName: '+1 (555) 349-2910',
-      description: 'Official Meta WhatsApp Business Cloud WABA integration bound to this business workspace.',
+      description: 'Official Meta WhatsApp Business Cloud API, bound to this workspace through your Facebook Page anchor.',
       icon: <MessageCircle className="w-6 h-6 text-emerald-400" />,
-      connected: true,
-      subscribers: '2,110 active contacts',
-      tier: 'meta_anchor'
+      note: 'Business number setup coming soon',
     },
     {
       id: 'webchat',
       name: 'Standalone Chatbot (On-Page & Business Assets)',
-      accountName: 'Embed Widget & Direct Link (chatmize.io/chat/main)',
-      description: 'Omnichannel AI chatbot deployed on websites, sales funnels, and Shopify storefronts, plus direct hosted chat URL.',
+      description: 'Embeddable website widget plus a hosted chat link for funnels and storefronts.',
       icon: <Globe className="w-6 h-6 text-cyan-400" />,
-      connected: true,
-      subscribers: '1,420 active contacts',
-      tier: 'expansion'
+      note: 'Coming soon',
     },
   ]);
+
+  // Real Meta Page anchor status (drives the honest banner + placeholder hints).
+  const [anchor, setAnchor] = useState<{ connected: boolean; pageName?: string; loading: boolean }>({
+    connected: false,
+    loading: true,
+  });
+  const [anchorConnectError, setAnchorConnectError] = useState<string | null>(null);
+
+  const refreshAnchor = async () => {
+    if (!workspace?.id) return;
+    setAnchor((a) => ({ ...a, loading: true }));
+    try {
+      const s = await getMetaOAuthStatus(workspace.id);
+      setAnchor({ connected: s.connected, pageName: s.pageName, loading: false });
+    } catch {
+      setAnchor({ connected: false, loading: false });
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'channels') refreshAnchor();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, workspace?.id]);
+
+  // Placeholder channels authenticate through the Page anchor, so their
+  // connect button starts the real Meta OAuth flow.
+  const handleAnchorConnect = async () => {
+    if (!workspace?.id) return;
+    setAnchorConnectError(null);
+    try {
+      const url = await startMetaOAuth(workspace.id, 'app:settings_channels');
+      window.location.href = url;
+    } catch (e) {
+      setAnchorConnectError(e instanceof Error ? e.message : 'Could not start Facebook connect.');
+    }
+  };
 
   // Integrations State
   const [savedCredentials, setSavedCredentials] = useState<Record<string, Record<string, string>>>(() => {
@@ -247,12 +266,6 @@ export function SettingsView({
 
   // Copied Key Indicator
   const [copiedKey, setCopiedKey] = useState(false);
-
-  const toggleChannel = (id: string) => {
-    setChannels(prev =>
-      prev.map(ch => (ch.id === id ? { ...ch, connected: !ch.connected } : ch))
-    );
-  };
 
   const handleOpenModal = (app: IntegrationApp) => {
     setActiveModalApp(app);
@@ -451,23 +464,39 @@ export function SettingsView({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h4 className="text-base font-bold text-white">Channel Architecture &bull; 5 Live Endpoints</h4>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                    Omnichannel Active
+                  <h4 className="text-base font-bold text-white">Channel Architecture</h4>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                    anchor.connected
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : 'bg-slate-800 text-slate-400 border-white/10'
+                  }`}>
+                    {anchor.loading ? 'Checking...' : anchor.connected ? 'Meta anchor live' : 'No live channels'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  1 Facebook Page anchors each business workspace with linked Instagram &amp; WhatsApp, expanded with SMS (10DLC) and Standalone Web Chatbot for on-page assets.
+                  One Facebook Page anchors each business workspace{anchor.connected && anchor.pageName ? ` (connected: ${anchor.pageName})` : ''}. Instagram, WhatsApp and SMS build on that anchor.
                 </p>
               </div>
             </div>
-            <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 flex-shrink-0">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Meta &amp; Webhook Sync OK
+            <span className={`text-xs font-semibold px-3 py-1.5 rounded-xl border flex items-center gap-1.5 flex-shrink-0 ${
+              anchor.connected
+                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                : 'bg-white/5 text-slate-400 border-white/10'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${anchor.connected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+              {anchor.connected ? 'Meta & Webhook Sync OK' : 'Nothing connected yet'}
             </span>
           </div>
 
+          {anchorConnectError && (
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 text-red-300 text-xs">
+              {anchorConnectError}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {workspace?.id && <MetaConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={refreshAnchor} />}
+            {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
             {channels.map(channel => (
               <div
                 key={channel.id}
@@ -481,23 +510,13 @@ export function SettingsView({
                       </div>
                       <div>
                         <h3 className="font-bold text-white text-sm">{channel.name}</h3>
-                        <p className="text-xs font-mono text-slate-400">{channel.accountName}</p>
+                        <p className="text-xs font-mono text-slate-400">Not connected</p>
                       </div>
                     </div>
 
-                    <span
-                      className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
-                        channel.connected
-                          ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-                          : 'bg-slate-800 text-slate-400 border-white/10'
-                      }`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          channel.connected ? 'bg-emerald-400' : 'bg-slate-500'
-                        }`}
-                      />
-                      {channel.connected ? 'Connected' : 'Disconnected'}
+                    <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full border flex items-center gap-1 bg-slate-800 text-slate-400 border-white/10">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                      Disconnected
                     </span>
                   </div>
 
@@ -506,24 +525,28 @@ export function SettingsView({
 
                 <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs">
                   <span className="text-slate-400">
-                    {channel.connected ? channel.subscribers : 'Ready to authenticate'}
+                    {channel.note}
                   </span>
-                  
-                  <button
-                    onClick={() => toggleChannel(channel.id)}
-                    className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      channel.connected
-                        ? 'bg-white/5 hover:bg-red-500/10 text-slate-300 hover:text-red-300 border border-white/10 hover:border-red-500/30'
-                        : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-sm'
-                    }`}
-                  >
-                    {channel.connected ? 'Disconnect' : 'Connect Channel'}
-                  </button>
+
+                  {channel.id === 'webchat' ? (
+                    <span className="px-3 py-1.5 rounded-xl font-semibold text-slate-500 bg-white/5 border border-white/10">
+                      Coming soon
+                    </span>
+                  ) : anchor.connected ? (
+                    <span className="px-3 py-1.5 rounded-xl font-semibold text-slate-400 bg-white/5 border border-white/10">
+                      Page anchor ready
+                    </span>
+                  ) : (
+                    <button
+                      onClick={handleAnchorConnect}
+                      className="px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-sm"
+                    >
+                      Connect Facebook Page
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
-            {workspace?.id && <MetaConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" />}
-            {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
           </div>
         </div>
       )}
