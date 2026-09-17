@@ -32,6 +32,8 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
   const [selecting, setSelecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pageQuery, setPageQuery] = useState('');
+  const [pagesLoading, setPagesLoading] = useState(false);
+  const [pagesError, setPagesError] = useState<string | null>(null);
   // Close the page picker on Escape.
   useEffect(() => {
     if (!showPicker) return;
@@ -50,14 +52,38 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
     setPageQuery('');
   };
 
+  /** Load the pending pages with visible loading/error states. Retries once on empty. */
+  const loadPages = async (openOnSuccess: boolean): Promise<MetaPage[]> => {
+    setPagesLoading(true);
+    setPagesError(null);
+    try {
+      let p = await listMetaOAuthPages(workspaceId);
+      if (p.length === 0) {
+        // One automatic retry: the pending write can lag the redirect by a beat.
+        await new Promise((r) => setTimeout(r, 1500));
+        p = await listMetaOAuthPages(workspaceId);
+      }
+      setPages(p);
+      if (openOnSuccess && p.length > 0) setShowPicker(true);
+      if (p.length === 0) {
+        setPagesError('No pages came back from Facebook. Check that you granted the Pages permission, then try again.');
+      }
+      return p;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Could not load your Facebook Pages.';
+      setPagesError(msg);
+      return [];
+    } finally {
+      setPagesLoading(false);
+    }
+  };
+
   const refresh = async (): Promise<MetaOAuthStatus | null> => {
     try {
       const s = await getMetaOAuthStatus(workspaceId);
       setStatus(s);
       if (s.pending) {
-        const p = await listMetaOAuthPages(workspaceId);
-        setPages(p);
-        if (p.length > 0) setShowPicker(true);
+        await loadPages(true);
       }
       return s;
     } catch (e) {
@@ -211,9 +237,21 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
             <div className="flex items-center gap-2 mb-1 pr-8">
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
               <h3 className="font-bold text-white">Choose your Facebook Page</h3>
+              <button
+                onClick={() => loadPages(false)}
+                disabled={pagesLoading}
+                aria-label="Reload pages"
+                title="Reload pages"
+                className="ml-auto p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${pagesLoading ? 'animate-spin' : ''}`} />
+              </button>
             </div>
             <p className="text-xs text-slate-400 mb-3">
               Pick the Page ChatMize should send and receive messages as.
+              {pages.length > 0 && (
+                <span className="text-slate-500"> {pages.length} found.</span>
+              )}
             </p>
             <div className="relative mb-3">
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -226,7 +264,24 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
               />
             </div>
             <div className="space-y-2 overflow-y-auto min-h-0 flex-1 pr-1">
-              {filteredPages.length === 0 && pages.length > 0 && (
+              {pagesLoading && (
+                <div className="flex items-center gap-2 px-1 py-6 text-sm text-slate-400">
+                  <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                  Loading your Facebook Pages...
+                </div>
+              )}
+              {!pagesLoading && pagesError && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                  <p className="text-xs text-amber-200 mb-2">{pagesError}</p>
+                  <button
+                    onClick={() => loadPages(false)}
+                    className="text-xs font-semibold text-amber-100 underline underline-offset-2 hover:text-white cursor-pointer"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+              {!pagesLoading && !pagesError && filteredPages.length === 0 && pages.length > 0 && (
                 <p className="text-xs text-slate-500 px-1 py-2">No pages match your search.</p>
               )}
               {filteredPages.map((page) => (
@@ -244,7 +299,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
                 </button>
               ))}
             </div>
-            {pages.length === 0 && (
+            {!pagesLoading && !pagesError && pages.length === 0 && (
               <p className="text-xs text-slate-500">No pages found on this Facebook account.</p>
             )}
             <button
