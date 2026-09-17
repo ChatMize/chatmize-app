@@ -528,6 +528,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
       setSelectedContact(newRecord);
     } catch (err) {
       console.error("Failed to capture contact:", err);
+      alert(`Failed to save lead: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again or contact support.`);
     } finally {
       setSimulating(false);
     }

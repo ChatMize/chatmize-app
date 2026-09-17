@@ -318,6 +318,7 @@ export function CampaignBuilderModal({
       onClose();
     } catch (err) {
       console.error('Failed to save campaign:', err);
+      alert(`Failed to save campaign: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again or contact support.`);
     } finally {
       setIsSaving(false);
     }
