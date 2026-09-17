@@ -469,6 +469,8 @@ data subject, Meta Developer Compliance, and regulatory authorities.
 
   // Save new contact from Modal into Firestore
   const handleCreateContact = async () => {
+    console.log('[DIAG] handleCreateContact fired, modalFirstName:', modalFirstName);
+    alert('[DIAG] Save button clicked - handler is running');
     setSimulating(true);
     try {
       const now = new Date();
