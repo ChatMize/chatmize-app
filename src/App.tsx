@@ -190,7 +190,14 @@ export default function App() {
   // start on the right step; the meta_oauth params are left for the card.
   const [oauthReturnTo] = useState<string | null>(() => {
     try {
-      return new URLSearchParams(window.location.search).get('return_to');
+      const params = new URLSearchParams(window.location.search);
+      // Primary: explicit return address from the OAuth round trip.
+      const rt = params.get('return_to');
+      if (rt) return rt;
+      // Fallback: a successful OAuth without a return address still means the
+      // user was mid-connect in onboarding, so land them on the connect step.
+      if (params.get('meta_oauth') === 'success') return 'onboarding:connect';
+      return null;
     } catch {
       return null;
     }

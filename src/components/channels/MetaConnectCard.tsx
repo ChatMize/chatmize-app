@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Facebook, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Facebook, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Search } from 'lucide-react';
 import {
   startMetaOAuth,
   getMetaOAuthStatus,
@@ -31,6 +31,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
   const [showPicker, setShowPicker] = useState(false);
   const [selecting, setSelecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pageQuery, setPageQuery] = useState('');
 
   const refresh = async (): Promise<MetaOAuthStatus | null> => {
     try {
@@ -170,16 +171,32 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
 
       {showPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-2xl shadow-2xl">
             <div className="flex items-center gap-2 mb-1">
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
               <h3 className="font-bold text-white">Choose your Facebook Page</h3>
             </div>
-            <p className="text-xs text-slate-400 mb-4">
+            <p className="text-xs text-slate-400 mb-3">
               Pick the Page ChatMize should send and receive messages as.
             </p>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {pages.map((page) => (
+            <div className="relative mb-3">
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={pageQuery}
+                onChange={(e) => setPageQuery(e.target.value)}
+                placeholder="Search pages by name or ID..."
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500/60"
+              />
+            </div>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {pages
+                .filter((page) => {
+                  const q = pageQuery.trim().toLowerCase();
+                  if (!q) return true;
+                  return page.name.toLowerCase().includes(q) || page.id.includes(q);
+                })
+                .map((page) => (
                 <button
                   key={page.id}
                   onClick={() => handleSelect(page.id)}
@@ -198,7 +215,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
               <p className="text-xs text-slate-500">No pages found on this Facebook account.</p>
             )}
             <button
-              onClick={() => setShowPicker(false)}
+              onClick={() => { setShowPicker(false); setPageQuery(''); }}
               className="mt-4 w-full py-2 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all cursor-pointer"
             >
               Cancel
