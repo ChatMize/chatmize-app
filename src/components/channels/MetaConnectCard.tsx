@@ -121,6 +121,14 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
 
   const connected = status?.connected ?? false;
 
+  const pageQueryLower = pageQuery.trim().toLowerCase();
+  const filteredPages = pages.filter(
+    (page) =>
+      !pageQueryLower ||
+      page.name.toLowerCase().includes(pageQueryLower) ||
+      page.id.includes(pageQueryLower),
+  );
+
   return (
     <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5 flex flex-col justify-between hover:border-white/20 transition-all md:col-span-2">
       <div>
@@ -191,9 +199,9 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
           className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm"
           onClick={closePicker}
         >
-          <div className="flex min-h-full items-center justify-center p-4">
+          <div className="flex min-h-full justify-center p-4">
           <div
-            className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-2xl shadow-2xl flex flex-col relative my-4"
+            className="m-auto bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[calc(100dvh-2rem)] shadow-2xl flex flex-col relative"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -220,14 +228,11 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
                 className="w-full pl-9 pr-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500/60"
               />
             </div>
-            <div className="space-y-2 overflow-y-auto max-h-[50vh] pr-1">
-              {pages
-                .filter((page) => {
-                  const q = pageQuery.trim().toLowerCase();
-                  if (!q) return true;
-                  return page.name.toLowerCase().includes(q) || page.id.includes(q);
-                })
-                .map((page) => (
+            <div className="space-y-2 overflow-y-auto min-h-0 max-h-[50vh] pr-1">
+              {filteredPages.length === 0 && pages.length > 0 && (
+                <p className="text-xs text-slate-500 px-1 py-2">No pages match your search.</p>
+              )}
+              {filteredPages.map((page) => (
                 <button
                   key={page.id}
                   onClick={() => handleSelect(page.id)}
