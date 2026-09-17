@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Facebook, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Search, X } from 'lucide-react';
 import {
   startMetaOAuth,
@@ -220,13 +221,14 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
         </button>
       </div>
 
-      {showPicker && (
-        <div className="fixed inset-0 z-50" onClick={closePicker}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <aside
-            className="absolute right-0 top-0 bottom-0 flex w-full max-w-md flex-col overflow-hidden border-l border-white/10 bg-slate-900 p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+      {showPicker &&
+        createPortal(
+          <div className="fixed inset-0 z-50" onClick={closePicker}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <aside
+              className="absolute right-0 top-0 bottom-0 flex w-full max-w-md flex-col overflow-hidden border-l border-white/10 bg-slate-900 p-6 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
             <button
               onClick={closePicker}
               aria-label="Close"
@@ -309,7 +311,8 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
               Cancel
             </button>
           </aside>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
