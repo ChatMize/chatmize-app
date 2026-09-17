@@ -218,6 +218,22 @@ export const CHATMIZE_INTEGRATIONS: IntegrationApp[] = [
       { name: 'accessToken', label: 'OAuth Access Token', placeholder: 'Enter GoTo developer token', type: 'password' },
     ],
   },
+  {
+    id: 'zoom',
+    name: 'Zoom',
+    category: 'webinar',
+    tagline: 'Video meetings & webinars',
+    description: 'Create Zoom meetings from chat flows, send join links automatically, and register webinar attendees.',
+    logoBg: 'bg-[#2D8CFF]',
+    logoTextColor: 'text-white',
+    initials: 'ZM',
+    connected: false,
+    authType: 'OAuth',
+    fields: [
+      { name: 'clientId', label: 'Zoom Client ID', placeholder: 'Enter Zoom Client ID', type: 'password', helpText: 'Zoom Marketplace > Build App > OAuth app credentials' },
+      { name: 'clientSecret', label: 'Zoom Client Secret', placeholder: 'Enter Zoom Client Secret', type: 'password' },
+    ],
+  },
 
   // General Automation & Workflows
   {
