@@ -47,7 +47,8 @@ export function Dashboard({ title = "Analytics & Overview" }: { title?: string }
           <div className="flex-1 border border-dashed border-white/10 rounded-xl flex items-center justify-center text-slate-500 min-h-[200px]">
             <div className="text-center flex flex-col items-center">
               <Activity className="w-10 h-10 mb-2 opacity-50" />
-              <p>Chart visualization will render here</p>
+              <p>Engagement chart</p>
+              <span className="text-[10px] px-2 py-1 bg-amber-500/20 text-amber-300 rounded-full font-bold uppercase tracking-wider mt-2">Coming Soon</span>
             </div>
           </div>
         </div>

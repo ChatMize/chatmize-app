@@ -6,10 +6,13 @@ export function AIAgents() {
     <div className="flex-1 flex flex-col gap-6">
       <div className="flex justify-between items-center mb-4">
         <div>
-          <h2 className="text-xl font-bold mb-2">Autonomous AI Agents</h2>
+          <h2 className="text-xl font-bold mb-2 flex items-center gap-3">
+            Autonomous AI Agents
+            <span className="text-[10px] px-2 py-1 bg-amber-500/20 text-amber-300 rounded-full font-bold uppercase tracking-wider">Coming Soon</span>
+          </h2>
           <p className="text-slate-400 text-sm">Deploy fully conversational AI without rigid node flows.</p>
         </div>
-        <button className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-medium text-sm shadow-lg shadow-blue-500/25 flex items-center gap-2 hover:from-cyan-400 hover:to-blue-500 transition-all">
+        <button disabled title="AI Agent builder — Coming soon" className="px-4 py-2 bg-white/5 border border-white/10 text-slate-500 rounded-xl font-medium text-sm flex items-center gap-2 cursor-not-allowed">
           <Plus className="w-4 h-4" />
           Create AI Agent
         </button>
@@ -54,7 +57,7 @@ function AIAgentCard({ name, description, status, conversations }: { name: strin
             </span>
           </div>
         </div>
-        <button className="text-slate-400 hover:text-white transition-colors">
+        <button disabled title="Agent settings — Coming soon" className="text-slate-600 cursor-not-allowed transition-colors">
           <Settings className="w-5 h-5" />
         </button>
       </div>
@@ -66,7 +69,7 @@ function AIAgentCard({ name, description, status, conversations }: { name: strin
           <span className="text-slate-500">Conversations: </span>
           <span className="font-bold text-slate-200">{conversations}</span>
         </div>
-        <button className="flex items-center gap-2 text-sm font-medium text-cyan-400 hover:text-cyan-300 transition-colors">
+        <button disabled title="Agent logs — Coming soon" className="flex items-center gap-2 text-sm font-medium text-slate-600 cursor-not-allowed transition-colors">
           {status === 'active' ? 'View Logs' : 'Test Agent'}
           <Play className="w-4 h-4" />
         </button>
