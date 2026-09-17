@@ -1052,24 +1052,33 @@ export const metaOAuthCallback = onRequest(
   async (req, res) => {
     const code = req.query["code"];
     const state = req.query["state"];
+    // Capture routing info before the one-time state is consumed, so the
+    // error path below can still route back to the right place afterwards.
+    let isIg = false;
+    let returnTo: string | undefined;
     try {
       if (typeof code !== "string" || typeof state !== "string") {
         throw new Error("Missing code or state.");
       }
       // Route by state: Instagram Login states live in their own collection.
       if (await isInstagramOAuthState(state)) {
-        const { workspaceId, uid, returnTo } = await consumeInstagramOAuthState(state);
+        isIg = true;
+        const consumed = await consumeInstagramOAuthState(state);
+        returnTo = consumed.returnTo;
         const profile = await exchangeInstagramCode(code);
-        await connectInstagramAccount(workspaceId, uid, profile);
+        await connectInstagramAccount(consumed.workspaceId, consumed.uid, profile);
         logger.info("Instagram OAuth callback ok", {
-          workspaceId,
+          workspaceId: consumed.workspaceId,
           igUserId: profile.id,
           username: profile.username,
         });
         res.redirect(302, instagramAppReturnUrl("success", undefined, returnTo));
         return;
       }
-      const { workspaceId, uid, returnTo } = await consumeOAuthState(state);
+      const fb = await consumeOAuthState(state);
+      const workspaceId = fb.workspaceId;
+      const uid = fb.uid;
+      returnTo = fb.returnTo;
       const result = await exchangeCodeForPages(code);
       if (result.pages.length === 0) {
         throw new Error("No Facebook Pages found on this account.");
@@ -1084,18 +1093,8 @@ export const metaOAuthCallback = onRequest(
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed.";
       logger.warn("Meta OAuth callback failed", { message });
-      // On failure the state was already consumed, so returnTo may be unknown;
-      // try to read it without consuming (best effort, never throws).
-      let returnTo: string | undefined;
-      let isIg = false;
-      try {
-        if (typeof state === "string") {
-          isIg = await isInstagramOAuthState(state);
-          const coll = isIg ? "instagram_oauth_states" : "meta_oauth_states";
-          const snap = await db().collection(coll).doc(state).get();
-          returnTo = snap.data()?.returnTo;
-        }
-      } catch { /* ignore */ }
+      // isIg and returnTo were captured before the one-time state was
+      // consumed, so the error still routes back to the right place.
       const url = isIg
         ? instagramAppReturnUrl("error", message, returnTo)
         : appReturnUrl("error", message, returnTo);
