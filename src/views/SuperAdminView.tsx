@@ -473,9 +473,9 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button 
-                            onClick={() => alert(`Viewing details for ${u.name}`)}
-                            title="Edit User" 
-                            className="p-1.5 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
+                            disabled
+                            title="User details — Coming soon" 
+                            className="p-1.5 text-slate-600 cursor-not-allowed rounded-lg transition-colors"
                           >
                             <Edit3 className="w-4 h-4" />
                           </button>
@@ -658,11 +658,13 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => alert('Opening CSV import parser for subscriber spreadsheets.')}
-                  className="py-3 px-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors"
+                  disabled
+                  title="CSV import — Coming soon"
+                  className="py-3 px-4 bg-white/5 border border-white/10 text-slate-500 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-not-allowed transition-colors"
                 >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                  <FileSpreadsheet className="w-4 h-4 text-slate-600" />
                   <span>Upload CSV Export</span>
+                  <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded font-medium">Coming Soon</span>
                 </button>
               </div>
             </div>
