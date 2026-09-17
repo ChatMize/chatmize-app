@@ -86,16 +86,24 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
   const connected = status?.connected ?? false;
 
   return (
-    <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5 flex flex-col justify-between hover:border-white/20 transition-all">
+    <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5 flex flex-col justify-between hover:border-white/20 transition-all md:col-span-2">
       <div>
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3">
             {connected && status?.pictureUrl ? (
-              <img
-                src={status.pictureUrl}
-                alt={status.username ?? 'Instagram account'}
-                className="w-12 h-12 rounded-xl object-cover border border-white/10"
-              />
+              <div className="relative flex-shrink-0">
+                <img
+                  src={status.pictureUrl}
+                  alt={status.username ?? 'Instagram account'}
+                  className="w-12 h-12 rounded-xl object-cover border border-white/10"
+                />
+                <span
+                  className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-gradient-to-br from-pink-500 via-fuchsia-500 to-purple-600 border-2 border-slate-900 flex items-center justify-center"
+                  title="Instagram"
+                >
+                  <Instagram className="w-3 h-3 text-white" />
+                </span>
+              </div>
             ) : (
               <div className="p-3 bg-slate-900/80 rounded-xl border border-white/10">
                 <Instagram className="w-6 h-6 text-pink-400" />
@@ -134,6 +142,30 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
           <p className="text-[11px] text-slate-500 font-mono mb-3">IG ID {status.igUserId}</p>
         )}
 
+        {connected && (
+          <div className="mb-4">
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              Connected channels
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                {status?.pictureUrl ? (
+                  <img src={status.pictureUrl} alt="" className="w-6 h-6 rounded-full object-cover" />
+                ) : (
+                  <Instagram className="w-4 h-4 text-pink-400 ml-1" />
+                )}
+                <span className="text-[11px] font-medium text-emerald-200">
+                  @{status?.username} · DMs
+                </span>
+              </span>
+              <span className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                <Instagram className="w-4 h-4 text-pink-400 ml-1" />
+                <span className="text-[11px] font-medium text-emerald-200">Comments</span>
+              </span>
+            </div>
+          </div>
+        )}
+
         {connected && !hasPageAnchor && (
           <div className="mb-4 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25">
             <p className="text-xs text-cyan-200 leading-relaxed">
@@ -156,6 +188,7 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
           {connected ? (
             <>
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <Instagram className="w-3.5 h-3.5 text-pink-400" />
               Instagram DMs ready
             </>
           ) : (
