@@ -61,6 +61,7 @@ import { subscribeToAuthChanges, signOutUser, AppUser, db } from './lib/firebase
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
 import { CopilotGuide } from './components/CopilotGuide';
+import { MetaReconnectBanner } from './components/MetaReconnectBanner';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { SnapshotImportView } from './views/SnapshotImportView';
 import { SnapshotLibraryView } from './views/SnapshotLibraryView';
@@ -1031,6 +1032,13 @@ export default function App() {
 
         {/* View Viewport */}
         <main className={`flex-1 min-w-0 flex flex-col relative ${isFlows || activeTab === 'conversations' ? 'overflow-hidden p-0 h-full' : 'overflow-y-auto p-3.5 sm:p-5 md:p-6 lg:p-8'}`}>
+          {activeWorkspace?.id && (
+            <MetaReconnectBanner
+              workspaceId={activeWorkspace.id}
+              workspaceName={activeWorkspace.name}
+              onGoToChannels={() => { setSettingsInitialTab('channels'); setActiveTab('settings'); }}
+            />
+          )}
           {showPlanNudge && (
             <div className="mb-4 w-full px-4 py-3 rounded-2xl bg-gradient-to-r from-purple-600/15 to-indigo-600/15 border border-purple-500/30 flex items-center justify-between gap-3">
               <button
