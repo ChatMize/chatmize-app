@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { SendChatCloakedLink, MmeLinkConfig, IgmeLinkConfig, CloakedDestinationType, CloakingMode } from '../../types/growthTools';
 import { QrCodeModal } from './QrCodeModal';
+import { QrBuilderTab } from './QrBuilderTab'; // [BUILDER C: QR tab] new QR Builder tab component
 import { ImageUpload } from '../ImageUpload';
 import { prodDb } from '../../lib/firebase';
 import {
@@ -159,7 +160,7 @@ interface GrowthLinksViewProps {  workspaceName?: string;
   workspaceSlug?: string;
   availableBots?: Array<{ id: string; name: string }>;
   onNavigateToFlows?: (botId?: string) => void;
-  initialSubTab?: 'cloaker' | 'mme' | 'igme';
+  initialSubTab?: 'cloaker' | 'mme' | 'igme' | 'qr'; // [BUILDER C: QR tab] added 'qr'
 }
 
 export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
@@ -174,7 +175,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
   onNavigateToFlows,
   initialSubTab = 'cloaker'
 }) => {
-  const [activeTab, setActiveTab] = useState<'cloaker' | 'mme' | 'igme'>(initialSubTab);
+  const [activeTab, setActiveTab] = useState<'cloaker' | 'mme' | 'igme' | 'qr'>(initialSubTab); // [BUILDER C: QR tab] added 'qr'
   
   // Workspace slug is locked to the current workspace: users cannot change it,
   // so every branded link stays namespaced to the workspace that owns it.
@@ -271,6 +272,18 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [qrModalData, setQrModalData] = useState<{ url: string; title: string; subtitle?: string } | null>(null);
+
+  // [BUILDER C: QR tab] prefill for "QR for this link" buttons: opens the QR tab with a cloaked link
+  const [qrPrefillUrl, setQrPrefillUrl] = useState<string | null>(null);
+  const [qrPrefillLabel, setQrPrefillLabel] = useState<string | null>(null);
+  const [qrPrefillNonce, setQrPrefillNonce] = useState(0);
+  const openQrTabForLink = (url: string, label?: string) => {
+    setQrPrefillUrl(url);
+    setQrPrefillLabel(label || url);
+    setQrPrefillNonce((n) => n + 1);
+    setIsCreatingLink(false);
+    setActiveTab('qr');
+  };
   const [previewModalLink, setPreviewModalLink] = useState<SendChatCloakedLink | null>(null);
   const [clickTrackingNotice, setClickTrackingNotice] = useState<string | null>(null);
   const [showQuickGuide, setShowQuickGuide] = useState(true);
@@ -482,6 +495,19 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
         >
           <Instagram className="w-4 h-4 text-pink-400" />
           <span>ig.me Instagram DM Builder</span>
+        </button>
+
+        {/* [BUILDER C: QR tab] fourth sub-tab */}
+        <button
+          onClick={() => setActiveTab('qr')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+            activeTab === 'qr'
+              ? 'bg-gradient-to-r from-violet-500/20 to-purple-500/20 text-violet-300 border border-violet-500/40 shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+          }`}
+        >
+          <QrCode className="w-4 h-4 text-violet-400" />
+          <span>QR Builder</span>
         </button>
       </div>
 
@@ -929,14 +955,11 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                           {isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                         </button>
 
+                        {/* [BUILDER C: QR tab] one-click "QR for this link": opens the QR Builder tab prefilled with this cloaked link */}
                         <button
-                          onClick={() => setQrModalData({
-                            url: link.fullShortUrl,
-                            title: link.title,
-                            subtitle: `send.chat/${link.workspaceSlug}/${link.slug}`
-                          })}
+                          onClick={() => openQrTabForLink(link.fullShortUrl, link.title)}
                           className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer"
-                          title="View QR Code"
+                          title="Build QR Code for this link"
                         >
                           <QrCode className="w-4 h-4" />
                         </button>
@@ -964,6 +987,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                 })}
               </div>
             )}
+
           </div>
 
         </div>
@@ -1275,6 +1299,17 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
           </div>
 
         </div>
+      )}
+
+      {/* [BUILDER C: QR tab] =========================================================================
+          TAB 4: QR BUILDER
+          ========================================================================= */}
+      {activeTab === 'qr' && (
+        <QrBuilderTab
+          prefillUrl={qrPrefillUrl}
+          prefillLabel={qrPrefillLabel}
+          prefillNonce={qrPrefillNonce}
+        />
       )}
 
       {/* Shared QR Code Modal */}
