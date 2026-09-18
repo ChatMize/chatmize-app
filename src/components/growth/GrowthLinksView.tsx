@@ -208,7 +208,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12" data-no-personalization>
       
       {/* Top Banner */}
       <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-950 border border-white/10 relative overflow-hidden shadow-xl">

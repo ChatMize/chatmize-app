@@ -11,6 +11,10 @@ const TEXT_INPUT_TYPES = new Set(['text', 'search', 'url', 'email', 'tel', '']);
 
 function isPersonalizationTextField(el: EventTarget | null): el is Field {
   if (!(el instanceof HTMLElement)) return false;
+  // Opt-out: containers (or fields) marked data-no-personalization never get the buddy.
+  // Used where merge tags are dead text (e.g. the link cloaker: the destination
+  // URL is fixed at creation time, so per-contact variables could never resolve).
+  if (el.closest('[data-no-personalization]')) return false;
   // Skip fields that already have their own inline picker, and the picker's own search box.
   if (el.closest('[data-personalization-panel]')) return false;
   const tagged = el as HTMLElement;
@@ -113,15 +117,28 @@ export default function GlobalPersonalizationBuddy() {
         targetRef.current = null;
       }
     };
+    // Clicking/tapping anywhere outside the panel and the buddy button
+    // dismisses the panel. (focusin alone is not enough: clicking empty
+    // modal space never moves focus, which left the panel stuck open.)
+    const onPointerDown = (e: PointerEvent) => {
+      if (!panelOpen) return;
+      const t = e.target as HTMLElement | null;
+      if (!t || !(t instanceof HTMLElement)) return;
+      if (t.closest('[data-personalization-panel]')) return;
+      if (btnRef.current && btnRef.current.contains(t)) return;
+      setPanelOpen(false);
+    };
     document.addEventListener('focusin', onFocusIn);
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onScroll);
     document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onPointerDown);
     return () => {
       document.removeEventListener('focusin', onFocusIn);
       document.removeEventListener('scroll', onScroll, true);
       document.removeEventListener('resize', onScroll);
       document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPointerDown);
     };
   }, [place, panelOpen]);
 
