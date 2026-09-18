@@ -12,11 +12,21 @@ import { buildMcpServer } from "./server";
 
 function setCors(res: Response): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Session-Id");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, X-Api-Key, Content-Type, Mcp-Session-Id");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
 }
 
-function bearerToken(req: Request): string {
+/**
+ * Extract the workspace API key.
+ *
+ * Primary header is X-Api-Key. Authorization: Bearer is also accepted, but
+ * Google's front end rejects non-Google bearer tokens before they reach
+ * Cloud Run, so X-Api-Key is the documented header for direct *.run.app
+ * calls. Both carry the same cm_live_/cm_test_ key.
+ */
+function extractApiKey(req: Request): string {
+  const custom = req.header("x-api-key")?.trim();
+  if (custom) return custom;
   const h = req.header("authorization") ?? "";
   const m = /^Bearer\s+(.+)$/i.exec(h.trim());
   return m ? m[1] : "";
@@ -35,7 +45,7 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
   }
 
   try {
-    const key = await verifyApiKey(bearerToken(req));
+    const key = await verifyApiKey(extractApiKey(req));
     await checkRateLimit(key);
 
     const server = buildMcpServer(key);

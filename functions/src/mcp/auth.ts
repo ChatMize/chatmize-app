@@ -85,7 +85,7 @@ export class McpAuthError extends Error {
  */
 export async function verifyApiKey(rawKey: string): Promise<VerifiedKey> {
   if (!rawKey || typeof rawKey !== "string") {
-    throw new McpAuthError(401, "Missing API key. Pass Authorization: Bearer <key>.");
+    throw new McpAuthError(401, "Missing API key. Pass X-Api-Key: <key> (or Authorization: Bearer <key>).");
   }
   const trimmed = rawKey.trim();
   if (!trimmed.startsWith("cm_live_") && !trimmed.startsWith("cm_test_")) {
