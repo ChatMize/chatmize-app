@@ -201,6 +201,7 @@ export const DEFAULT_CLOAKED_LINKS: SendChatCloakedLink[] = [
     refPayload: 'vip_discount',
     status: 'active',
     totalClicks: 842,
+    clickCount: 842,
     totalConversions: 318,
     createdAt: '2026-09-01T10:00:00Z',
     lastClickedAt: '2026-09-14T21:40:00Z'
@@ -220,6 +221,7 @@ export const DEFAULT_CLOAKED_LINKS: SendChatCloakedLink[] = [
     refPayload: 'audit2026',
     status: 'active',
     totalClicks: 512,
+    clickCount: 512,
     totalConversions: 194,
     createdAt: '2026-09-05T14:30:00Z',
     lastClickedAt: '2026-09-14T20:15:00Z'
@@ -239,6 +241,7 @@ export const DEFAULT_CLOAKED_LINKS: SendChatCloakedLink[] = [
     refPayload: 'webinar_ai_sales',
     status: 'active',
     totalClicks: 1290,
+    clickCount: 1290,
     totalConversions: 620,
     createdAt: '2026-09-08T09:00:00Z',
     lastClickedAt: '2026-09-14T22:10:00Z'
