@@ -30,6 +30,22 @@ Decision (2026-09-18, Karl): AWS SES instead of Resend for ChatMize email.
 - Cost: $0.10 per 1,000 emails + $0.12/GB of attachments. 10k emails/mo
   is about $1. No idle cost; fully serverless.
 
+## Phase 1 notification emails (the first sends)
+
+The first emails ChatMize sends are owner notifications, not marketing:
+
+1. **Human handoff.** When a conversation needs a person (automation
+   escalates, or a visitor asks for a human), email the workspace owner/team
+   with a link straight to the conversation.
+2. **Reconnect needed.** When a channel connection dies (Meta
+   token_invalid, WhatsApp/SMS auth failure), email the owner as backup to
+   the in-app banner, with the one-click reconnect action.
+
+Both are transactional, sent from the shared chatmize.com domain. This
+scopes Phase 1 to a notification service (the `sendEmail` callable plus
+event triggers on handoff and on connection death), not a campaign
+builder. Per-workspace notification recipients come later.
+
 ## Sending identities (two phases)
 
 - Phase 1 (launch): one shared ChatMize verified domain for transactional
