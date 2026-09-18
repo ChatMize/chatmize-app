@@ -70,6 +70,9 @@ export interface ConversationMessage {
   text: string;
   timestamp: string;
   senderName?: string;
+  /** Baked at merge time so bubbles never depend on the live contact object
+   * (keeps memo() effective when the contact doc updates). */
+  senderInitial?: string;
   metaTag?: 'CONFIRMED_EVENT_UPDATE' | 'POST_PURCHASE_UPDATE' | 'ACCOUNT_UPDATE' | 'HUMAN_AGENT';
   type?: 'text' | 'content_card' | 'quick_reply' | 'event_log' | 'rn_prompt';
   contentCard?: {
@@ -81,20 +84,20 @@ export interface ConversationMessage {
     buttonUrl?: string;
     flowId?: string;
   };
-  deliveryStatus?: 'sent' | 'delivered' | 'read';
+  deliveryStatus?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 }
 
 // Memoized chat bubble: unchanged messages keep object identity in the parent's
 // merge, so memo skips their re-render and the thread scrolls smoothly.
+// NOTE: the bubble takes NO contact props on purpose — senderName/senderInitial
+// are baked into each message at merge time. Passing the live contact's name
+// here would defeat memo() on every contact-doc update (e.g. profile
+// enrichment) and re-render the whole thread mid-scroll.
 const MessageBubble = memo(function MessageBubble({
   msg,
-  contactName,
-  contactFirstName,
   onNavigateToFlows,
 }: {
   msg: ConversationMessage;
-  contactName: string;
-  contactFirstName?: string;
   onNavigateToFlows?: (flowId: string) => void;
 }) {
   if (msg.type === 'event_log') {
@@ -119,14 +122,14 @@ const MessageBubble = memo(function MessageBubble({
       {/* Customer Avatar on left */}
       {isCustomer && (
         <div className="w-7 h-7 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center shrink-0 mt-1 text-[10px] font-bold text-slate-300">
-          {contactFirstName?.[0] || 'C'}
+          {msg.senderInitial || 'C'}
         </div>
       )}
 
       <div className={`max-w-md space-y-1 ${isCustomer ? 'items-start' : 'items-end'}`}>
         {/* Sender Label */}
         <div className={`flex items-center gap-1.5 text-[10px] ${isCustomer ? 'text-slate-400' : 'text-slate-400 justify-end'}`}>
-          <span>{msg.senderName || (isCustomer ? contactName : 'Agent')}</span>
+          <span>{msg.senderName || (isCustomer ? 'Customer' : 'Agent')}</span>
           <span>•</span>
           <span>{msg.timestamp}</span>
           {msg.metaTag && (
@@ -414,6 +417,8 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   const [saveSuccessNotice, setSaveSuccessNotice] = useState<boolean>(false);
   const [copiedNotice, setCopiedNotice] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Direct ref to the thread scroll container (replaces document.querySelector).
+  const chatScrollRef = useRef<HTMLDivElement>(null);
 
   // Copy helper
   const handleCopyText = (text: string, label: string) => {
@@ -491,10 +496,34 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
         // Merge into previous state preserving object identity for unchanged
         // messages, so memoized bubbles skip re-render and scrolling stays smooth.
+        //
+        // Optimistic reconciliation: the backend is now the single writer for
+        // outbound messages (it stores our clientMessageId as clientId). When
+        // the persisted doc arrives, it takes the optimistic message's place
+        // in the list instead of appearing as a second message.
         setConversationsMap((prev) => {
           const prevList = prev[activeContact.id] || [];
-          const prevById = new Map(prevList.map((m) => [m.id, m]));
+          const prevById = new Map<string, ConversationMessage>(prevList.map((m) => [m.id, m]));
+          const optimisticByClientId = new Map<string, ConversationMessage>(
+            prevList.filter((m) => m.id.startsWith('msg-')).map((m) => [m.id, m])
+          );
+          const senderInitial =
+            activeContact.firstName?.[0] || activeContact.name?.[0] || 'C';
           const realMessages: ConversationMessage[] = firestoreMessages.map((m) => {
+            // Optimistic message confirmed by the backend: swap it in place.
+            const optimistic = m.clientId ? optimisticByClientId.get(m.clientId) : undefined;
+            if (optimistic) {
+              const confirmed: ConversationMessage = {
+                ...optimistic,
+                id: m.id,
+                text: m.text,
+                timestamp: new Date(m.timestampMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                senderInitial,
+                // Backend reports the real Meta send result.
+                deliveryStatus: m.error ? 'failed' : m.ok === false ? 'failed' : 'delivered',
+              };
+              return confirmed;
+            }
             const prevMsg = prevById.get(m.id);
             const sender: ConversationMessage['sender'] = m.direction === 'inbound' ? 'customer' : 'agent';
             const senderName = m.direction === 'inbound' ? activeContact.name : 'Agent';
@@ -516,6 +545,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
               text: m.text,
               timestamp,
               senderName,
+              senderInitial: m.direction === 'inbound' ? senderInitial : undefined,
             };
           });
           return {
@@ -830,6 +860,26 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     return conversationsMap[activeContact.id] || [];
   }, [conversationsMap, activeContact?.id]);
 
+  // Thread auto-scroll: when a new message lands, follow it to the bottom
+  // ONLY if the user is already near the bottom. If they're scrolled up
+  // reading history, never yank them (that killed scroll gestures).
+  const currentMessagesLength = currentMessages.length;
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 140) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [currentMessagesLength]);
+
+  // Opening a different conversation always starts at the bottom.
+  const activeContactId = activeContact?.id;
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [activeContactId]);
+
   // Current active follow-up rules
   const currentRules = useMemo(() => {
     if (!activeContact) return [];
@@ -886,9 +936,15 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
         channel: backendChannel,
         recipientId: activeContact.senderId || activeContact.id,
         text: textToSend,
+        // Lets the backend echo this id back as clientId on the persisted
+        // doc, so the subscription merge reconciles the optimistic message
+        // in place instead of showing a duplicate.
+        clientMessageId: newMsg.id,
       });
 
-      // Mark as delivered
+      // Mark as delivered. When the backend's persisted doc arrives via the
+      // subscription, the merge swaps the optimistic message for it in place
+      // (matched by clientId) and carries the real Meta send result.
       setConversationsMap(prev => ({
         ...prev,
         [activeContact.id]: (prev[activeContact.id] || []).map(m =>
@@ -896,20 +952,11 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
         )
       }));
 
-      // Write to Firestore so it persists and appears in realtime.
-      // Must target prodDb (backend database) so the message lands in the
-      // same conversation thread the webhook reads and writes.
-      const { doc, setDoc, collection } = await import('firebase/firestore');
-      const convoId = `${activeContact.channel}_${activeContact.senderId || activeContact.id}`;
-      const msgRef = doc(collection(prodDb, 'workspaces', workspaceId, 'conversations', convoId, 'messages'));
-      await setDoc(msgRef, {
-        text: textToSend,
-        direction: 'outbound',
-        channel: backendChannel,
-        senderId: activeContact.senderId,
-        timestampMs: Date.now(),
-        createdAt: new Date().toISOString(),
-      });
+      // NOTE: the backend (recordOutboundMessage) is the single writer for
+      // outbound thread persistence. The frontend must NOT also write the
+      // message to Firestore — that produced duplicate bubbles, and the
+      // backend copy had no timestampMs so it sorted to the top of the
+      // thread and made the view jump on every send.
 
     } catch (err) {
       console.error('Failed to send message:', err);
@@ -938,13 +985,9 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       lastInteractionAt: new Date().toISOString()
     }).catch(err => console.error('Error updating interaction:', err));
 
-    // Scroll to bottom after sending
-    setTimeout(() => {
-      const chatContainer = document.querySelector('[data-chat-messages]');
-      if (chatContainer) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      }
-    }, 100);
+    // NOTE: no scroll yank here. The auto-scroll effect follows new messages
+    // to the bottom only when the user is already near the bottom — yanking
+    // unconditionally (the old setTimeout) killed active scroll gestures.
   };
 
   // Toggle Bot Mode vs Human Takeover
@@ -1639,13 +1682,11 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
               )}
 
               {/* Message Thread Scroll View */}
-              <div data-chat-messages className="flex-1 overflow-y-auto p-4 space-y-3.5">
+              <div ref={chatScrollRef} data-chat-messages className="flex-1 overflow-y-auto p-4 space-y-3.5">
                 {currentMessages.map(msg => (
                   <MessageBubble
                     key={msg.id}
                     msg={msg}
-                    contactName={activeContact.name}
-                    contactFirstName={activeContact.firstName}
                     onNavigateToFlows={onNavigateToFlows}
                   />
                 ))}

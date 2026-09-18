@@ -34,6 +34,7 @@ import {
   QrCode,
   Smartphone,
   Instagram,
+  Trophy,
   X
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
@@ -53,6 +54,8 @@ import { SupportChatView } from './components/growth/SupportChatView';
 import { WebsiteOverlaysView } from './components/growth/WebsiteOverlaysView';
 import { GrowthLinksView } from './components/growth/GrowthLinksView';
 import { GrowthSuiteHub } from './components/growth/GrowthSuiteHub';
+import { ContestsView } from './components/growth/ContestsView';
+import { ContestEntryPage } from './components/growth/ContestEntryPage';
 import { NurtureToolType } from './types/nurture';
 import { OverlayType } from './types/growthTools';
 import { RecurringNotificationBroadcastHub } from './components/RecurringNotificationBroadcastHub';
@@ -437,6 +440,8 @@ export default function App() {
             }}
           />
         );
+      case 'contests':
+        return <ContestsView workspaceId={activeWorkspace?.id} />;
       case 'capture-tools':
       case 'capture':
       case 'nurture':
@@ -570,6 +575,18 @@ export default function App() {
     } catch { /* ignore */ }
   }, [activeWorkspaceId]);
 
+  // Public contest entry page: /enter/:contestId renders without auth.
+  // The hosting rewrite sends every path to index.html, so the SPA owns
+  // this route. Placed after all hooks (same pattern as the onboarding gate).
+  const [publicContestId] = useState<string | null>(() => {
+    try {
+      const m = window.location.pathname.match(/^\/enter\/([A-Za-z0-9_-]+)/);
+      return m ? m[1] : null;
+    } catch {
+      return null;
+    }
+  });
+
   // Onboarding gate: a signed-in user whose workspace hasn't finished onboarding
   // goes through the wizard (connect accounts -> choose DIY/DFU route -> tier).
   if (!authLoading && currentUser && activeWorkspace && !activeWorkspace.onboardingComplete) {
@@ -581,6 +598,10 @@ export default function App() {
         initialStep={oauthReturnTo === 'onboarding:connect' ? 'connect' : undefined}
       />
     );
+  }
+
+  if (publicContestId) {
+    return <ContestEntryPage contestId={publicContestId} />;
   }
 
   const showGuide = Boolean(
@@ -781,6 +802,7 @@ export default function App() {
                 'send-chat',
                 'mme',
                 'igme',
+                'contests',
                 'nurture',
                 'convertmate'
               ].includes(activeTab);
@@ -792,7 +814,7 @@ export default function App() {
                       setActiveTab('support-chat');
                     }
                   }}
-                  title="Capture Tools (Support Chat, Overlays, Growth Links)"
+                  title="Capture Tools (Support Chat, Overlays, Growth Links, Contests)"
                   className={`w-full p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer ${
                     isCaptureActive
                       ? 'bg-gradient-to-r from-cyan-500/15 to-blue-500/15 text-cyan-300 border border-cyan-500/30'
@@ -823,7 +845,7 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono font-bold">
-                        3 Tools
+                        4 Tools
                       </span>
                       <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isCaptureExpanded ? 'rotate-180 text-cyan-400' : ''}`} />
                     </div>
@@ -884,6 +906,22 @@ export default function App() {
                           <span>Growth Links</span>
                         </div>
                         <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">send.chat</span>
+                      </button>
+
+                      {/* Child 4: Contests */}
+                      <button
+                        onClick={() => setActiveTab('contests')}
+                        className={`w-full text-left py-1.5 px-2 rounded-lg text-xs font-medium transition-all flex items-center justify-between cursor-pointer ${
+                          activeTab === 'contests'
+                            ? 'bg-amber-500/20 text-amber-300 font-bold'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Contests</span>
+                        </div>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">viral</span>
                       </button>
                     </div>
                   )}

@@ -72,6 +72,7 @@ import {
   OverlayTrackReq,
   OverlayTrackRes,
 } from "./overlays";
+import { handleContestAdminAction, handleContestPublicRequest } from "./contest.js";
 import {
   resolvePersonalizationTags,
   getContactForRecipient,
@@ -256,7 +257,20 @@ async function requireWorkspaceAccess(
 export const metaWebhook = onRequest(
   { region: REGION, secrets: [META_APP_SECRET, META_INSTAGRAM_APP_SECRET, META_VERIFY_TOKEN] },
   async (req, res) => {
-    // 0. send.chat link cloaker: host-based routing takes precedence over
+    // 0. Contest engine public API (folded in: proxy blocks new function
+    //    creation). Unauthenticated by design — the entry page and referral
+    //    links hit POST /contest-api (hosting rewrite -> this function).
+    //    Anti-fraud (dedupe, rate limits, velocity flags) runs inside.
+    const reqPath = (req.path || "") as string;
+    if (reqPath === "/contest-api" || reqPath.endsWith("/contest-api")) {
+      await handleContestPublicRequest(
+        req as unknown as Parameters<typeof handleContestPublicRequest>[0],
+        res as unknown as Parameters<typeof handleContestPublicRequest>[1],
+      );
+      return;
+    }
+
+    // 0b. send.chat link cloaker: host-based routing takes precedence over
     //    the Meta webhook logic. Non-send.chat hosts fall through untouched.
     if (await handleCloakerRequest(req as unknown as CloakerReq, res as unknown as CloakerRes)) {
       return;
@@ -371,6 +385,9 @@ interface SendMessageData {
   channel?: Channel;
   recipientId?: string;
   text?: string;
+  /** Frontend's optimistic message id, echoed back as clientId on the
+   * persisted doc so the UI can reconcile instead of duplicating. */
+  clientMessageId?: string;
 }
 
 /** Meta error text means the page token is dead (not a transient send error). */
@@ -470,7 +487,7 @@ export const sendChannelMessage = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "Sign in required.");
     }
-    const { workspaceId, channel, recipientId, text } = (request.data ?? {}) as SendMessageData;
+    const { workspaceId, channel, recipientId, text, clientMessageId } = (request.data ?? {}) as SendMessageData;
     if (!workspaceId || !channel || !recipientId || !text) {
       throw new HttpsError("invalid-argument", "workspaceId, channel, recipientId, and text are required.");
     }
@@ -567,6 +584,7 @@ export const sendChannelMessage = onCall(
       result.metaMessageId,
       result.ok,
       result.error,
+      clientMessageId ?? null,
     );
 
     if (!result.ok) {
@@ -1572,6 +1590,12 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   };
   if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
   await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  // Contest engine admin actions (folded in: proxy blocks new function
+  // creation). All contest mutations go through ./contest.js; reads happen
+  // client-side via Firestore security rules.
+  if (typeof action === "string" && action.startsWith("contest")) {
+    return handleContestAdminAction(action, (request.data ?? {}) as Record<string, unknown>, uid);
+  }
   // WhatsApp actions (folded in: proxy blocks new function creation)
   if (action === "listWhatsAppAccounts") {
     return listPendingWhatsAppAccounts(workspaceId);

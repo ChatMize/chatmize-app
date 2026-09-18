@@ -409,7 +409,7 @@ export function subscribeToContacts(
 export function subscribeToConversationMessages(
   workspaceId: string,
   convoId: string,
-  onUpdate: (messages: Array<{ id: string; direction: string; text: string; timestampMs: number; senderId: string }>) => void,
+  onUpdate: (messages: Array<{ id: string; direction: string; text: string; timestampMs: number; senderId: string; clientId?: string | null; ok?: boolean; error?: string | null }>) => void,
   onError?: (err: Error) => void,
   dbInstance: Firestore = db,
 ) {
@@ -419,7 +419,7 @@ export function subscribeToConversationMessages(
   return onSnapshot(
     q,
     (snapshot) => {
-      const messages: Array<{ id: string; direction: string; text: string; timestampMs: number; senderId: string }> = [];
+      const messages: Array<{ id: string; direction: string; text: string; timestampMs: number; senderId: string; clientId?: string | null; ok?: boolean; error?: string | null }> = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
         messages.push({
@@ -428,6 +428,9 @@ export function subscribeToConversationMessages(
           text: data.text || '',
           timestampMs: data.timestampMs || 0,
           senderId: data.senderId || '',
+          clientId: data.clientId ?? null,
+          ok: data.ok,
+          error: data.error ?? null,
         });
       });
       onUpdate(messages);
