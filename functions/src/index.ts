@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { createHmac, timingSafeEqual } from "crypto";
 import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
@@ -31,6 +31,7 @@ import {
   storePendingPages,
   selectWorkspacePage,
   resolvePageToken,
+  ensureFreshPageToken,
   getPageSocialProfile,
   appReturnUrl,
 } from "./metaOAuth";
@@ -322,13 +323,21 @@ interface SendMessageData {
   text?: string;
 }
 
+/** Meta error text means the page token is dead (not a transient send error). */
+function isMetaTokenError(error: string | undefined): boolean {
+  if (!error) return false;
+  return /error validating access token|session has been invalidated|session has expired|invalid oauth access token/i.test(
+    error,
+  );
+}
+
 /**
  * Authenticated callable: send a message on Messenger, Instagram, or WhatsApp.
  * The caller must be a member of the workspace (or Super Admin). Tokens come
  * from Secret Manager; the client never sees them.
  */
 export const sendChannelMessage = onCall(
-  { region: REGION, secrets: [WHATSAPP_TOKEN_DEFAULT, WHATSAPP_PHONE_NUMBER_ID, META_PAGE_TOKEN_DEFAULT] },
+  { region: REGION, secrets: [WHATSAPP_TOKEN_DEFAULT, WHATSAPP_PHONE_NUMBER_ID, META_PAGE_TOKEN_DEFAULT, META_APP_SECRET] },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -344,6 +353,18 @@ export const sendChannelMessage = onCall(
 
     // Membership check (Super Admin claim bypasses).
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+
+    // Token self-heal: refresh a near-expiry page token, or fail fast with a
+    // clear reconnect prompt when Meta has killed the session outright.
+    if (channel === "messenger" || channel === "instagram") {
+      const health = await ensureFreshPageToken(workspaceId);
+      if (health === "invalid") {
+        throw new HttpsError(
+          "failed-precondition",
+          "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
+        );
+      }
+    }
 
     const sender = CHANNEL_SENDERS[channel];
     let result;
@@ -370,6 +391,27 @@ export const sendChannelMessage = onCall(
 
     if (!result.ok) {
       logger.error("Outbound send failed", { workspaceId, channel, error: result.error });
+      if (isMetaTokenError(result.error)) {
+        // Reactive catch: the token died between health checks. Flag the
+        // integration so the UI prompts a reconnect instead of a bare failure.
+        await db()
+          .collection("workspaces")
+          .doc(workspaceId)
+          .collection("integrations")
+          .doc("meta")
+          .set(
+            {
+              status: "token_invalid",
+              tokenInvalidAt: FieldValue.serverTimestamp(),
+              tokenInvalidReason: result.error,
+            },
+            { merge: true },
+          );
+        throw new HttpsError(
+          "failed-precondition",
+          "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
+        );
+      }
       throw new HttpsError("internal", result.error ?? "Send failed.");
     }
     logger.info("Outbound send ok", { workspaceId, channel, metaMessageId: result.metaMessageId });

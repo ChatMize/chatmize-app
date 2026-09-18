@@ -160,6 +160,120 @@ export async function resolvePageToken(
   return defaultToken;
 }
 
+/** Result of a proactive page-token health check. */
+export type PageTokenHealth = "ok" | "invalid" | "unconnected";
+
+/**
+ * Proactive token self-heal, called on the send path before resolving the
+ * page token. The health result is cached 24h per workspace so the check
+ * costs nothing on steady traffic.
+ *
+ * - Token valid and not near expiry -> "ok".
+ * - Token valid but expiring within 7 days -> exchanged for a fresh
+ *   long-lived token via fb_exchange_token and stored as a new secret
+ *   version (Meta only allows the exchange while the old token is alive).
+ * - Token dead (Meta error 190: password change, security reset, revoked) ->
+ *   the integration is flagged `token_invalid` and "invalid" is returned.
+ *   A dead token cannot be revived via API; the owner must re-run OAuth.
+ */
+export async function ensureFreshPageToken(workspaceId: string): Promise<PageTokenHealth> {
+  const ref = db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("integrations")
+    .doc("meta");
+  const snap = await ref.get();
+  const conn = snap.data() as { status?: string; secretName?: string } | undefined;
+  if (!conn || !conn.secretName) return "unconnected";
+  if (conn.status === "token_invalid") return "invalid";
+  if (conn.status !== "connected") return "unconnected";
+
+  const healthKey = `pagetokenhealth:${workspaceId}`;
+  if (cacheGet(healthKey)) return "ok";
+
+  const { status: smStatus, data: smData } = await secretManager(
+    "GET",
+    `projects/${PROJECT_ID}/secrets/${conn.secretName}/versions/latest:access`,
+  );
+  if (smStatus !== 200) {
+    // Transient Secret Manager hiccup: never block a send on the health
+    // check itself; the send will surface a real failure if the token is bad.
+    logger.warn("Page token unreadable during health check", { workspaceId, smStatus });
+    return "ok";
+  }
+  const token = Buffer.from(
+    (smData as { payload?: { data?: string } }).payload?.data ?? "",
+    "base64",
+  ).toString("utf8");
+  if (!token) return "ok";
+
+  const appToken = `${META_APP_ID}|${META_APP_SECRET.value()}`;
+  let dbg: {
+    data?: { is_valid?: boolean; expires_at?: number; error?: { code?: number; message?: string } };
+    error?: { code?: number; message?: string };
+  } = {};
+  try {
+    const dbgRes = await fetch(
+      `${GRAPH_BASE}/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(appToken)}`,
+    );
+    dbg = (await dbgRes.json()) as typeof dbg;
+    const errCode = dbg.error?.code ?? dbg.data?.error?.code;
+    if (!dbgRes.ok || errCode || dbg.data?.is_valid === false) throw new Error("invalid");
+  } catch {
+    const reason = dbg.error?.message ?? dbg.data?.error?.message ?? "token rejected by Meta";
+    await ref.set(
+      {
+        status: "token_invalid",
+        tokenInvalidAt: FieldValue.serverTimestamp(),
+        tokenInvalidReason: reason,
+      },
+      { merge: true },
+    );
+    cache.delete(`pagetoken:${workspaceId}`);
+    logger.warn("Meta page token invalid, flagged for reconnect", { workspaceId, reason });
+    return "invalid";
+  }
+
+  // Page tokens minted from a long-lived user token report expires_at = 0
+  // (never); only short-lived leftovers need the exchange below.
+  const expiresAt = dbg.data?.expires_at ?? 0;
+  if (expiresAt > 0 && expiresAt - Date.now() / 1000 < 7 * 24 * 3600) {
+    const exParams = new URLSearchParams({
+      grant_type: "fb_exchange_token",
+      client_id: META_APP_ID,
+      client_secret: META_APP_SECRET.value(),
+      fb_exchange_token: token,
+    });
+    try {
+      const exRes = await fetch(`${GRAPH_BASE}/oauth/access_token?${exParams.toString()}`);
+      const exData = (await exRes.json()) as { access_token?: string; error?: { message?: string } };
+      if (exRes.ok && exData.access_token) {
+        const add = await secretManager(
+          "POST",
+          `projects/${PROJECT_ID}/secrets/${conn.secretName}:addVersion`,
+          { payload: { data: Buffer.from(exData.access_token, "utf8").toString("base64") } },
+        );
+        if (add.status === 200) {
+          cache.delete(`pagetoken:${workspaceId}`);
+          logger.info("Meta page token auto-refreshed", { workspaceId });
+        } else {
+          logger.error("Token refresh addVersion failed", { workspaceId, status: add.status });
+        }
+      } else {
+        logger.warn("Token refresh exchange failed", { workspaceId, error: exData.error?.message });
+      }
+    } catch (err) {
+      logger.warn("Token refresh threw, keeping current token", {
+        workspaceId,
+        error: err instanceof Error ? err.message : "unknown",
+      });
+    }
+  }
+
+  cacheSet(healthKey, "1", 24 * 3600 * 1000);
+  return "ok";
+}
+
 /** Where to send the user after the OAuth round-trip. Opaque descriptor like
  *  "onboarding:connect" or "app:settings_channels" — validated strictly so the
  *  callback can't be turned into an open redirect. */

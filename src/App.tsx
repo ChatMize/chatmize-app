@@ -370,6 +370,7 @@ export default function App() {
       case 'conversations':
         return (
           <LiveConversationsView
+            workspaceId={activeWorkspace?.id}
             onNavigateToAudience={(contactId) => {
               setActiveTab('audience');
             }}

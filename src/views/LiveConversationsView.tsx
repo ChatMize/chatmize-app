@@ -201,14 +201,19 @@ const PRESET_FOLLOW_UP_TEMPLATES = [
 ];
 
 interface LiveConversationsViewProps {
+  workspaceId?: string;
   onNavigateToAudience?: (contactId?: string) => void;
   onNavigateToFlows?: (flowId?: string) => void;
 }
 
 export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
+  workspaceId: workspaceIdProp,
   onNavigateToAudience,
   onNavigateToFlows
 }) => {
+  // The workspace this inbox belongs to. Falls back to the legacy dev
+  // workspace id so older test setups keep working.
+  const workspaceId = workspaceIdProp || 'ws-chatmize-dev';
   // State for contacts from Firestore
   const [contacts, setContacts] = useState<ContactRecord[]>([]);
   const [isLoadingContacts, setIsLoadingContacts] = useState<boolean>(true);
@@ -238,6 +243,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   const [messageInput, setMessageInput] = useState<string>('');
   const [selectedMetaTag, setSelectedMetaTag] = useState<ConversationMessage['metaTag'] | ''>('');
   const [isSending, setIsSending] = useState<boolean>(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // Modals & Panels
   const [showContentModal, setShowContentModal] = useState<boolean>(false);
@@ -336,8 +342,8 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     if (!['instagram', 'messenger', 'whatsapp'].includes(activeContact.channel)) return;
 
     const convoId = `${activeContact.channel}_${activeContact.senderId}`;
-    // TODO: get workspaceId from context instead of hardcoding
-    const workspaceId = 'ws-chatmize-dev';
+    // Uses the active workspace id so sends, reads, and writes all target
+    // the workspace the user is actually looking at.
 
     const unsubscribe = subscribeToConversationMessages(
       workspaceId,
@@ -675,6 +681,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     if (!messageInput.trim() || !activeContact) return;
 
     setIsSending(true);
+    setSendError(null);
     const textToSend = messageInput.trim();
 
     const isBotActive = botModeMap[activeContact.id] ?? false;
@@ -715,7 +722,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       const backendChannel = channelMap[activeContact.channel?.toLowerCase()] || 'instagram';
 
       await sendFn({
-        workspaceId: 'ws-chatmize-dev', // TODO: Use real workspace ID
+        workspaceId,
         channel: backendChannel,
         recipientId: activeContact.senderId || activeContact.id,
         text: textToSend,
@@ -733,7 +740,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       const { doc, setDoc, collection } = await import('firebase/firestore');
       const { db } = await import('../lib/firebase');
       const convoId = `${activeContact.channel}_${activeContact.senderId || activeContact.id}`;
-      const msgRef = doc(collection(db, 'workspaces', 'ws-chatmize-dev', 'conversations', convoId, 'messages'));
+      const msgRef = doc(collection(db, 'workspaces', workspaceId, 'conversations', convoId, 'messages'));
       await setDoc(msgRef, {
         text: textToSend,
         direction: 'outbound',
@@ -745,6 +752,10 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
     } catch (err) {
       console.error('Failed to send message:', err);
+      // Surface the real backend reason (e.g. expired page connection)
+      // instead of a bare "failed" with no explanation.
+      const reason = err instanceof Error && err.message ? err.message : 'Send failed.';
+      setSendError(reason);
       // Mark as failed
       setConversationsMap(prev => ({
         ...prev,
@@ -1614,6 +1625,20 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Send error banner: surfaces the real backend reason */}
+                {sendError && (
+                  <div className="mb-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start justify-between gap-2">
+                    <span>{sendError}</span>
+                    <button
+                      onClick={() => setSendError(null)}
+                      className="text-red-400 hover:text-red-200 shrink-0 font-bold"
+                      aria-label="Dismiss"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
 
                 {/* Input row */}
                 <div className="flex items-center gap-2">
