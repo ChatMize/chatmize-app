@@ -56,6 +56,11 @@ export const WhatsAppConnectCard: React.FC<WhatsAppConnectCardProps> = ({
       if (s.pending) {
         loadAccounts(true);
       }
+      // Sync the workspace's local channel flag whenever the real status
+      // shows connected, even if this session did not just complete OAuth.
+      if (s?.connected && s.phoneNumberId) {
+        onConnected?.(s.displayName || '', s.phoneNumberId);
+      }
     },
   });
 
