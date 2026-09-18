@@ -1935,40 +1935,11 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
 
       {/* DELETE WORKSPACE CONFIRMATION MODAL */}
       {deleteConfirmState && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-slate-900 border border-rose-500/30 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-white">Delete Workspace?</h3>
-                <p className="text-xs text-slate-400">This action cannot be undone.</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-300 bg-slate-950/60 p-3 rounded-xl border border-slate-800 leading-relaxed">
-              Are you sure you want to delete <span className="font-bold text-white">"{deleteConfirmState.name}"</span>? All associated bot flows, audience contacts, and connected Meta/SMS/Chatbot assets will be permanently unlinked.
-            </p>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmState(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 cursor-pointer transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white shadow-lg shadow-rose-600/30 cursor-pointer transition-all"
-              >
-                Confirm Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <DeleteWorkspaceModal
+          workspaceName={deleteConfirmState.name}
+          onCancel={() => setDeleteConfirmState(null)}
+          onConfirm={handleConfirmDelete}
+        />
       )}
 
       {/* FB LOGOUT CONFIRMATION MODAL */}
@@ -2026,6 +1997,94 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
           </button>
         </div>
       )}
+    </div>
+  );
+};
+
+// Hardened delete confirmation: requires typing DELETE + acknowledging data loss
+const DeleteWorkspaceModal: React.FC<{
+  workspaceName: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}> = ({ workspaceName, onCancel, onConfirm }) => {
+  const [confirmText, setConfirmText] = useState('');
+  const [acknowledged, setAcknowledged] = useState(false);
+  const canDelete = confirmText.trim().toLowerCase() === 'delete' && acknowledged;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-slate-900 border border-rose-500/30 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+            <Trash2 className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-white">Delete Workspace?</h3>
+            <p className="text-xs text-slate-400">This action cannot be undone.</p>
+          </div>
+        </div>
+
+        <div className="text-xs text-slate-300 bg-slate-950/60 p-3 rounded-xl border border-slate-800 leading-relaxed space-y-2">
+          <p>
+            You are about to permanently delete <span className="font-bold text-white">"{workspaceName}"</span>.
+          </p>
+          <ul className="list-disc list-inside space-y-1 text-slate-400">
+            <li>All bot flows and automations will be lost</li>
+            <li>All connected accounts (Facebook, Instagram, WhatsApp, SMS) will be unlinked</li>
+            <li>All audience contacts and conversation history will be deleted</li>
+            <li>All campaigns, broadcasts, and scheduled messages will be cancelled</li>
+            <li>API keys and integrations for this workspace will be revoked</li>
+          </ul>
+        </div>
+
+        <label className="flex items-start gap-2.5 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(e) => setAcknowledged(e.target.checked)}
+            className="mt-0.5 w-4 h-4 rounded accent-rose-500 cursor-pointer"
+          />
+          <span className="text-xs text-slate-300 group-hover:text-white transition-colors">
+            I understand that deleting this workspace will permanently erase all bots, connected accounts, contacts, and data. This cannot be recovered.
+          </span>
+        </label>
+
+        <div>
+          <label className="text-xs text-slate-400 block mb-1.5">
+            Type <span className="font-mono font-bold text-rose-400">DELETE</span> to confirm:
+          </label>
+          <input
+            type="text"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="DELETE"
+            autoComplete="off"
+            className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 focus:border-rose-500/50 text-sm text-white placeholder:text-slate-600 outline-none font-mono"
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-2.5 pt-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 cursor-pointer transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!canDelete}
+            className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-lg transition-all ${
+              canDelete
+                ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/30 cursor-pointer'
+                : 'bg-slate-700/50 text-slate-500 cursor-not-allowed shadow-none'
+            }`}
+          >
+            Delete Workspace
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
