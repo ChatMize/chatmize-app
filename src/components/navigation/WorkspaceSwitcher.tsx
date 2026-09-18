@@ -17,6 +17,8 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { Workspace } from '../../types/workspace';
+import { getMetaOAuthStatus } from '../../lib/meta';
+import { getInstagramOAuthStatus } from '../../lib/instagram';
 
 interface WorkspaceSwitcherProps {
   workspaces: Workspace[];
@@ -40,6 +42,34 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
 
+  // Show the connected channel's profile image as the workspace avatar:
+  // the Meta anchor's Page picture first, then the IG-only profile picture.
+  const [channelAvatarUrl, setChannelAvatarUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setChannelAvatarUrl(null);
+    if (!activeWorkspace?.id) return;
+    (async () => {
+      try {
+        const meta = await getMetaOAuthStatus(activeWorkspace.id);
+        if (!cancelled && meta.connected && meta.pagePictureUrl) {
+          setChannelAvatarUrl(meta.pagePictureUrl);
+          return;
+        }
+      } catch { /* fall through to IG-only */ }
+      try {
+        const ig = await getInstagramOAuthStatus(activeWorkspace.id);
+        if (!cancelled && ig.connected && ig.pictureUrl) {
+          setChannelAvatarUrl(ig.pictureUrl);
+        }
+      } catch { /* keep fallback avatar */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeWorkspace?.id]);
+
+  const avatarFor = (wsId: string, fallback?: string) =>
+    (wsId === activeWorkspace?.id && channelAvatarUrl) || fallback || null;
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -57,9 +87,9 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
         onClick={() => setIsOpen(prev => !prev)}
         className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-left transition-all cursor-pointer group"
       >
-        {activeWorkspace?.avatarUrl ? (
+        {avatarFor(activeWorkspace.id, activeWorkspace?.avatarUrl) ? (
           <img 
-            src={activeWorkspace.avatarUrl} 
+            src={avatarFor(activeWorkspace.id, activeWorkspace?.avatarUrl)!} 
             alt={activeWorkspace.name} 
             className="w-7 h-7 rounded-lg object-cover border border-slate-700 flex-shrink-0 shadow-sm"
           />
@@ -126,9 +156,9 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
                 >
                   <div className="flex items-center justify-between w-full">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      {ws.avatarUrl ? (
+                      {avatarFor(ws.id, ws.avatarUrl) ? (
                         <img 
-                          src={ws.avatarUrl} 
+                          src={avatarFor(ws.id, ws.avatarUrl)!} 
                           alt={ws.name} 
                           className="w-7 h-7 rounded-lg object-cover border border-slate-700 flex-shrink-0"
                         />

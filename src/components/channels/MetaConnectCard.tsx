@@ -169,11 +169,19 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3">
             {connected && status?.pagePictureUrl ? (
-              <img
-                src={status.pagePictureUrl}
-                alt={status.pageName ?? 'Facebook Page'}
-                className="w-12 h-12 rounded-xl object-cover border border-white/10"
-              />
+              <div className="relative flex-shrink-0">
+                <img
+                  src={status.pagePictureUrl}
+                  alt={status.pageName ?? 'Facebook Page'}
+                  className="w-12 h-12 rounded-xl object-cover border border-white/10"
+                />
+                <span
+                  className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 border-2 border-slate-900 flex items-center justify-center"
+                  title="Facebook"
+                >
+                  <Facebook className="w-3 h-3 text-white" />
+                </span>
+              </div>
             ) : (
               <div className="p-3 bg-slate-900/80 rounded-xl border border-white/10">
                 <Facebook className="w-6 h-6 text-blue-500" />
