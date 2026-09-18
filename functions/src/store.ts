@@ -64,19 +64,20 @@ export async function persistInboundMessage(
     createdAt: FieldValue.serverTimestamp(),
   });
   // Upsert the contact so the inbox UI (which lists contacts) shows the conversation.
+  // NOTE: UI reads from root `contacts` collection (not workspace subcollection).
   const contactId = `contact_${msg.channel}_${msg.senderId}`;
-  const contactRef = db()
-    .collection("workspaces")
-    .doc(workspaceId)
-    .collection("contacts")
-    .doc(contactId);
+  const contactRef = db().collection("contacts").doc(contactId);
   batch.set(
     contactRef,
     {
+      id: contactId,
+      name: "Instagram User",
+      firstName: "Instagram User",
       channel: msg.channel,
       senderId: msg.senderId,
       lastMessageAt: FieldValue.serverTimestamp(),
       lastMessageText: msg.text ?? "",
+      lastInteractionAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },

@@ -228,6 +228,7 @@ export interface ContactRecord {
   recurringTokens?: MetaRecurringToken[]; // Meta Marketing Messages / Recurring Notifications tokens
   otnTokens?: MetaOtnToken[]; // Meta One-Time Notification tokens
   whatsappOptIn?: boolean; // WhatsApp Business opt-in status
+  senderId?: string; // Meta PSID/IGSID for webhook-routed contacts
   tags: string[];
   variables: Record<string, string | number | boolean>; // Arbitrary dynamic captured variables: {{var_name}}
   customFields: Record<string, string | number | boolean>; // Synced with variables
@@ -347,6 +348,7 @@ export function subscribeToContacts(
           lastName: data.lastName || '',
           avatarUrl: data.avatarUrl || '',
           channel: data.channel || 'messenger',
+          senderId: data.senderId || '',
           email: data.email || '',
           phone: data.phone || data.mobile || '',
           company: data.company || '',
@@ -373,6 +375,42 @@ export function subscribeToContacts(
     },
     (err) => {
       console.error('Error listening to contacts in Firestore:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Subscribe to real inbound/outbound messages for a Meta conversation.
+ * Messages live at workspaces/{ws}/conversations/{channel_senderId}/messages.
+ */
+export function subscribeToConversationMessages(
+  workspaceId: string,
+  convoId: string,
+  onUpdate: (messages: Array<{ id: string; direction: string; text: string; timestampMs: number; senderId: string }>) => void,
+  onError?: (err: Error) => void,
+) {
+  const messagesRef = collection(db, 'workspaces', workspaceId, 'conversations', convoId, 'messages');
+  const q = query(messagesRef, orderBy('timestampMs', 'asc'), limit(100));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const messages: Array<{ id: string; direction: string; text: string; timestampMs: number; senderId: string }> = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        messages.push({
+          id: doc.id,
+          direction: data.direction || 'inbound',
+          text: data.text || '',
+          timestampMs: data.timestampMs || 0,
+          senderId: data.senderId || '',
+        });
+      });
+      onUpdate(messages);
+    },
+    (err) => {
+      console.error('Error listening to conversation messages:', err);
       if (onError) onError(err);
     }
   );

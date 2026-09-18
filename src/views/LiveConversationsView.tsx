@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import { 
   subscribeToContacts, 
+  subscribeToConversationMessages,
   saveContact, 
   updateContactField, 
   seedInitialMetaContacts,
@@ -323,6 +324,43 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   const activeContact = useMemo(() => {
     return contacts.find(c => c.id === selectedContactId) || contacts[0] || null;
   }, [contacts, selectedContactId]);
+
+  // Subscribe to real webhook messages for Meta contacts (replaces seed demo data)
+  useEffect(() => {
+    if (!activeContact?.senderId || !activeContact?.channel) return;
+    if (!['instagram', 'messenger', 'whatsapp'].includes(activeContact.channel)) return;
+
+    const convoId = `${activeContact.channel}_${activeContact.senderId}`;
+    // TODO: get workspaceId from context instead of hardcoding
+    const workspaceId = 'ws-chatmize-dev';
+
+    const unsubscribe = subscribeToConversationMessages(
+      workspaceId,
+      convoId,
+      (firestoreMessages) => {
+        if (firestoreMessages.length === 0) return; // Keep seed data if no real messages yet
+
+        const realMessages: ConversationMessage[] = firestoreMessages.map((m) => ({
+          id: m.id,
+          contactId: activeContact.id,
+          sender: m.direction === 'inbound' ? 'customer' : 'agent',
+          text: m.text,
+          timestamp: new Date(m.timestampMs).toISOString(),
+          senderName: m.direction === 'inbound' ? activeContact.name : 'Agent',
+        }));
+
+        setConversationsMap((prev) => ({
+          ...prev,
+          [activeContact.id]: realMessages,
+        }));
+      },
+      (err) => {
+        console.error('Failed to subscribe to real messages:', err);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [activeContact?.id, activeContact?.senderId, activeContact?.channel]);
 
   // Sync edit form when active contact changes
   useEffect(() => {
