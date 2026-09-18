@@ -28,6 +28,7 @@ import {
   buildLoginUrl,
   consumeOAuthState,
   exchangeCodeForPages,
+  getPriorConnectedPageId,
   storePendingPages,
   selectWorkspacePage,
   resolvePageToken,
@@ -1310,12 +1311,24 @@ export const metaOAuthCallback = onRequest(
       if (result.pages.length === 0) {
         throw new Error("No Facebook Pages found on this account.");
       }
+      // Reconnect shortcut: if this workspace already had a page connected
+      // and the fresh OAuth grant still includes it, reselect it
+      // automatically so the owner isn't asked to pick the page twice.
+      const priorPageId = await getPriorConnectedPageId(workspaceId);
       await storePendingPages(workspaceId, uid, result);
-      logger.info("Meta OAuth callback ok", {
-        workspaceId,
-        pageCount: result.pages.length,
-        fbUser: result.user.name || result.user.id,
-      });
+      if (priorPageId && result.pages.some((p) => p.id === priorPageId)) {
+        await selectWorkspacePage(workspaceId, uid, priorPageId);
+        logger.info("Meta OAuth reconnect auto-reselected prior page", {
+          workspaceId,
+          pageId: priorPageId,
+        });
+      } else {
+        logger.info("Meta OAuth callback ok", {
+          workspaceId,
+          pageCount: result.pages.length,
+          fbUser: result.user.name || result.user.id,
+        });
+      }
       res.redirect(302, appReturnUrl("success", undefined, returnTo));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed.";

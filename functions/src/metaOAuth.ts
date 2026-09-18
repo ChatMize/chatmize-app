@@ -468,6 +468,23 @@ export async function exchangeCodeForPages(
   return { user, pages };
 }
 
+/** The page id this workspace had connected before this OAuth run, if any.
+ * Used by the callback to auto-reselect on reconnect. Only returns an id
+ * when the previous connection was established (connected or token_invalid),
+ * never mid-flow (pending) so a double-started OAuth can't lock in a stale pick. */
+export async function getPriorConnectedPageId(workspaceId: string): Promise<string | null> {
+  const snap = await db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("integrations")
+    .doc("meta")
+    .get();
+  const d = snap.data() as { pageId?: string; status?: string } | undefined;
+  if (!d?.pageId) return null;
+  if (d.status !== "connected" && d.status !== "token_invalid") return null;
+  return d.pageId;
+}
+
 /** Step 2c: stash the pages as a short-lived pending connection (server only). */
 export async function storePendingPages(
   workspaceId: string,
