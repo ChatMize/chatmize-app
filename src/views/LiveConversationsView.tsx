@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { getApp } from 'firebase/app';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
   MessageSquare, 
   Send, 
@@ -700,8 +702,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
     try {
       // Call backend to send via the real channel API
-      const { httpsCallable } = await import('firebase/functions');
-      const { functions } = await import('../lib/firebase');
+      const functions = getFunctions(getApp(), 'us-west2');
       const sendFn = httpsCallable(functions, 'sendChannelMessage');
 
       // Map UI channel to backend channel
