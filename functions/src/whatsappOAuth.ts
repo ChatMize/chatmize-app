@@ -219,6 +219,26 @@ export async function exchangeWhatsAppCode(code: string): Promise<WhatsAppConnec
   }
   const token = longData.access_token;
 
+  // Diagnostic: check what permissions the token actually has.
+  try {
+    const debugRes = await fetch(
+      `${GRAPH_BASE}/debug_token?input_token=${token}&access_token=${META_APP_ID}%7C${appSecret}`,
+    );
+    const debugData = (await debugRes.json().catch(() => ({}))) as {
+      data?: { scopes?: string[] };
+    };
+    const scopes = debugData.data?.scopes ?? [];
+    logger.info("WhatsApp token scopes", { scopes });
+    if (!scopes.includes("business_management")) {
+      throw new Error(
+        `Token missing business_management permission. Granted scopes: ${scopes.join(", ") || "none"}. Please remove the app from your Facebook settings and reconnect.`,
+      );
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("business_management")) throw e;
+    logger.warn("Token debug failed", { error: e instanceof Error ? e.message : "unknown" });
+  }
+
   // 3) WhatsApp Business Accounts: go through the user's Businesses.
   // (There is no /me/whatsapp_business_accounts edge; WABAs are owned by Businesses.)
   const businesses = (await graphGet("/me/businesses?fields=id,name&limit=50", token)) as {
