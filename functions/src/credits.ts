@@ -9,7 +9,10 @@ export type CreditReason =
   | "copilot_session"
   | "ai_reply"
   | "ai_content"
-  | "sms_send";
+  | "sms_send"
+  | "badge_reward"
+  | "referral_reward"
+  | "contest_reward";
 
 export interface CreditBalance {
   workspaceId: string;
@@ -107,11 +110,14 @@ export async function spendCredits(
   return { balance: result };
 }
 
-/** Grant credits (top-up purchase, monthly grant, admin adjustment, or contest reward). */
+/** Grant credits (top-up purchase, monthly grant, admin adjustment, or earned rewards). */
 export async function grantCredits(
   workspaceId: string,
   amount: number,
-  reason: Extract<CreditReason, "monthly_grant" | "topup_purchase" | "admin_adjust" | "contest_reward">,
+  reason: Extract<
+    CreditReason,
+    "monthly_grant" | "topup_purchase" | "admin_adjust" | "badge_reward" | "referral_reward" | "contest_reward"
+  >,
   note?: string,
 ): Promise<{ balance: number }> {
   if (amount <= 0) throw new Error("grant amount must be positive");

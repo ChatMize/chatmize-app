@@ -14,6 +14,14 @@ import {
   resetAllMonthlyCredits,
   CreditReason,
 } from "./credits";
+import {
+  recordMessageHandled,
+  recordClientEvent,
+  logRevenue as logGamificationRevenue,
+  getGamificationState,
+  getReferralCode,
+  applyReferral,
+} from "./gamification";
 import { aiComplete, projectTestCost, AI_SECRETS, ModelTier, ChatMessage } from "./ai/router";
 import {
   META_APP_SECRET,
@@ -634,6 +642,10 @@ export const sendChannelMessage = onCall(
       throw new HttpsError("internal", result.error ?? "Send failed.");
     }
     logger.info("Outbound send ok", { workspaceId, channel, metaMessageId: result.metaMessageId });
+    // Gamification: count the handled outbound message (fire-and-forget).
+    recordMessageHandled(workspaceId, uid).catch((err) =>
+      logger.error("Gamification record failed (outbound)", { workspaceId, err }),
+    );
     return { ok: true, metaMessageId: result.metaMessageId };
   },
 );
@@ -664,6 +676,14 @@ export const onInboundMessageCreated = onDocumentCreated(
       channel: data.channel,
       textLength: data.text?.length ?? 0,
     });
+    // Gamification: count the handled message + touch the streak. Never
+    // breaks the pipeline; badge evaluation rides on this write.
+    recordMessageHandled(event.params.workspaceId).catch((err) =>
+      logger.error("Gamification record failed (inbound)", {
+        workspaceId: event.params.workspaceId,
+        err,
+      }),
+    );
     // TODO(Phase 4): route through the AI agent with credit metering here.
   },
 );
@@ -741,7 +761,14 @@ export const adjustCredits = onCall(
       throw new HttpsError("invalid-argument", "workspaceId and a non-zero delta are required.");
     }
     if (delta > 0) {
-      if (reason !== "topup_purchase" && reason !== "admin_adjust" && reason !== "monthly_grant") {
+      if (
+        reason !== "topup_purchase" &&
+        reason !== "admin_adjust" &&
+        reason !== "monthly_grant" &&
+        reason !== "badge_reward" &&
+        reason !== "referral_reward" &&
+        reason !== "contest_reward"
+      ) {
         throw new HttpsError("invalid-argument", "Invalid grant reason.");
       }
       return grantCredits(workspaceId, delta, reason, note);
@@ -1003,6 +1030,10 @@ export const sendSms = onCall(
         status: "sent",
         broadcastId,
       });
+      // Gamification: count the handled outbound message (fire-and-forget).
+      recordMessageHandled(workspaceId, uid).catch((err) =>
+        logger.error("Gamification record failed (sms)", { workspaceId, err }),
+      );
       return { ok: true, messageId, segments, chargedTo: charged.chargedTo };
     } catch (err) {
       const message = err instanceof Error ? err.message : "SMS send failed.";
@@ -1247,6 +1278,10 @@ export const sendSmsBroadcast = onCall(
       workspaceId, broadcastId,
       sent: state.sent, failed: state.failed, skipped: state.skipped, complete,
     });
+    // Gamification: broadcaster badge + volume (fire-and-forget).
+    recordClientEvent(workspaceId, uid, "broadcast_sent", state.sent).catch((err) =>
+      logger.error("Gamification record failed (broadcast)", { workspaceId, err }),
+    );
     return {
       ok: true, broadcastId, complete,
       sent: state.sent, failed: state.failed, skipped: state.skipped,
@@ -1620,6 +1655,43 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   if (action === "overlaySetStatus") {
     const data = request.data as Record<string, unknown>;
     return overlaySetStatus(workspaceId, data.overlayId, data.status);
+  }
+  // Gamification actions (folded in: proxy blocks new function creation)
+  if (action === "gamificationGet") {
+    return getGamificationState(workspaceId, uid);
+  }
+  if (action === "gamificationEvent") {
+    const { event } = (request.data ?? {}) as { event?: string };
+    if (event !== "flow_published" && event !== "broadcast_sent") {
+      throw new HttpsError("invalid-argument", "event must be flow_published or broadcast_sent.");
+    }
+    const newBadges = await recordClientEvent(workspaceId, uid, event);
+    return { ok: true, newBadges };
+  }
+  if (action === "logRevenue") {
+    const { amountDollars, note, source } = (request.data ?? {}) as {
+      amountDollars?: number;
+      note?: string;
+      source?: string;
+    };
+    if (!Number.isFinite(amountDollars) || (amountDollars as number) <= 0) {
+      throw new HttpsError("invalid-argument", "A positive dollar amount is required.");
+    }
+    const result = await logGamificationRevenue(
+      workspaceId,
+      uid,
+      Math.round((amountDollars as number) * 100),
+      note ?? "",
+      source === "flow_action" ? "flow_action" : "manual",
+    );
+    return { ok: true, ...result };
+  }
+  if (action === "getReferralCode") {
+    return { code: await getReferralCode(uid) };
+  }
+  if (action === "applyReferral") {
+    const { code } = (request.data ?? {}) as { code?: string };
+    return applyReferral(uid, code ?? "", workspaceId);
   }
   const snap = await db()
     .collection("workspaces")

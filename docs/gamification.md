@@ -1,6 +1,9 @@
 # ChatMize Gamification: Badges and Incentives
 
-Status: draft for Karl's review. Nothing here is built yet.
+Status: BUILT 2026-09-18 (branch feat/gamification, merged to release/all-features).
+Decisions applied (DECISIONS.md item 17, 2026-09-18): private leaderboard
+(user sees only their own progress), playful badge names, AI-credit referral
+rewards, agency client badges visible to the agency (per-workspace mirror).
 
 ## Idea
 
@@ -82,10 +85,16 @@ redesigned.
 
 ## Open questions for Karl
 
-1. What do badges unlock? Credit bonuses and discounts are the draft.
-   Anything off limits?
-2. Leaderboard: public and opt in, or account private only?
-3. Tone: playful badge names ("Conversation Machine") or professional
-   ("10K Club")?
-4. Referral rewards: credits only, or cash/revenue share at the top tier?
-5. Should agencies see their clients' badges (social proof for reselling)?
+All five were decided 2026-09-18 (see DECISIONS.md item 17):
+1. Badges unlock AI credit bonuses (approved).
+2. Leaderboard is private to the user (approved).
+3. Playful badge names (approved).
+4. Referral rewards are AI credits only (approved).
+5. Agencies see their clients' badges via the per-workspace mirror (approved).
+
+## Flow action format
+
+The BotMap "Log Revenue" action stores tags shaped like:
+`LogRevenue: 150.00 | Optional note`
+A future flow executor should parse these and call the logRevenue backend.
+Until then, revenue is logged from the Rewards tab.
