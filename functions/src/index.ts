@@ -236,6 +236,95 @@ async function requireWorkspaceAccess(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Workspaces (server side; real Firestore docs with ownership + membership)
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a real workspace. The caller becomes the owner: a workspace doc
+ * with ownerUid plus a members/{uid} owner record, and a userWorkspaces
+ * index entry so getMyWorkspaces can list it. No placeholder data is ever
+ * written; connections start empty and are added through the OAuth flows.
+ */
+export const createWorkspace = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { name } = (request.data ?? {}) as { name?: string };
+  const cleanName = (name ?? "").trim().slice(0, 80);
+  if (!cleanName) throw new HttpsError("invalid-argument", "name is required.");
+
+  const wsRef = db().collection("workspaces").doc();
+  const memberRef = wsRef.collection("members").doc(uid);
+  const indexRef = db()
+    .collection("userWorkspaces")
+    .doc(uid)
+    .collection("workspaces")
+    .doc(wsRef.id);
+  const now = FieldValue.serverTimestamp();
+  await db().runTransaction(async (tx) => {
+    tx.set(wsRef, {
+      name: cleanName,
+      ownerUid: uid,
+      createdBy: uid,
+      createdAt: now,
+    });
+    tx.set(memberRef, {
+      uid,
+      role: "owner",
+      addedAt: now,
+    });
+    tx.set(indexRef, {
+      workspaceId: wsRef.id,
+      role: "owner",
+      addedAt: now,
+    });
+  });
+  logger.info("Workspace created", { workspaceId: wsRef.id, uid });
+  return { workspaceId: wsRef.id, name: cleanName };
+});
+
+/**
+ * List the workspaces the caller belongs to (id, name, role). Reads the
+ * userWorkspaces index written by createWorkspace, plus a collection-group
+ * sweep over member docs that carry a uid field (covers memberships granted
+ * through the backfill path in requireWorkspaceAccess).
+ */
+export const getMyWorkspaces = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+
+  const seen = new Map<string, string>();
+  const indexSnap = await db()
+    .collection("userWorkspaces")
+    .doc(uid)
+    .collection("workspaces")
+    .get();
+  for (const d of indexSnap.docs) {
+    const data = d.data() as { workspaceId?: string; role?: string };
+    seen.set(data.workspaceId ?? d.id, data.role ?? "member");
+  }
+  // Back-compat sweep: member docs with an explicit uid field.
+  const cgSnap = await db().collectionGroup("members").where("uid", "==", uid).get();
+  for (const d of cgSnap.docs) {
+    const workspaceId = d.ref.parent.parent?.id;
+    if (workspaceId && !seen.has(workspaceId)) {
+      seen.set(workspaceId, (d.data()?.role as string) ?? "member");
+    }
+  }
+
+  const workspaces: Array<{ id: string; name: string; role: string }> = [];
+  for (const [workspaceId, role] of seen) {
+    const wsSnap = await db().collection("workspaces").doc(workspaceId).get();
+    if (!wsSnap.exists) continue;
+    workspaces.push({
+      id: workspaceId,
+      name: (wsSnap.data()?.name as string) ?? "Workspace",
+      role,
+    });
+  }
+  return { workspaces };
+});
+
 /**
  * Meta webhook receiver: handles the verification handshake (GET) and
  * inbound Messenger / Instagram / WhatsApp events (POST).
@@ -1680,5 +1769,12 @@ export const whatsappOAuthSelectNumber = onCall({ region: REGION }, async (reque
 /**
  * Phase 1 SES notification triggers (see notifications.ts): owner reconnect
  * emails on token invalidation, and human handoff emails.
+ *
+ * The trigger resources are not deployed (proxy blocks new function
+ * creation). Their logic runs inline instead: notifyOwnerReconnect is called
+ * at every token_invalid write site, and every writer of a handoff doc calls
+ * handleHandoffCreated right after creating it.
  */
 export { onIntegrationInvalidated, onHandoffCreated } from "./notifications";
+export { handleHandoffCreated } from "./notifications";
+export type { HandoffRecord } from "./notifications";

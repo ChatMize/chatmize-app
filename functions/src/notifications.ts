@@ -1,7 +1,9 @@
 /**
  * ChatMize notification service (Phase 1): transactional email via AWS SES.
  *
- * Two event driven emails, both sent from the shared chatmize.com domain:
+ * Two event driven emails, both sent from support@chatmize.com on the shared
+ * chatmize.com domain (domain is DKIM verified in SES, so any @chatmize.com
+ * sender is accepted):
  *   1. Reconnect needed: when a channel integration flips to token_invalid,
  *      the workspace owner gets one email with a direct reconnect link.
  *   2. Human handoff: when a handoff doc is written to
@@ -38,7 +40,7 @@ const PROJECT_ID = "gen-lang-client-0433776094";
 const REGION = "us-west2";
 const SES_REGION = "us-west-2";
 const SES_SECRET_NAME = "SES_SENDER_CREDENTIALS";
-const FROM_ADDRESS = "notifications@chatmize.com";
+const FROM_ADDRESS = "support@chatmize.com";
 const APP_BASE = "https://app.chatmize.com";
 const RECONNECT_COOLDOWN_MS = 24 * 3600 * 1000;
 
