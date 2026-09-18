@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, memo } from 'react';
 import { EmojiPickerButton, useEmojiTarget } from '../components/emoji';
 import { MetaReconnectModal, isConnectionExpiredError } from '../components/MetaReconnectModal';
 import { PersonalizationPickerButton, usePersonalizationTarget } from '../components/personalization';
@@ -83,6 +83,118 @@ export interface ConversationMessage {
   };
   deliveryStatus?: 'sent' | 'delivered' | 'read';
 }
+
+// Memoized chat bubble: unchanged messages keep object identity in the parent's
+// merge, so memo skips their re-render and the thread scrolls smoothly.
+const MessageBubble = memo(function MessageBubble({
+  msg,
+  contactName,
+  contactFirstName,
+  onNavigateToFlows,
+}: {
+  msg: ConversationMessage;
+  contactName: string;
+  contactFirstName?: string;
+  onNavigateToFlows?: (flowId: string) => void;
+}) {
+  if (msg.type === 'event_log') {
+    return (
+      <div className="flex justify-center my-1.5">
+        <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400 flex items-center gap-1.5 max-w-lg text-center">
+          <Zap className="w-3 h-3 text-cyan-400 shrink-0" />
+          <span>{msg.text}</span>
+          <span className="text-[10px] text-slate-500 ml-1 shrink-0">{msg.timestamp}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const isCustomer = msg.sender === 'customer';
+  const isBot = msg.sender === 'bot';
+
+  return (
+    <div
+      className={`flex gap-2.5 ${isCustomer ? 'justify-start' : 'justify-end'}`}
+    >
+      {/* Customer Avatar on left */}
+      {isCustomer && (
+        <div className="w-7 h-7 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center shrink-0 mt-1 text-[10px] font-bold text-slate-300">
+          {contactFirstName?.[0] || 'C'}
+        </div>
+      )}
+
+      <div className={`max-w-md space-y-1 ${isCustomer ? 'items-start' : 'items-end'}`}>
+        {/* Sender Label */}
+        <div className={`flex items-center gap-1.5 text-[10px] ${isCustomer ? 'text-slate-400' : 'text-slate-400 justify-end'}`}>
+          <span>{msg.senderName || (isCustomer ? contactName : 'Agent')}</span>
+          <span>•</span>
+          <span>{msg.timestamp}</span>
+          {msg.metaTag && (
+            <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-semibold">
+              Tag: {msg.metaTag}
+            </span>
+          )}
+        </div>
+
+        {/* Bubble */}
+        <div
+          className={`p-3 rounded-2xl text-xs leading-relaxed ${
+            isCustomer
+              ? 'bg-slate-900 border border-white/10 text-slate-200 rounded-tl-sm shadow-sm'
+              : isBot
+              ? 'bg-gradient-to-br from-cyan-950/80 to-blue-950/80 border border-cyan-500/30 text-cyan-100 rounded-tr-sm shadow-md shadow-cyan-950/20'
+              : 'bg-gradient-to-br from-purple-950/80 to-indigo-950/80 border border-purple-500/30 text-purple-100 rounded-tr-sm shadow-md'
+          }`}
+        >
+          <p className="whitespace-pre-wrap">{msg.text}</p>
+
+          {/* Content Card Attachment (if any) */}
+          {msg.contentCard && (
+            <div className="mt-2.5 p-3 rounded-xl bg-slate-950/80 border border-white/15 space-y-2">
+              {msg.contentCard.badge && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 inline-block">
+                  {msg.contentCard.badge}
+                </span>
+              )}
+              <h4 className="text-xs font-bold text-white">{msg.contentCard.title}</h4>
+              <p className="text-[11px] text-slate-400">{msg.contentCard.description}</p>
+              <div className="pt-1 flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    if (msg.contentCard?.flowId && onNavigateToFlows) {
+                      onNavigateToFlows(msg.contentCard.flowId);
+                    }
+                  }}
+                  className="w-full py-1.5 px-3 rounded-lg text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20"
+                >
+                  <span>{msg.contentCard.buttonText}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Delivery status for outbound */}
+        {!isCustomer && msg.deliveryStatus && (
+          <div className="text-[10px] text-slate-500 flex items-center justify-end gap-1">
+            <CheckCircle2 className="w-2.5 h-2.5 text-cyan-400" />
+            <span className="capitalize">{msg.deliveryStatus}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Agent / Bot Avatar on right */}
+      {!isCustomer && (
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-1 text-[10px] font-bold ${
+          isBot ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+        }`}>
+          {isBot ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
+        </div>
+      )}
+    </div>
+  );
+});
 
 // Follow-Up Rule interface
 export interface FollowUpRule {
@@ -377,19 +489,40 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       (firestoreMessages) => {
         if (firestoreMessages.length === 0) return; // Keep seed data if no real messages yet
 
-        const realMessages: ConversationMessage[] = firestoreMessages.map((m) => ({
-          id: m.id,
-          contactId: activeContact.id,
-          sender: m.direction === 'inbound' ? 'customer' : 'agent',
-          text: m.text,
-          timestamp: new Date(m.timestampMs).toISOString(),
-          senderName: m.direction === 'inbound' ? activeContact.name : 'Agent',
-        }));
-
-        setConversationsMap((prev) => ({
-          ...prev,
-          [activeContact.id]: realMessages,
-        }));
+        // Merge into previous state preserving object identity for unchanged
+        // messages, so memoized bubbles skip re-render and scrolling stays smooth.
+        setConversationsMap((prev) => {
+          const prevList = prev[activeContact.id] || [];
+          const prevById = new Map(prevList.map((m) => [m.id, m]));
+          const realMessages: ConversationMessage[] = firestoreMessages.map((m) => {
+            const prevMsg = prevById.get(m.id);
+            const sender: ConversationMessage['sender'] = m.direction === 'inbound' ? 'customer' : 'agent';
+            const senderName = m.direction === 'inbound' ? activeContact.name : 'Agent';
+            // Human-readable time, not a raw ISO string.
+            const timestamp = new Date(m.timestampMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (
+              prevMsg &&
+              prevMsg.text === m.text &&
+              prevMsg.timestamp === timestamp &&
+              prevMsg.sender === sender &&
+              prevMsg.senderName === senderName
+            ) {
+              return prevMsg;
+            }
+            return {
+              id: m.id,
+              contactId: activeContact.id,
+              sender,
+              text: m.text,
+              timestamp,
+              senderName,
+            };
+          });
+          return {
+            ...prev,
+            [activeContact.id]: realMessages,
+          };
+        });
       },
       (err) => {
         console.error('Failed to subscribe to real messages:', err);
@@ -1507,106 +1640,15 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
               {/* Message Thread Scroll View */}
               <div data-chat-messages className="flex-1 overflow-y-auto p-4 space-y-3.5">
-                {currentMessages.map(msg => {
-                  if (msg.type === 'event_log') {
-                    return (
-                      <div key={msg.id} className="flex justify-center my-1.5">
-                        <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400 flex items-center gap-1.5 max-w-lg text-center">
-                          <Zap className="w-3 h-3 text-cyan-400 shrink-0" />
-                          <span>{msg.text}</span>
-                          <span className="text-[10px] text-slate-500 ml-1 shrink-0">{msg.timestamp}</span>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  const isCustomer = msg.sender === 'customer';
-                  const isBot = msg.sender === 'bot';
-
-                  return (
-                    <div 
-                      key={msg.id} 
-                      className={`flex gap-2.5 ${isCustomer ? 'justify-start' : 'justify-end'}`}
-                    >
-                      {/* Customer Avatar on left */}
-                      {isCustomer && (
-                        <div className="w-7 h-7 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center shrink-0 mt-1 text-[10px] font-bold text-slate-300">
-                          {activeContact.firstName?.[0] || 'C'}
-                        </div>
-                      )}
-
-                      <div className={`max-w-md space-y-1 ${isCustomer ? 'items-start' : 'items-end'}`}>
-                        {/* Sender Label */}
-                        <div className={`flex items-center gap-1.5 text-[10px] ${isCustomer ? 'text-slate-400' : 'text-slate-400 justify-end'}`}>
-                          <span>{msg.senderName || (isCustomer ? activeContact.name : 'Agent')}</span>
-                          <span>•</span>
-                          <span>{msg.timestamp}</span>
-                          {msg.metaTag && (
-                            <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-semibold">
-                              Tag: {msg.metaTag}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Bubble */}
-                        <div
-                          className={`p-3 rounded-2xl text-xs leading-relaxed ${
-                            isCustomer
-                              ? 'bg-slate-900 border border-white/10 text-slate-200 rounded-tl-sm shadow-sm'
-                              : isBot
-                              ? 'bg-gradient-to-br from-cyan-950/80 to-blue-950/80 border border-cyan-500/30 text-cyan-100 rounded-tr-sm shadow-md shadow-cyan-950/20'
-                              : 'bg-gradient-to-br from-purple-950/80 to-indigo-950/80 border border-purple-500/30 text-purple-100 rounded-tr-sm shadow-md'
-                          }`}
-                        >
-                          <p className="whitespace-pre-wrap">{msg.text}</p>
-
-                          {/* Content Card Attachment (if any) */}
-                          {msg.contentCard && (
-                            <div className="mt-2.5 p-3 rounded-xl bg-slate-950/80 border border-white/15 space-y-2">
-                              {msg.contentCard.badge && (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 inline-block">
-                                  {msg.contentCard.badge}
-                                </span>
-                              )}
-                              <h4 className="text-xs font-bold text-white">{msg.contentCard.title}</h4>
-                              <p className="text-[11px] text-slate-400">{msg.contentCard.description}</p>
-                              <div className="pt-1 flex items-center justify-between">
-                                <button
-                                  onClick={() => {
-                                    if (msg.contentCard?.flowId && onNavigateToFlows) {
-                                      onNavigateToFlows(msg.contentCard.flowId);
-                                    }
-                                  }}
-                                  className="w-full py-1.5 px-3 rounded-lg text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20"
-                                >
-                                  <span>{msg.contentCard.buttonText}</span>
-                                  <ExternalLink className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Delivery status for outbound */}
-                        {!isCustomer && msg.deliveryStatus && (
-                          <div className="text-[10px] text-slate-500 flex items-center justify-end gap-1">
-                            <CheckCircle2 className="w-2.5 h-2.5 text-cyan-400" />
-                            <span className="capitalize">{msg.deliveryStatus}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Agent / Bot Avatar on right */}
-                      {!isCustomer && (
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-1 text-[10px] font-bold ${
-                          isBot ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                        }`}>
-                          {isBot ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {currentMessages.map(msg => (
+                  <MessageBubble
+                    key={msg.id}
+                    msg={msg}
+                    contactName={activeContact.name}
+                    contactFirstName={activeContact.firstName}
+                    onNavigateToFlows={onNavigateToFlows}
+                  />
+                ))}
                 <div ref={messagesEndRef} />
               </div>
 
