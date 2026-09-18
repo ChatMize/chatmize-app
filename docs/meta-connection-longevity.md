@@ -83,3 +83,24 @@ detection earlier.
 
 - Should the connect flow nudge the owner to add a second admin as backup?
 - Which ChatMize-owned pages should move to system-user tokens?
+
+## Dead-token UX (shipped 2026-09-18)
+
+Three layers, role-aware:
+
+1. **On-the-spot popup** (`MetaReconnectModal`, commit 22f22cd): the moment a
+   send fails with a dead token, a modal appears in the conversation view.
+   - Owner: "Reconnect now" button starts Meta OAuth inline and returns to
+     Channels, so the fix happens in one flow.
+   - Non-owner: "Only the workspace owner can reconnect this. Ask {ownerName}
+     to reconnect it in Settings > Channels." No reconnect button, because
+     Facebook Login must run as the person whose session died.
+2. **Sticky banner on login** (already shipped): anyone opening the app while
+   the token is invalid sees the warning and one-click reconnect.
+3. **Email to the owner** (pending SES notification service): when a non-owner
+   hits the dead token, the owner gets an email with the reconnect action.
+
+Ownership check: `isWorkspaceOwner()` in `src/lib/workspaceAccess.ts`.
+`WorkspaceSilo.ownerUid` holds the owner's Firebase Auth UID. Workspaces
+without `ownerUid` predate the team system and default to owner, preserving
+current single-user behavior.
