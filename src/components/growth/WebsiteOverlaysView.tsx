@@ -25,7 +25,9 @@ import {
   Monitor,
   Smartphone,
   Trophy,
-  Gift
+  Gift,
+  Globe,
+  FlaskConical
 } from 'lucide-react';
 import { WebsiteOverlay, OverlayType, OverlayTrigger, OverlayPosition, OverlayCtaAction, MobileTriggerType, MobileTriggerConfig, ContestStub } from '../../types/growthTools';
 import {
@@ -235,12 +237,8 @@ const CtaLabel: React.FC<{ overlay: WebsiteOverlay }> = ({ overlay }) => (
 
 export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
   workspaceId,
-  availableBots = [
-    { id: 'bot-customer-support-faq', name: 'Customer Support FAQ Bot' },
-    { id: 'bot-lead-magnet-optin', name: 'Lead Magnet & Sales Bot' },
-    { id: 'bot-webinar-registration', name: 'Webinar RSVP Assistant' },
-    { id: 'bot-abandoned-cart-recovery', name: 'Cart Recovery & Voucher Bot' }
-  ],
+  // No fake bots: the parent passes the workspace's real bots; empty when unknown.
+  availableBots = [],
   onNavigateToFlows,
   initialFilter = 'all'
 }) => {
@@ -333,24 +331,21 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
 
   const handleCreateNew = (type: OverlayType = 'popup_modal') => {
     const info = OVERLAY_TYPE_INFO[type];
+    // New overlays start as drafts with neutral copy — nothing fake is
+    // published. The user edits content, then sets status to active.
     const newOverlay: WebsiteOverlay = {
       // Empty id: the backend assigns a Firestore id on first save.
       id: '',
       name: `New ${info.name}`,
       type: type,
-      status: 'active',
-      headline: type === 'popup_modal' 
-        ? "Wait! Don't Leave Empty Handed 🎁" 
-        : type === 'slider' 
-        ? "Comparing Plans? Let's Find Your Fit" 
-        : type === 'sticky_bar' 
-        ? "⚡ Flash Sale: Get 20% off all plans today only!" 
-        : "Introducing ChatMize 2.4 — Live Now 🚀",
-      subheadline: "Claim your instant voucher code or chat with our automated concierge.",
-      badgeText: "Special Offer",
-      offerCode: "SAVE20",
-      ctaText: "Claim Exclusive Offer",
-      ctaAction: 'open_bot',
+      status: 'draft',
+      headline: 'Your headline here',
+      subheadline: 'Add a short description of your offer.',
+      badgeText: '',
+      offerCode: '',
+      ctaText: 'Learn More',
+      ctaAction: 'open_url',
+      redirectUrl: '',
       brandColor: '#3b82f6',
       theme: 'dark',
       position: info.defaultPosition,
@@ -360,11 +355,17 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
       exitIntentSensitivity: 'medium',
       // Mobile never gets exit_intent — default to a timed trigger instead.
       mobileTrigger: defaultMobileTrigger(4, 40),
-      connectedBotId: availableBots[0]?.id || 'bot-lead-magnet-optin',
-      botName: 'Deal Concierge',
-      requireEmailCapture: true,
+      // Real bot is picked in the editor; never invent a connected bot id.
+      connectedBotId: '',
+      botName: '',
+      requireEmailCapture: false,
       requireNameCapture: false,
       removeBranding: false,
+      // Display rules: show everywhere, 24h cooldown, no per-visitor cap.
+      frequency: { cooldownHours: 24, maxPerVisitor: 0 },
+      pageTargeting: { mode: 'all', patterns: [] },
+      abGroup: '',
+      abWeight: 50,
       // Empty = serve on all domains. Placeholder domains like
       // *.yourdomain.com are stripped at publish time anyway.
       whitelistedDomains: [],
@@ -379,8 +380,17 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
     setActiveMode('editor');
   };
 
+  /** Backfill display-rule fields on overlays saved before those fields existed. */
+  const normalizeOverlay = (overlay: WebsiteOverlay): WebsiteOverlay => ({
+    ...overlay,
+    frequency: overlay.frequency ?? { cooldownHours: 24, maxPerVisitor: 0 },
+    pageTargeting: overlay.pageTargeting ?? { mode: 'all', patterns: [] },
+    abGroup: overlay.abGroup ?? '',
+    abWeight: overlay.abWeight ?? 50,
+  });
+
   const handleEdit = (overlay: WebsiteOverlay) => {
-    setEditingOverlay({ ...overlay });
+    setEditingOverlay(normalizeOverlay({ ...overlay }));
     setSelectedOverlayId(overlay.id);
     setActiveMode('editor');
   };
@@ -400,7 +410,9 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
       setSelectedOverlayId(saved.id);
       setEditingOverlay(null);
       setActiveMode('list');
-      showNotice(`Overlay "${saved.name}" saved and published.`);
+      showNotice(saved.status === 'active'
+        ? `Overlay "${saved.name}" saved and published.`
+        : `Overlay "${saved.name}" saved as ${saved.status}. Set it to Active to publish it to your site.`);
     } catch (err) {
       showNotice(`Save failed: ${err instanceof Error ? err.message : 'unknown error'}`);
     } finally {
@@ -430,14 +442,14 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
     const wsId = requireWorkspace();
     if (!wsId) return;
     // New backend-generated id: drop the old one.
-    const copy = {
+    const copy = normalizeOverlay({
       ...overlay,
       id: '',
       name: `${overlay.name} (Copy)`,
       status: 'draft' as const,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    } as WebsiteOverlay;
+    } as WebsiteOverlay);
     setSaving(true);
     try {
       const saved = await saveOverlay(wsId, copy);
@@ -1119,6 +1131,130 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
               </div>
             </div>
 
+            {/* Display rules — frequency capping, page targeting, A/B test */}
+            <div className="space-y-3 p-4 rounded-xl bg-slate-950/60 border border-white/5">
+              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300">
+                <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Display Rules</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-slate-400">Cooldown Between Shows (hours)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="720"
+                    value={editingOverlay.frequency?.cooldownHours ?? 24}
+                    onChange={(e) => setEditingOverlay({
+                      ...editingOverlay,
+                      frequency: {
+                        cooldownHours: Math.max(0, parseInt(e.target.value) || 0),
+                        maxPerVisitor: editingOverlay.frequency?.maxPerVisitor ?? 0,
+                      },
+                    })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-500">0 = can show again on the next page load.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-slate-400">Max Shows Per Visitor</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000"
+                    value={editingOverlay.frequency?.maxPerVisitor ?? 0}
+                    onChange={(e) => setEditingOverlay({
+                      ...editingOverlay,
+                      frequency: {
+                        cooldownHours: editingOverlay.frequency?.cooldownHours ?? 24,
+                        maxPerVisitor: Math.max(0, parseInt(e.target.value) || 0),
+                      },
+                    })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-500">0 = unlimited. After this many shows the visitor never sees it again.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-slate-400">Page Targeting</label>
+                  <select
+                    value={editingOverlay.pageTargeting?.mode ?? 'all'}
+                    onChange={(e) => setEditingOverlay({
+                      ...editingOverlay,
+                      pageTargeting: {
+                        mode: e.target.value as 'all' | 'include' | 'exclude',
+                        patterns: editingOverlay.pageTargeting?.patterns ?? [],
+                      },
+                    })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="all">All pages</option>
+                    <option value="include">Only these pages</option>
+                    <option value="exclude">Everywhere except these pages</option>
+                  </select>
+                </div>
+
+                {(editingOverlay.pageTargeting?.mode ?? 'all') !== 'all' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-400">URL Patterns (one per line, * = wildcard)</label>
+                    <textarea
+                      rows={2}
+                      value={(editingOverlay.pageTargeting?.patterns ?? []).join('\n')}
+                      onChange={(e) => setEditingOverlay({
+                        ...editingOverlay,
+                        pageTargeting: {
+                          mode: editingOverlay.pageTargeting?.mode ?? 'include',
+                          patterns: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean),
+                        },
+                      })}
+                      placeholder="/pricing*&#10;/blog/*"
+                      className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-white/5">
+                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300 mb-3">
+                  <FlaskConical className="w-3.5 h-3.5 text-amber-400" />
+                  <span>A/B Test</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-400">Test Group Name</label>
+                    <input
+                      type="text"
+                      value={editingOverlay.abGroup || ''}
+                      onChange={(e) => setEditingOverlay({ ...editingOverlay, abGroup: e.target.value.trim() })}
+                      placeholder="e.g. headline-test-1 (empty = no test)"
+                      className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                    />
+                    <p className="text-[10px] text-slate-500">Overlays with the same group name compete — each visitor sees exactly one.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-400">Traffic Weight (1–100)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={editingOverlay.abWeight ?? 50}
+                      onChange={(e) => setEditingOverlay({
+                        ...editingOverlay,
+                        abWeight: Math.min(100, Math.max(1, parseInt(e.target.value) || 50)),
+                      })}
+                      className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                    />
+                    <p className="text-[10px] text-slate-500">Share of visitors in this group who see this variant. Sticky per visitor.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Offer Copy & Call to Action */}
             <div className="space-y-3 p-4 rounded-xl bg-slate-950/60 border border-white/5">
               <div className="flex items-center gap-2 text-xs font-bold text-white">
@@ -1199,14 +1335,14 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                     className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
                   >
                     <option value="open_bot">Open Conversational Bot</option>
-                    <option value="lead_form">Submit Lead Form</option>
-                    <option value="redirect_url">Redirect to URL</option>
+                    <option value="open_url">Redirect to URL</option>
+                    <option value="copy_code">Copy Voucher Code</option>
                     <option value="enter_contest">Enter Contest / Giveaway</option>
                   </select>
                 </div>
               </div>
 
-              {editingOverlay.ctaAction === 'redirect_url' && (
+              {editingOverlay.ctaAction === 'open_url' && (
                 <div className="space-y-1.5 pt-1">
                   <label className="text-[11px] text-slate-400">Destination Redirect URL</label>
                   <input

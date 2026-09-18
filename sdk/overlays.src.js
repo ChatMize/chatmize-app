@@ -105,10 +105,18 @@
   function qKey() { return "cmz_ovlq:" + WS; }
   var flushing = false, flushTimer = null, unloading = false;
 
-  function track(overlayId, event) {
+  function track(overlayId, event, data) {
     try {
       var q = JSON.parse(localStorage.getItem(qKey()) || "[]");
-      q.push({ overlayId: overlayId, event: event, ts: Date.now() });
+      var ev = { overlayId: overlayId, event: event, ts: Date.now() };
+      /* Optional lead payload (email/name) — only attached for lead events. */
+      if (data && typeof data === "object") {
+        var d = {};
+        if (typeof data.email === "string" && data.email) d.email = String(data.email).slice(0, 254);
+        if (typeof data.name === "string" && data.name) d.name = String(data.name).slice(0, 120);
+        if (d.email || d.name) ev.data = d;
+      }
+      q.push(ev);
       if (q.length > 200) q = q.slice(-200);
       localStorage.setItem(qKey(), JSON.stringify(q));
     } catch (e) { /* storage unavailable: drop */ }
@@ -337,7 +345,12 @@
           e.preventDefault();
           var v = (emailInput.value || "").trim();
           if (!/^\S+@\S+\.\S+$/.test(v)) { emailInput.focus(); return; }
-          track(ov.id, "lead");
+          /* The email/name are persisted by the backend tracking route —
+             never silently dropped. */
+          track(ov.id, "lead", {
+            email: v,
+            name: nameInput ? (nameInput.value || "").trim() : "",
+          });
           card.innerHTML = "";
           card.appendChild(el("div", "cmz-ok", "✓"));
           card.appendChild(el("div", "cmz-h", "You're in!"));
@@ -480,6 +493,38 @@
       eligible.push(ov);
     }
     if (!eligible.length) return;
+    /* A/B allocation: overlays sharing an abGroup compete for the visitor.
+       One winner per group, weighted by abWeight, sticky via localStorage
+       so a visitor always sees the same variant. */
+    var singles = [], groups = {}, gk, gi, vi;
+    for (gi = 0; gi < eligible.length; gi++) {
+      var grp = eligible[gi].abGroup;
+      if (grp) { (groups[grp] = groups[grp] || []).push(eligible[gi]); }
+      else singles.push(eligible[gi]);
+    }
+    for (gk in groups) {
+      var variants = groups[gk];
+      var abKey = "cmz_ovl_ab:" + WS + ":" + gk;
+      var storedId = null;
+      try { storedId = localStorage.getItem(abKey); } catch (e) {}
+      var chosen = null;
+      for (vi = 0; vi < variants.length; vi++) {
+        if (variants[vi].id === storedId) { chosen = variants[vi]; break; }
+      }
+      if (!chosen) {
+        var total = 0;
+        for (vi = 0; vi < variants.length; vi++) total += variants[vi].abWeight || 50;
+        var roll = Math.random() * total, acc = 0;
+        for (vi = 0; vi < variants.length; vi++) {
+          acc += variants[vi].abWeight || 50;
+          if (roll <= acc) { chosen = variants[vi]; break; }
+        }
+        chosen = chosen || variants[0];
+        try { localStorage.setItem(abKey, chosen.id); } catch (e) {}
+      }
+      singles.push(chosen);
+    }
+    eligible = singles;
     eligible.sort(function (a, b) {
       return (PRIORITY[a.type] || 9) - (PRIORITY[b.type] || 9);
     });

@@ -113,6 +113,8 @@ export interface SanitizedOverlay {
   } | null;
   frequency: { cooldownHours: number; maxPerVisitor: number };
   pageTargeting: { mode: "all" | "include" | "exclude"; patterns: string[] };
+  abGroup: string;
+  abWeight: number;
   whitelistedDomains: string[];
   connectedBotId: string;
   botName: string;
@@ -183,6 +185,10 @@ function sanitizeOverlay(input: unknown, fallbackId: string): SanitizedOverlay {
       mode: ptMode,
       patterns: strArr(ptRaw?.patterns, 20, 200),
     },
+    /* A/B allocation: overlays sharing an abGroup compete; the snippet
+       picks one per visitor weighted by abWeight, sticky via localStorage. */
+    abGroup: str(o.abGroup, 64),
+    abWeight: Math.round(num(o.abWeight, 50, 1, 100)),
     whitelistedDomains: strArr(o.whitelistedDomains, 10, 100),
     connectedBotId: str(o.connectedBotId, 128),
     botName: str(o.botName, 80),
@@ -218,6 +224,8 @@ function toPublicShape(o: Record<string, unknown>): Record<string, unknown> {
     mobileTrigger: o.mobileTrigger ?? null,
     frequency: o.frequency ?? { cooldownHours: 24, maxPerVisitor: 0 },
     pageTargeting: o.pageTargeting ?? { mode: "all", patterns: [] },
+    abGroup: o.abGroup ?? "",
+    abWeight: o.abWeight ?? 50,
     /* Placeholder domains never reach the snippet (would block everything). */
     whitelistedDomains: cleanDomains(Array.isArray(o.whitelistedDomains) ? (o.whitelistedDomains as string[]) : []),
     requireEmailCapture: o.requireEmailCapture === true,
@@ -405,21 +413,33 @@ export async function handleOverlayTrackRequest(
     }
 
     /* Aggregate into a single batched write: one Firestore write per flush
-       no matter how many events arrived. Invalid entries are dropped. */
+       no matter how many events arrived. Invalid entries are dropped.
+       Lead events may carry {email, name}: persisted per overlay after a
+       single existence check (keeps the endpoint cheap under spam). */
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const counts: Record<string, number> = {};
+    const leadWrites: Array<{ overlayId: string; email: string; name: string }> = [];
+    let accepted = 0;
     for (const e of events) {
-      const evt = e as { overlayId?: unknown; event?: unknown };
+      const evt = e as { overlayId?: unknown; event?: unknown; data?: unknown };
       if (typeof evt !== "object" || evt === null) continue;
       if (typeof evt.overlayId !== "string" || !ID_RE.test(evt.overlayId)) continue;
       if (typeof evt.event !== "string" || !TRACK_EVENTS.has(evt.event)) continue;
+      accepted++;
       const key = `${evt.overlayId}.${evt.event}`;
       counts[key] = (counts[key] ?? 0) + 1;
+      if (evt.event === "lead" && evt.data && typeof evt.data === "object") {
+        const d = evt.data as Record<string, unknown>;
+        const email = typeof d.email === "string" ? d.email.trim().slice(0, 254) : "";
+        const name = typeof d.name === "string" ? d.name.trim().slice(0, 120) : "";
+        if (EMAIL_RE.test(email)) leadWrites.push({ overlayId: evt.overlayId, email, name });
+      }
     }
-    const keys = Object.keys(counts);
-    if (keys.length === 0) {
+    if (accepted === 0) {
       res.status(400).json({ ok: false, error: "no valid events" });
       return true;
     }
+    const keys = Object.keys(counts);
     const update: Record<string, unknown> = {
       workspaceId,
       updatedAt: FieldValue.serverTimestamp(),
@@ -427,8 +447,35 @@ export async function handleOverlayTrackRequest(
     for (const key of keys) {
       update[`overlays.${key}s`] = FieldValue.increment(counts[key]);
     }
-    await db().collection("overlayStats").doc(workspaceId).set(update, { merge: true });
-    res.status(200).json({ ok: true, accepted: keys.length });
+    const batch = db().batch();
+    batch.set(db().collection("overlayStats").doc(workspaceId), update, { merge: true });
+    /* Persist captured leads under the overlay they came from. A single
+       batched read verifies the overlays exist; lead writes go only to
+       real overlays in this workspace. */
+    if (leadWrites.length > 0) {
+      const uniqueIds = [...new Set(leadWrites.map((l) => l.overlayId))];
+      const overlayRefs = uniqueIds.map((id) =>
+        db().collection("workspaces").doc(workspaceId).collection("overlays").doc(id)
+      );
+      const snaps = await db().getAll(...overlayRefs);
+      const real = new Set(snaps.filter((s) => s.exists).map((s) => s.id));
+      const nowIso = new Date().toISOString();
+      for (const l of leadWrites) {
+        if (!real.has(l.overlayId)) continue;
+        batch.set(
+          db()
+            .collection("workspaces")
+            .doc(workspaceId)
+            .collection("overlays")
+            .doc(l.overlayId)
+            .collection("leads")
+            .doc(),
+          { email: l.email, name: l.name, ts: nowIso, source: "overlays.js" }
+        );
+      }
+    }
+    await batch.commit();
+    res.status(200).json({ ok: true, accepted });
   } catch (err) {
     /* Tracking must never break a customer page: log, answer 200. */
     logger.warn("Overlay track failed", { error: String(err) });
