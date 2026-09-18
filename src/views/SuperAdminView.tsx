@@ -22,16 +22,18 @@ import {
   Check,
   Layers,
   Calculator,
-  Library
+  Library,
+  MailPlus
 } from 'lucide-react';
 import { SuperAdminKanban } from '../components/admin/SuperAdminKanban';
 import { PlanEditorModal } from '../components/admin/PlanEditorModal';
 import { SnapshotAdminTab } from '../components/admin/SnapshotAdminTab';
+import { WaitlistAdminTab } from '../components/admin/WaitlistAdminTab';
 import { Plan, PlanMode, PLAN_MODE_LABELS, FEATURE_LABELS, formatPrice, deletePlan } from '../lib/billing';
 import { usePlans } from '../lib/entitlements';
 
 interface SuperAdminViewProps {
-  initialTab?: 'kanban' | 'users' | 'plans' | 'migration' | 'snapshots';
+  initialTab?: 'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist';
 }
 
 interface UserRecord {
@@ -209,7 +211,7 @@ const PlanTierCard: React.FC<PlanTierCardProps> = ({ plan, onEdit }) => (
 export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   initialTab = 'kanban'
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration' | 'snapshots'>(initialTab);
+  const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist'>(initialTab);
   const [users, setUsers] = useState<UserRecord[]>(INITIAL_USERS);
   const [searchQuery, setSearchQuery] = useState('');
   const { plans, loading: plansLoading } = usePlans();
@@ -370,6 +372,17 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
             <span>Snapshot Library</span>
           </button>
           <button
+            onClick={() => setActiveSubTab('waitlist')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeSubTab === 'waitlist'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/25'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <MailPlus className="w-4 h-4" />
+            <span>Waitlist</span>
+          </button>
+          <button
             onClick={() => setActiveSubTab('migration')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeSubTab === 'migration'
@@ -386,6 +399,11 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
       {/* TAB: ARCHITECTURE KANBAN */}
       {activeSubTab === 'kanban' && (
         <SuperAdminKanban />
+      )}
+
+      {/* TAB: WAITLIST SIGNUPS */}
+      {activeSubTab === 'waitlist' && (
+        <WaitlistAdminTab />
       )}
 
       {/* TAB 1: USERS MANAGEMENT */}

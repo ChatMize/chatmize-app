@@ -62,6 +62,7 @@ import {
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
 import { handleCloakerRequest, CloakerReq, CloakerRes } from "./cloaker";
+import { isWaitlistRequest, handleWaitlistRequest } from "./waitlist";
 import {
   resolvePersonalizationTags,
   getContactForRecipient,
@@ -249,6 +250,17 @@ export const metaWebhook = onRequest(
     // 0. send.chat link cloaker: host-based routing takes precedence over
     //    the Meta webhook logic. Non-send.chat hosts fall through untouched.
     if (await handleCloakerRequest(req as unknown as CloakerReq, res as unknown as CloakerRes)) {
+      return;
+    }
+
+    // 0b. Public waitlist capture: folded into this function because creating
+    //     new Cloud Functions via the API is blocked through this VM's egress
+    //     proxy. Routed on the ?wl= query param (or a /waitlist path prefix).
+    if (isWaitlistRequest(req)) {
+      await handleWaitlistRequest(
+        req as unknown as Parameters<typeof handleWaitlistRequest>[0],
+        res as unknown as Parameters<typeof handleWaitlistRequest>[1],
+      );
       return;
     }
 
