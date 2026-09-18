@@ -22,7 +22,8 @@ import {
 } from 'lucide-react';
 import { WorkspaceSilo } from '../../types/workspace';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
-import { AppUser, signOutUser } from '../../lib/firebase';
+import { AppUser, signOutUser, prodDb } from '../../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 interface TopNavBarProps {
   activeTab: string;
@@ -55,6 +56,24 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
+  const [isOg, setIsOg] = useState(false);
+
+  // OG stamp: live badge state from the user's own profile doc.
+  useEffect(() => {
+    if (!currentUser?.uid) {
+      setIsOg(false);
+      return;
+    }
+    const unsub = onSnapshot(
+      doc(prodDb, 'users', currentUser.uid),
+      (snap) => {
+        const badges = (snap.data() as { badges?: { id: string }[] } | undefined)?.badges ?? [];
+        setIsOg(badges.some((b) => b.id === 'og_stamp'));
+      },
+      () => setIsOg(false),
+    );
+    return unsub;
+  }, [currentUser?.uid]);
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
 
@@ -263,8 +282,16 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
             {showUserMenu && (
               <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl shadow-slate-950 p-2 z-50 animate-in fade-in zoom-in-95">
                 <div className="p-2.5 pb-2 border-b border-slate-800 mb-1">
-                  <p className="text-xs font-bold text-white truncate">
+                  <p className="text-xs font-bold text-white truncate flex items-center gap-1.5">
                     {currentUser?.displayName || 'Master Administrator'}
+                    {isOg && (
+                      <img
+                        src="/badges/og-stamp.webp"
+                        alt="OG Stamp"
+                        title="OG Stamp — original SegMate crew"
+                        className="w-5 h-5 rounded-full object-cover shrink-0"
+                      />
+                    )}
                   </p>
                   <p className="text-[11px] text-slate-400 truncate">
                     {currentUser?.email || 'instantreferralsapp@gmail.com'}
