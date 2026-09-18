@@ -91,6 +91,26 @@
           "destination": "/index.html"
         }
       ]
+    },
+    {
+      "target": "links",
+      "public": "links-dist",
+      "redirects": [
+        {
+          "source": "/",
+          "destination": "https://chatmize.com",
+          "type": 301
+        }
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "function": {
+            "functionId": "metaWebhook",
+            "region": "us-west2"
+          }
+        }
+      ]
     }
   ]
 }

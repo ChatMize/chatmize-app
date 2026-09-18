@@ -61,6 +61,7 @@ import {
 } from "./whatsappOAuth";
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
+import { handleCloakerRequest, CloakerReq, CloakerRes } from "./cloaker";
 import {
   resolvePersonalizationTags,
   getContactForRecipient,
@@ -245,6 +246,12 @@ async function requireWorkspaceAccess(
 export const metaWebhook = onRequest(
   { region: REGION, secrets: [META_APP_SECRET, META_INSTAGRAM_APP_SECRET, META_VERIFY_TOKEN] },
   async (req, res) => {
+    // 0. send.chat link cloaker: host-based routing takes precedence over
+    //    the Meta webhook logic. Non-send.chat hosts fall through untouched.
+    if (await handleCloakerRequest(req as unknown as CloakerReq, res as unknown as CloakerRes)) {
+      return;
+    }
+
     // 1. Verification handshake
     if (req.method === "GET") {
       const { ok, challenge } = verifyHandshake(

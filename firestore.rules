@@ -103,6 +103,14 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // send.chat link cloaker: cloaked link docs live in a top-level
+    // collection (schema contract with the Growth suite UI). Authenticated
+    // read/write for now; the app enforces workspace scoping client-side.
+    // Membership tightening is a separate queued task.
+    match /cloaked_links/{linkId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Connectivity probe: readable when signed in, never writable from clients.
     match /test/{docId} {
       allow read: if isSignedIn();
