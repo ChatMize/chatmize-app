@@ -113,28 +113,33 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
           </div>
           {/* Active channel badges (only show connected) */}
           <div className="flex items-center gap-1 mt-0.5">
+            {activeWorkspace?.connectedPage.pageName && (
+              <span className="text-[10px] text-slate-400 truncate max-w-[80px]">
+                {activeWorkspace.connectedPage.pageName}
+              </span>
+            )}
             {activeWorkspace?.connectedPage.pageId && (
-              <span className="w-4 h-4 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center" title={`Facebook: ${activeWorkspace.connectedPage.pageName}`}>
+              <span className="w-4 h-4 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center flex-shrink-0" title={`Facebook: ${activeWorkspace.connectedPage.pageName}`}>
                 <Facebook className="w-2.5 h-2.5 text-blue-400" />
               </span>
             )}
             {activeWorkspace?.connectedPage.connectedIg?.connected && (
-              <span className="w-4 h-4 rounded-full bg-pink-500/20 border border-pink-500/30 flex items-center justify-center" title={`Instagram: @${activeWorkspace.connectedPage.connectedIg.username}`}>
+              <span className="w-4 h-4 rounded-full bg-pink-500/20 border border-pink-500/30 flex items-center justify-center flex-shrink-0" title={`Instagram: @${activeWorkspace.connectedPage.connectedIg.username}`}>
                 <Instagram className="w-2.5 h-2.5 text-pink-400" />
               </span>
             )}
             {activeWorkspace?.connectedPage.connectedWhatsApp?.connected && (
-              <span className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center" title={`WhatsApp: ${activeWorkspace.connectedPage.connectedWhatsApp.phoneNumber}`}>
+              <span className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center flex-shrink-0" title={`WhatsApp: ${activeWorkspace.connectedPage.connectedWhatsApp.phoneNumber}`}>
                 <Phone className="w-2.5 h-2.5 text-emerald-400" />
               </span>
             )}
             {activeWorkspace?.connectedSms?.connected && (
-              <span className="w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center" title="SMS connected">
+              <span className="w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center flex-shrink-0" title="SMS connected">
                 <Smartphone className="w-2.5 h-2.5 text-amber-400" />
               </span>
             )}
             {activeWorkspace?.connectedStandaloneChat?.enabled && (
-              <span className="w-4 h-4 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center" title="Web Chat connected">
+              <span className="w-4 h-4 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center flex-shrink-0" title="Web Chat connected">
                 <Globe className="w-2.5 h-2.5 text-cyan-400" />
               </span>
             )}

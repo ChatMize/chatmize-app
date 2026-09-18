@@ -28,7 +28,8 @@ import {
   Code,
   Sliders,
   CheckCheck,
-  AlertCircle
+  AlertCircle,
+  Pencil
 } from 'lucide-react';
 import { 
   Workspace, 
@@ -63,6 +64,8 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
   const [activeWhitelabelModalWs, setActiveWhitelabelModalWs] = useState<Workspace | null>(null);
   const [activeChatbotModalWs, setActiveChatbotModalWs] = useState<Workspace | null>(null);
   const [activeSmsModalWs, setActiveSmsModalWs] = useState<Workspace | null>(null);
+  const [editingWsId, setEditingWsId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Standalone Chatbot live preview test state
@@ -235,6 +238,19 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
     setIsCreateModalOpen(false);
     resetForm();
     onSelectWorkspace(newId);
+  };
+
+  const handleSaveWorkspaceName = (wsId: string) => {
+    if (!editingName.trim()) {
+      setEditingWsId(null);
+      return;
+    }
+    const updated = workspaces.map(ws =>
+      ws.id === wsId ? { ...ws, name: editingName.trim() } : ws
+    );
+    onUpdateWorkspaces(updated);
+    setEditingWsId(null);
+    setEditingName('');
   };
 
   const resetForm = () => {
@@ -585,9 +601,36 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
                       {/* TITLE / ACCOUNT NAME */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-white hover:text-cyan-400 transition-colors">
-                            {ws.name}
-                          </span>
+                          {editingWsId === ws.id ? (
+                            <input
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveWorkspaceName(ws.id);
+                                if (e.key === 'Escape') setEditingWsId(null);
+                              }}
+                              onBlur={() => handleSaveWorkspaceName(ws.id)}
+                              autoFocus
+                              className="font-bold text-sm text-white bg-slate-800 border border-cyan-500/50 rounded px-2 py-1 outline-none w-48"
+                            />
+                          ) : (
+                            <>
+                              <span className="font-bold text-sm text-white hover:text-cyan-400 transition-colors">
+                                {ws.name}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  setEditingWsId(ws.id);
+                                  setEditingName(ws.name);
+                                }}
+                                className="p-1 rounded hover:bg-slate-700/50 text-slate-500 hover:text-cyan-400 transition-colors"
+                                title="Rename workspace"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            </>
+                          )}
                           {ws.whitelabel.enabled && (
                             <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-bold">
                               Whitelabel

@@ -669,10 +669,11 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   }, [followUpRulesMap, activeContact?.id]);
 
   // Send message handler
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!messageInput.trim() || !activeContact) return;
 
     setIsSending(true);
+    const textToSend = messageInput.trim();
 
     const isBotActive = botModeMap[activeContact.id] ?? false;
     const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -682,12 +683,13 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       contactId: activeContact.id,
       sender: isBotActive ? 'bot' : 'agent',
       senderName: isBotActive ? 'Chatmize AI Agent' : 'Live Agent',
-      text: messageInput.trim(),
+      text: textToSend,
       timestamp: nowStr,
       metaTag: selectedMetaTag || undefined,
-      deliveryStatus: 'delivered'
+      deliveryStatus: 'sending'
     };
 
+    // Optimistically add to local state
     setConversationsMap(prev => ({
       ...prev,
       [activeContact.id]: [...(prev[activeContact.id] || []), newMsg]
@@ -695,12 +697,76 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
     setMessageInput('');
     setSelectedMetaTag('');
-    setIsSending(false);
+
+    try {
+      // Call backend to send via the real channel API
+      const { httpsCallable } = await import('firebase/functions');
+      const { functions } = await import('../lib/firebase');
+      const sendFn = httpsCallable(functions, 'sendChannelMessage');
+
+      // Map UI channel to backend channel
+      const channelMap: Record<string, string> = {
+        'instagram': 'instagram',
+        'messenger': 'messenger',
+        'whatsapp': 'whatsapp',
+        'facebook': 'messenger',
+      };
+      const backendChannel = channelMap[activeContact.channel?.toLowerCase()] || 'instagram';
+
+      await sendFn({
+        workspaceId: 'ws-chatmize-dev', // TODO: Use real workspace ID
+        channel: backendChannel,
+        recipientId: activeContact.senderId || activeContact.id,
+        text: textToSend,
+      });
+
+      // Mark as delivered
+      setConversationsMap(prev => ({
+        ...prev,
+        [activeContact.id]: (prev[activeContact.id] || []).map(m =>
+          m.id === newMsg.id ? { ...m, deliveryStatus: 'delivered' } : m
+        )
+      }));
+
+      // Write to Firestore so it persists and appears in realtime
+      const { doc, setDoc, collection } = await import('firebase/firestore');
+      const { db } = await import('../lib/firebase');
+      const convoId = `${activeContact.channel}_${activeContact.senderId || activeContact.id}`;
+      const msgRef = doc(collection(db, 'workspaces', 'ws-chatmize-dev', 'conversations', convoId, 'messages'));
+      await setDoc(msgRef, {
+        text: textToSend,
+        direction: 'outbound',
+        channel: backendChannel,
+        senderId: activeContact.senderId,
+        timestampMs: Date.now(),
+        createdAt: new Date().toISOString(),
+      });
+
+    } catch (err) {
+      console.error('Failed to send message:', err);
+      // Mark as failed
+      setConversationsMap(prev => ({
+        ...prev,
+        [activeContact.id]: (prev[activeContact.id] || []).map(m =>
+          m.id === newMsg.id ? { ...m, deliveryStatus: 'failed' } : m
+        )
+      }));
+    } finally {
+      setIsSending(false);
+    }
 
     // Update last interaction in Firestore
     updateContactField(activeContact.id, {
       lastInteractionAt: new Date().toISOString()
     }).catch(err => console.error('Error updating interaction:', err));
+
+    // Scroll to bottom after sending
+    setTimeout(() => {
+      const chatContainer = document.querySelector('[data-chat-messages]');
+      if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }
+    }, 100);
   };
 
   // Toggle Bot Mode vs Human Takeover
@@ -1386,7 +1452,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
               )}
 
               {/* Message Thread Scroll View */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
+              <div data-chat-messages className="flex-1 overflow-y-auto p-4 space-y-3.5">
                 {currentMessages.map(msg => {
                   if (msg.type === 'event_log') {
                     return (
