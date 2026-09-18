@@ -421,6 +421,35 @@ export async function selectWhatsAppNumber(
     throw new Error("Could not store the WhatsApp token securely. Please try again.");
   }
 
+  // Subscribe our app to this WABA's webhooks so inbound messages arrive.
+  // The app-level subscription (whatsapp_business_account -> messages) exists,
+  // but Meta also requires a per-WABA subscribed_apps entry — without it the
+  // WABA delivers nothing to our callback URL. Non-fatal: the connection
+  // still succeeds and this can be retried.
+  try {
+    const subRes = await fetch(`${GRAPH_BASE}/${match.account.wabaId}/subscribed_apps`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${conn.token}` },
+    });
+    if (!subRes.ok) {
+      const errBody = (await subRes.json().catch(() => ({}))) as {
+        error?: { message?: string };
+      };
+      logger.warn("WABA subscribed_apps failed", {
+        workspaceId,
+        wabaId: match.account.wabaId,
+        error: errBody.error?.message ?? `HTTP ${subRes.status}`,
+      });
+    } else {
+      logger.info("WABA subscribed_apps ok", { workspaceId, wabaId: match.account.wabaId });
+    }
+  } catch (e) {
+    logger.warn("WABA subscribed_apps error", {
+      workspaceId,
+      error: e instanceof Error ? e.message : "unknown",
+    });
+  }
+
   await ref.set(
     {
       status: "connected",
