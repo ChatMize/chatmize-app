@@ -78,6 +78,9 @@ import {
   sendInstagramMessage,
   sendInstagramDirectMessage,
 } from "./send";
+import { sendChannelMessageInternal, ChannelSendError } from "./channelSend";
+import { sendSmsInternal, SmsSendError, smsPlanAllowance } from "./smsSend";
+import { runSmsBroadcastInternal, SmsBroadcastError } from "./smsBroadcast";
 import {
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN,
@@ -345,92 +348,6 @@ interface SendMessageData {
    * persisted doc so the UI can reconcile instead of duplicating. */
   clientMessageId?: string;
 }
-
-/** Meta error text means the page token is dead (not a transient send error). */
-function isMetaTokenError(error: string | undefined): boolean {
-  if (!error) return false;
-  return /error validating access token|session has been invalidated|session has expired|invalid oauth access token/i.test(
-    error,
-  );
-}
-
-/** Meta rejected the recipient because the IGSID is scoped to a different
- * app/connection than the token used (Graph error 100 / subcode 2018001). */
-function isWrongScopeRecipientError(error: string | undefined): boolean {
-  if (!error) return false;
-  return /no matching user found/i.test(error);
-}
-
-/**
- * Decide which token answers an Instagram conversation.
- *
- * IGSIDs are scoped to the Meta app that received them, so each conversation
- * must be answered with the token of the connection that received it:
- * - "ig": the conversation arrived through the IG-only connection
- *   (ChatMize-IG app) -> send with the IG user token on graph.instagram.com.
- * - "page": the conversation arrived through the Facebook-anchored linked
- *   Instagram account (or the IG-only connection was upgraded to the Page
- *   anchor) -> send with the Page token on graph.facebook.com as before.
- * - null: no Instagram connection is live on this workspace.
- */
-async function resolveInstagramRoute(
-  workspaceId: string,
-  recipientId: string,
-): Promise<"ig" | "page" | null> {
-  const integRef = db()
-    .collection("workspaces")
-    .doc(workspaceId)
-    .collection("integrations");
-  const convoRef = db()
-    .collection("workspaces")
-    .doc(workspaceId)
-    .collection("conversations")
-    .doc(`instagram_${recipientId}`);
-  const [convoSnap, igSnap, metaSnap] = await Promise.all([
-    convoRef.get(),
-    integRef.doc("instagram").get(),
-    integRef.doc("meta").get(),
-  ]);
-  const accountId =
-    (convoSnap.data() as { recipientId?: string } | undefined)?.recipientId ??
-    null;
-  const ig = igSnap.data() as
-    | {
-        status?: string;
-        igUserId?: string;
-        anchoredViaPage?: boolean;
-        anchoredPageId?: string;
-      }
-    | undefined;
-  const meta = metaSnap.data() as
-    | { status?: string; pageId?: string; instagram?: { id?: string } }
-    | undefined;
-  const igConnected = ig?.status === "connected" && !!ig.igUserId;
-  const pageIgId =
-    meta?.status === "connected" ? (meta.instagram?.id ?? null) : null;
-
-  // Upgraded anchor: the IG-only connection was re-anchored to the Page
-  // anchor, so its conversations now go out on the Page token.
-  if (
-    igConnected &&
-    ig.anchoredViaPage &&
-    pageIgId &&
-    pageIgId === ig.igUserId &&
-    ig.anchoredPageId === meta?.pageId
-  ) {
-    return "page";
-  }
-  if (accountId) {
-    if (igConnected && accountId === ig.igUserId) return "ig";
-    if (pageIgId && accountId === pageIgId) return "page";
-  }
-  // Fallback when the conversation is unknown: prefer the IG-only
-  // connection, otherwise the Page anchor.
-  if (igConnected) return "ig";
-  if (pageIgId || meta?.status === "connected") return "page";
-  return null;
-}
-
 /**
  * Authenticated callable: send a message on Messenger, Instagram, or WhatsApp.
  * The caller must be a member of the workspace (or Super Admin). Tokens come
@@ -447,150 +364,19 @@ export const sendChannelMessage = onCall(
     if (!workspaceId || !channel || !recipientId || !text) {
       throw new HttpsError("invalid-argument", "workspaceId, channel, recipientId, and text are required.");
     }
-    if (!["messenger", "instagram", "whatsapp"].includes(channel)) {
-      throw new HttpsError("invalid-argument", `Unsupported channel: ${channel}`);
-    }
 
     // Membership check (Super Admin claim bypasses).
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
 
-    // Personalization: resolve {{tags}} against the recipient's contact
-    // record so merge tags never go out as raw text.
-    const contact = await getContactForRecipient(channel, recipientId);
-    const resolvedText = resolvePersonalizationTags(text, contact);
-
-    // Token self-heal, per connection:
-    // - Messenger always runs on the Page token.
-    // - Instagram is answered with the token of the connection that received
-    //   the conversation (IG-only token on graph.instagram.com, or the Page
-    //   token on graph.facebook.com), because IGSIDs are app-scoped.
-    let result;
-    let igRoute: "ig" | "page" | null = null;
-    if (channel === "whatsapp") {
-      result = await CHANNEL_SENDERS[channel](
-        WHATSAPP_TOKEN_DEFAULT.value(),
-        recipientId,
-        resolvedText,
-        WHATSAPP_PHONE_NUMBER_ID.value(),
-      );
-    } else if (channel === "instagram") {
-      igRoute = await resolveInstagramRoute(workspaceId, recipientId);
-      if (igRoute === null) {
-        throw new HttpsError(
-          "failed-precondition",
-          "Instagram is not connected. Connect it in Settings under Channels, then send again.",
-        );
+    // The shared send pipeline (channelSend.ts) also serves the MCP server.
+    try {
+      return await sendChannelMessageInternal(workspaceId, channel, recipientId, text, clientMessageId ?? null);
+    } catch (err) {
+      if (err instanceof ChannelSendError) {
+        throw new HttpsError(err.code, err.message);
       }
-      if (igRoute === "ig") {
-        const health = await ensureFreshIgToken(workspaceId);
-        if (health === "invalid") {
-          throw new HttpsError(
-            "failed-precondition",
-            "The Instagram connection expired. Reconnect it in Settings under Channels, then send again.",
-          );
-        }
-        if (health === "unconnected") {
-          throw new HttpsError(
-            "failed-precondition",
-            "Instagram is not connected. Connect it in Settings under Channels, then send again.",
-          );
-        }
-        const igToken = await getIgToken(workspaceId);
-        if (!igToken) {
-          throw new HttpsError(
-            "failed-precondition",
-            "Could not read the Instagram token. Reconnect Instagram in Settings under Channels, then send again.",
-          );
-        }
-        result = await sendInstagramDirectMessage(igToken, recipientId, resolvedText);
-      } else {
-        const health = await ensureFreshPageToken(workspaceId);
-        if (health === "invalid") {
-          throw new HttpsError(
-            "failed-precondition",
-            "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
-          );
-        }
-        result = await sendInstagramMessage(
-          await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()),
-          recipientId,
-          resolvedText,
-        );
-      }
-    } else {
-      const health = await ensureFreshPageToken(workspaceId);
-      if (health === "invalid") {
-        throw new HttpsError(
-          "failed-precondition",
-          "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
-        );
-      }
-      result = await CHANNEL_SENDERS[channel](
-        await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()),
-        recipientId,
-        resolvedText,
-      );
+      throw err;
     }
-
-    await recordOutboundMessage(
-      workspaceId,
-      channel,
-      recipientId,
-      resolvedText,
-      result.metaMessageId,
-      result.ok,
-      result.error,
-      clientMessageId ?? null,
-    );
-
-    if (!result.ok) {
-      logger.error("Outbound send failed", { workspaceId, channel, error: result.error });
-      if (isWrongScopeRecipientError(result.error)) {
-        // The recipient id belongs to a different Meta app/connection than
-        // the token used. Once the contact messages again, the reply will
-        // route through the right connection.
-        throw new HttpsError(
-          "failed-precondition",
-          "This conversation arrived through a different connection, so Meta rejected the reply. When the contact messages you again, the reply will go through.",
-        );
-      }
-      if (isMetaTokenError(result.error)) {
-        if (channel === "instagram" && igRoute === "ig") {
-          // Reactive catch for the IG-only path: flag the IG integration so
-          // the UI prompts an Instagram reconnect instead of a bare failure.
-          await markIgTokenInvalid(workspaceId, result.error ?? "Send failed.");
-          throw new HttpsError(
-            "failed-precondition",
-            "The Instagram connection expired. Reconnect it in Settings under Channels, then send again.",
-          );
-        }
-        // Reactive catch: the token died between health checks. Flag the
-        // integration so the UI prompts a reconnect instead of a bare failure.
-        await db()
-          .collection("workspaces")
-          .doc(workspaceId)
-          .collection("integrations")
-          .doc("meta")
-          .set(
-            {
-              status: "token_invalid",
-              tokenInvalidAt: FieldValue.serverTimestamp(),
-              tokenInvalidReason: result.error,
-            },
-            { merge: true },
-          );
-        // Fire-and-forget owner email; never breaks the send path.
-        const { notifyOwnerReconnect } = await import("./notifications.js");
-        void notifyOwnerReconnect(workspaceId, "meta");
-        throw new HttpsError(
-          "failed-precondition",
-          "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
-        );
-      }
-      throw new HttpsError("internal", result.error ?? "Send failed.");
-    }
-    logger.info("Outbound send ok", { workspaceId, channel, metaMessageId: result.metaMessageId });
-    return { ok: true, metaMessageId: result.metaMessageId };
   },
 );
 
@@ -722,26 +508,6 @@ export const resetMonthlyCredits = onSchedule(
 // ---------------------------------------------------------------------------
 // SMS via Twilio (ChatMize-owned account; billed via allowance then credits)
 // ---------------------------------------------------------------------------
-
-/**
- * Resolve the workspace's SMS plan entitlement. Workspaces without an
- * assigned plan are grandfathered in (allowed, zero allowance, pay per
- * segment in credits). A plan without the `sms` feature is denied.
- */
-async function smsPlanAllowance(workspaceId: string): Promise<number> {
-  const ws = await db().collection("workspaces").doc(workspaceId).get();
-  const planId = ws.data()?.planId as string | undefined;
-  if (!planId) {
-    logger.info("SMS: workspace has no plan; grandfathered with zero allowance", { workspaceId });
-    return 0;
-  }
-  const plan = await db().collection("plans").doc(planId).get();
-  const data = plan.data() as { features?: string[]; smsAllowanceMonthly?: number } | undefined;
-  if (!data?.features?.includes("sms")) {
-    throw new HttpsError("permission-denied", "Your plan does not include SMS.");
-  }
-  return data.smsAllowanceMonthly ?? 0;
-}
 
 /** Authenticated callable: real SMS connection state for the Settings UI. */
 export const getSmsStatus = onCall({ region: REGION }, async (request) => {
@@ -904,96 +670,15 @@ export const sendSms = onCall(
     if (!workspaceId || !to || !body) {
       throw new HttpsError("invalid-argument", "workspaceId, to, and body are required.");
     }
-    if (body.length > 1600) {
-      throw new HttpsError("invalid-argument", "Message is too long (max 1600 characters).");
-    }
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
-    await smsPlanAllowance(workspaceId);
-
-    const conn = await ensureAllowanceMonth(workspaceId);
-    if (!conn || conn.status !== "active") {
-      throw new HttpsError("failed-precondition", "SMS is not enabled for this workspace yet.");
-    }
-    const e164 = normalizePhone(to);
-    if (!e164) throw new HttpsError("invalid-argument", "That recipient number is not valid.");
-    const optIn = await getOptIn(workspaceId, e164);
-    if (!optIn?.optedIn) {
-      throw new HttpsError(
-        "failed-precondition",
-        "This contact has not opted in to SMS. Collect consent before sending.",
-      );
-    }
-
-    // Personalization: resolve {{tags}} against the recipient's contact
-    // record so merge tags never go out as raw text.
-    const smsContact = await getContactForPhone(e164);
-    const resolvedBody = resolvePersonalizationTags(body, smsContact);
-    if (resolvedBody.length > 1600) {
-      throw new HttpsError("invalid-argument", "Message is too long (max 1600 characters).");
-    }
-    const segments = calculateSegments(resolvedBody);
-    let charged: { chargedTo: "allowance" | "credits"; creditsCharged: number } =
-      { chargedTo: "allowance", creditsCharged: 0 };
+    // The shared SMS pipeline (smsSend.ts) also serves the MCP server.
     try {
-      charged = await chargeForSend(workspaceId, segments, broadcastId ? `sms broadcast ${broadcastId}` : "sms send");
+      return await sendSmsInternal(workspaceId, to, body, broadcastId);
     } catch (err) {
-      throw new HttpsError(
-        "resource-exhausted",
-        "SMS allowance and credits are exhausted. Top up credits to keep sending.",
-      );
-    }
-
-    try {
-      const provider = providerOf(conn);
-      const messageId = await sendSmsViaProvider(provider, conn.phoneNumber, e164, resolvedBody);
-      await persistOutboundSms(workspaceId, conn.phoneNumber, e164, resolvedBody, messageId);
-      await logSms({
-        workspaceId,
-        direction: "outbound",
-        to: e164,
-        from: conn.phoneNumber,
-        body: resolvedBody,
-        segments,
-        creditsCharged: charged.creditsCharged,
-        messageId,
-        status: "sent",
-        broadcastId,
-      });
-      return { ok: true, messageId, segments, chargedTo: charged.chargedTo };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "SMS send failed.";
-      // Compensating refund: the workspace was charged before the provider sent,
-      // and the provider never billed for this message, so give the charge back.
-      if (charged.chargedTo === "credits" && charged.creditsCharged > 0) {
-        await grantCredits(
-          workspaceId,
-          charged.creditsCharged,
-          "admin_adjust",
-          `refund: sms send failed (${message})`,
-        ).catch((refundErr) =>
-          logger.error("SMS refund failed", { workspaceId, refundErr }),
-        );
-      } else if (charged.chargedTo === "allowance") {
-        const conn = await getSmsConnection(workspaceId);
-        if (conn) {
-          conn.usedThisMonth = Math.max(0, conn.usedThisMonth - segments);
-          await saveSmsConnection(conn);
-        }
+      if (err instanceof SmsSendError) {
+        throw new HttpsError(err.code, err.message);
       }
-      await logSms({
-        workspaceId,
-        direction: "outbound",
-        to: e164,
-        from: conn.phoneNumber,
-        body: resolvedBody,
-        segments,
-        creditsCharged: 0,
-        status: "failed",
-        error: message,
-        broadcastId,
-      });
-      logger.error("SMS send failed", { workspaceId, error: message });
-      throw new HttpsError("internal", message);
+      throw err;
     }
   },
 );
@@ -1017,26 +702,13 @@ interface SendSmsBroadcastData {
  * off instead of re-sending. Per-recipient opt-in is re-checked at send
  * time; returns a delivery report.
  */
-/** Max recipients per broadcast run: sized so sequential sends fit the 540s timeout. */
-const BROADCAST_MAX_RECIPIENTS = 500;
-/** Progress is persisted to the broadcast doc after each chunk (resumable). */
-const BROADCAST_CHUNK_SIZE = 50;
-
-interface BroadcastState {
-  workspaceId: string;
-  recipients: string[];
-  status: "running" | "complete";
-  processed: number;
-  sent: number;
-  failed: number;
-  skipped: number;
-  creditsCharged: number;
-  errors: string[];
-  stoppedEarly: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
+/**
+ * Authenticated callable: broadcast to opted-in numbers. Idempotent on a
+ * client-generated key and resumable in chunks: progress is persisted after
+ * every chunk, so a client retry (or a timeout) resumes where the run left
+ * off instead of re-sending. Per-recipient opt-in is re-checked at send
+ * time; returns a delivery report.
+ */
 export const sendSmsBroadcast = onCall(
   { region: REGION, secrets: SMS_SECRETS, timeoutSeconds: 540 },
   async (request) => {
@@ -1046,168 +718,16 @@ export const sendSmsBroadcast = onCall(
     if (!workspaceId || !body) {
       throw new HttpsError("invalid-argument", "workspaceId and body are required.");
     }
-    if (body.length > 1600) {
-      throw new HttpsError("invalid-argument", "Message is too long (max 1600 characters).");
-    }
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
-    await smsPlanAllowance(workspaceId);
-
-    const conn = await ensureAllowanceMonth(workspaceId);
-    if (!conn || conn.status !== "active") {
-      throw new HttpsError("failed-precondition", "SMS is not enabled for this workspace yet.");
+    // The shared broadcast runner (smsBroadcast.ts) also serves the MCP server.
+    try {
+      return await runSmsBroadcastInternal(workspaceId, body, phones, idempotencyKey);
+    } catch (err) {
+      if (err instanceof SmsBroadcastError) {
+        throw new HttpsError(err.code, err.message);
+      }
+      throw err;
     }
-
-    // Idempotency: retries with the same key resume (or replay the stored
-    // result) instead of re-sending the broadcast.
-    const key = (idempotencyKey ?? "").trim() || `bc_${Date.now().toString(36)}`;
-    const bcastRef = db().collection("sms_broadcasts").doc(key);
-    const broadcastId = key;
-
-    let state: BroadcastState;
-    const existing = await bcastRef.get();
-    if (existing.exists) {
-      const d = existing.data() as BroadcastState;
-      if (d.status === "complete") {
-        logger.info("SMS broadcast replayed from idempotency key", { workspaceId, broadcastId });
-        return {
-          ok: true, broadcastId, replayed: true, complete: true,
-          sent: d.sent, failed: d.failed, skipped: d.skipped,
-          creditsCharged: d.creditsCharged, errors: d.errors,
-        };
-      }
-      if (d.workspaceId !== workspaceId) {
-        throw new HttpsError("invalid-argument", "This idempotency key is already in use.");
-      }
-      state = d;
-      logger.info("SMS broadcast resuming", { workspaceId, broadcastId, processed: d.processed });
-    } else {
-      let recipients: string[];
-      if (phones && phones.length > 0) {
-        recipients = [...new Set(phones.map((p) => normalizePhone(p)).filter((p): p is string => !!p))];
-      } else {
-        // Requires the composite index on sms_optins(workspaceId, optedIn);
-        // see firestore.indexes.json.
-        const snap = await db()
-          .collection("sms_optins")
-          .where("workspaceId", "==", workspaceId)
-          .where("optedIn", "==", true)
-          .get();
-        recipients = snap.docs.map((d) => (d.data() as { phone: string }).phone);
-      }
-      if (recipients.length === 0) {
-        throw new HttpsError("failed-precondition", "No opted-in recipients to send to.");
-      }
-      if (recipients.length > BROADCAST_MAX_RECIPIENTS) {
-        throw new HttpsError(
-          "invalid-argument",
-          `Broadcasts are limited to ${BROADCAST_MAX_RECIPIENTS} recipients per run; split larger lists.`,
-        );
-      }
-      const now = new Date().toISOString();
-      state = {
-        workspaceId,
-        recipients,
-        status: "running",
-        processed: 0,
-        sent: 0,
-        failed: 0,
-        skipped: 0,
-        creditsCharged: 0,
-        errors: [],
-        stoppedEarly: false,
-        createdAt: now,
-        updatedAt: now,
-      };
-      try {
-        // create() is atomic: it throws when the key already exists, so a
-        // racing retry falls through to the resume path below.
-        await bcastRef.create(state);
-      } catch (e) {
-        const code = (e as { code?: number }).code;
-        const msg = e instanceof Error ? e.message : String(e);
-        if (code !== 6 && !/already exists/i.test(msg)) throw e;
-        const raced = await bcastRef.get();
-        state = raced.data() as BroadcastState;
-        if (state.workspaceId !== workspaceId) {
-          throw new HttpsError("invalid-argument", "This idempotency key is already in use.");
-        }
-        logger.info("SMS broadcast lost create race; resuming", { workspaceId, broadcastId });
-      }
-    }
-
-    let stoppedEarly = state.stoppedEarly;
-
-    for (let i = state.processed; i < state.recipients.length; i += BROADCAST_CHUNK_SIZE) {
-      const chunk = state.recipients.slice(i, i + BROADCAST_CHUNK_SIZE);
-      for (const to of chunk) {
-        const optIn = await getOptIn(workspaceId, to);
-        if (!optIn?.optedIn) {
-          state.skipped += 1;
-          continue;
-        }
-        // Personalization: resolve {{tags}} per recipient against their
-        // contact record so merge tags never go out as raw text. Segments
-        // are recomputed per message because personalization changes length.
-        const bcContact = await getContactForPhone(to);
-        const personalBody = resolvePersonalizationTags(body, bcContact);
-        if (personalBody.length > 1600) {
-          state.skipped += 1;
-          continue;
-        }
-        const personalSegments = calculateSegments(personalBody);
-        try {
-          const charged = await chargeForSend(workspaceId, personalSegments, `sms broadcast ${broadcastId}`);
-          const messageId = await sendSmsViaProvider(providerOf(conn), conn.phoneNumber, to, personalBody);
-          state.creditsCharged += charged.creditsCharged;
-          state.sent += 1;
-          await persistOutboundSms(workspaceId, conn.phoneNumber, to, personalBody, messageId);
-          await logSms({
-            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body: personalBody,
-            segments: personalSegments, creditsCharged: charged.creditsCharged, messageId, status: "sent", broadcastId,
-          });
-        } catch (err) {
-          state.failed += 1;
-          const message = err instanceof Error ? err.message : "send failed";
-          if (state.errors.length < 5) state.errors.push(`${to}: ${message}`);
-          await logSms({
-            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body: personalBody,
-            segments: personalSegments, creditsCharged: 0, status: "failed", error: message, broadcastId,
-          });
-          if (message.includes("exhausted") || message.includes("insufficient credits")) {
-            stoppedEarly = true;
-            break; // stop burning through the list when billing is the problem
-          }
-        }
-      }
-      state.processed = Math.min(i + BROADCAST_CHUNK_SIZE, state.recipients.length);
-      state.stoppedEarly = stoppedEarly;
-      state.updatedAt = new Date().toISOString();
-      await bcastRef.update({
-        processed: state.processed,
-        sent: state.sent,
-        failed: state.failed,
-        skipped: state.skipped,
-        creditsCharged: state.creditsCharged,
-        errors: state.errors,
-        stoppedEarly,
-        updatedAt: state.updatedAt,
-      });
-      if (stoppedEarly) break;
-    }
-
-    const complete = !stoppedEarly;
-    if (complete) {
-      await bcastRef.update({ status: "complete", updatedAt: new Date().toISOString() });
-    }
-    logger.info("SMS broadcast finished", {
-      workspaceId, broadcastId,
-      sent: state.sent, failed: state.failed, skipped: state.skipped, complete,
-    });
-    return {
-      ok: true, broadcastId, complete,
-      sent: state.sent, failed: state.failed, skipped: state.skipped,
-      creditsCharged: state.creditsCharged, errors: state.errors,
-    };
   },
 );
 
@@ -1686,3 +1206,29 @@ export const whatsappOAuthSelectNumber = onCall({ region: REGION }, async (reque
  * emails on token invalidation, and human handoff emails.
  */
 export { onIntegrationInvalidated, onHandoffCreated } from "./notifications";
+
+// ---------------------------------------------------------------------------
+// ChatMize MCP API server (v1, BETA) — "bring your own bots".
+//
+// Standard MCP over Streamable HTTP, authenticated with per-workspace API
+// keys (one key per workspace, managed in the agency dashboard). Stateless
+// transport: scales to zero between calls. OAuth-based auth is planned
+// for a later version.
+// ---------------------------------------------------------------------------
+export const mcpApi = onRequest(
+  {
+    region: REGION,
+    timeoutSeconds: 540,
+    secrets: [
+      WHATSAPP_TOKEN_DEFAULT,
+      WHATSAPP_PHONE_NUMBER_ID,
+      META_PAGE_TOKEN_DEFAULT,
+      META_APP_SECRET,
+      ...SMS_SECRETS,
+    ],
+  },
+  async (req, res) => {
+    const { handleMcpRequest } = await import("./mcp/handler.js");
+    await handleMcpRequest(req, res);
+  },
+);
