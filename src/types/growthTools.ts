@@ -109,11 +109,19 @@ export interface SupportChatWidgetConfig {
   updatedAt: string;
 }
 
-export type CloakedDestinationType = 'messenger' | 'instagram' | 'web_chat' | 'custom_url';
+export type CloakedDestinationType = 'takeover' | 'messenger' | 'instagram' | 'url';
 
 export type CloakingMode = 'bridge' | 'direct' | 'masked';
 
+/**
+ * send.chat branded link record. Mirrors the Firestore `cloaked_links`
+ * contract exactly: document ID `${workspaceSlug}_${slug}`, URL-safe lowercase.
+ * Legacy localStorage-era fields (`refPayload`, `totalClicks`, `totalConversions`,
+ * `lastClickedAt`) are optional aliases kept for the one-time migration and
+ * existing in-memory previews.
+ */
 export interface SendChatCloakedLink {
+  /** Firestore doc id is `${workspaceSlug}_${slug}`. `id` is the local list key. */
   id: string;
   workspaceSlug: string;
   slug: string; // e.g. "summer-promo" => send.chat/workspace/summer-promo
@@ -125,11 +133,22 @@ export interface SendChatCloakedLink {
   previewImage?: string; // OpenGraph Image
   cloakingMode: CloakingMode;
   connectedBotId?: string;
-  refPayload?: string;
+  /** Meta ref payload passed through to m.me / ig.me destinations. */
+  ref?: string;
+  /** Incremented by the hosted link resolver. Read-only in this UI. */
+  clickCount: number;
+  createdBy?: string;
+  createdAt: string; // ISO 8601
+  updatedAt?: string; // ISO 8601
+  /** Frontend-only active toggle; persisted on the Firestore record. */
   status: 'active' | 'paused';
-  totalClicks: number;
-  totalConversions: number;
-  createdAt: string;
+  /** @deprecated migrated to `ref` */
+  refPayload?: string;
+  /** @deprecated migrated to `clickCount` */
+  totalClicks?: number;
+  /** @deprecated legacy local analytics, kept for old records */
+  totalConversions?: number;
+  /** @deprecated legacy local analytics, kept for old records */
   lastClickedAt?: string;
 }
 
