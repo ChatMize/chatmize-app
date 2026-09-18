@@ -29,6 +29,13 @@
           ]
         },
         {
+          "source": "/overlays.js",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=3600, must-revalidate" },
+            { "key": "Access-Control-Allow-Origin", "value": "*" }
+          ]
+        },
+        {
           "source": "**/*.html",
           "headers": [
             { "key": "Cache-Control", "value": "no-store, must-revalidate" }
@@ -50,7 +57,21 @@
           }
         },
         {
+          "source": "/__overlay/track",
+          "function": {
+            "functionId": "metaWebhook",
+            "region": "us-west2"
+          }
+        },
+        {
           "source": "/metawebhook",
+          "function": {
+            "functionId": "metaWebhook",
+            "region": "us-west2"
+          }
+        },
+        {
+          "source": "/contest-api",
           "function": {
             "functionId": "metaWebhook",
             "region": "us-west2"

@@ -502,3 +502,69 @@ export const onHandoffCreated = onDocumentCreated(
     await handleHandoffCreated(workspaceId, handoffId, data);
   },
 );
+
+// ---------------------------------------------------------------------------
+// Waitlist double opt-in: confirmation email for a pending waitlist signup.
+// Sent straight through SES (no workspace-scoped suppression/dedupe: the
+// signup handler already dedupes per email, and SES account-level
+// suppression still applies). One send per signup call; re-signups resend.
+// ---------------------------------------------------------------------------
+
+function waitlistConfirmCopy(name: string, confirmUrl: string): { subject: string; html: string; text: string } {
+  const first = name.split(" ")[0] || name;
+  const subject = "Confirm your spot on the ChatMize waitlist";
+  const title = "One click confirms your spot";
+  const bodyHtml = `<p>Hi ${first},</p>
+<p>Thanks for joining the ChatMize waitlist. Tap the button below to confirm your email and hold your place in line.</p>
+<p>The link expires in 7 days.</p>`;
+  const text = `Hi ${first},\n\nThanks for joining the ChatMize waitlist. Open this link to confirm your email and hold your place in line:\n${confirmUrl}\n\nThe link expires in 7 days.\n\nIf you did not sign up for this, just ignore this email.`;
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f6f7f9;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+<div style="max-width:560px;margin:0 auto;padding:32px 24px;">
+<div style="background:#ffffff;border-radius:12px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+<h1 style="font-size:20px;margin:0 0 16px;color:#111827;">${title}</h1>
+<div style="font-size:15px;line-height:1.6;color:#374151;">${bodyHtml}</div>
+<div style="margin:24px 0;">
+<a href="${confirmUrl}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 28px;border-radius:8px;">Confirm my email</a>
+</div>
+<p style="font-size:13px;color:#6b7280;">If the button does not work, paste this link into your browser:<br><span style="word-break:break-all;">${confirmUrl}</span></p>
+</div>
+<p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:16px;">You are getting this because this address joined the ChatMize waitlist. If that was not you, just ignore this email.</p>
+</div></body></html>`;
+  return { subject, html, text };
+}
+
+export async function sendWaitlistConfirmationEmail(
+  to: string,
+  name: string,
+  confirmUrl: string,
+): Promise<{ sent: boolean; reason?: string; messageId?: string }> {
+  const client = await getSesClient();
+  if (!client) {
+    logger.error("Waitlist confirmation email skipped: SES credentials unavailable");
+    return { sent: false, reason: "ses-credentials-unavailable" };
+  }
+  const copy = waitlistConfirmCopy(name, confirmUrl);
+  try {
+    const res = await client.send(
+      new SendEmailCommand({
+        FromEmailAddress: FROM_ADDRESS,
+        Destination: { ToAddresses: [to] },
+        Content: {
+          Simple: {
+            Subject: { Data: copy.subject, Charset: "UTF-8" },
+            Body: {
+              Text: { Data: copy.text, Charset: "UTF-8" },
+              Html: { Data: copy.html, Charset: "UTF-8" },
+            },
+          },
+        },
+      }),
+    );
+    logger.info("Waitlist confirmation email sent", { to, messageId: res.MessageId });
+    return { sent: true, messageId: res.MessageId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error("Waitlist confirmation email failed", { to, error: message });
+    return { sent: false, reason: "ses-error" };
+  }
+}
