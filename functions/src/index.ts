@@ -1188,9 +1188,23 @@ export const metaOAuthCallback = onRequest(
 export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  const { workspaceId, action, phoneNumberId } = (request.data ?? {}) as {
+    workspaceId?: string;
+    action?: string;
+    phoneNumberId?: string;
+  };
   if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
   await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  // WhatsApp actions (folded in: proxy blocks new function creation)
+  if (action === "listWhatsAppAccounts") {
+    return listPendingWhatsAppAccounts(workspaceId);
+  }
+  if (action === "selectWhatsAppNumber") {
+    if (!phoneNumberId) throw new HttpsError("invalid-argument", "phoneNumberId is required.");
+    const result = await selectWhatsAppNumber(workspaceId, uid, phoneNumberId);
+    logger.info("WhatsApp number connected", { workspaceId, phoneNumberId: result.phoneNumberId });
+    return result;
+  }
   const snap = await db()
     .collection("workspaces")
     .doc(workspaceId)

@@ -62,11 +62,11 @@ export async function getWhatsAppOAuthStatus(workspaceId: string): Promise<Whats
 export async function listWhatsAppAccounts(
   workspaceId: string,
 ): Promise<{ accounts: WhatsAppBusinessAccount[] }> {
-  const fn = httpsCallable<{ workspaceId: string }, { accounts: WhatsAppBusinessAccount[] }>(
-    functions,
-    'whatsappOAuthListAccounts',
-  );
-  const res = await fn({ workspaceId });
+  const fn = httpsCallable<
+    { workspaceId: string; action: string },
+    { accounts: WhatsAppBusinessAccount[] }
+  >(functions, 'metaOAuthStatus');
+  const res = await fn({ workspaceId, action: 'listWhatsAppAccounts' });
   return res.data;
 }
 
@@ -76,9 +76,9 @@ export async function selectWhatsAppNumber(
   phoneNumberId: string,
 ): Promise<{ phoneNumberId: string; displayName: string }> {
   const fn = httpsCallable<
-    { workspaceId: string; phoneNumberId: string },
+    { workspaceId: string; action: string; phoneNumberId: string },
     { phoneNumberId: string; displayName: string }
-  >(functions, 'whatsappOAuthSelectNumber');
-  const res = await fn({ workspaceId, phoneNumberId });
+  >(functions, 'metaOAuthStatus');
+  const res = await fn({ workspaceId, action: 'selectWhatsAppNumber', phoneNumberId });
   return res.data;
 }
