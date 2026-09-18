@@ -1129,9 +1129,11 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   if (
     conn.status === "connected" &&
     conn.pageId &&
-    (conn.instagram === undefined || conn.pagePictureUrl === undefined)
+    (conn.instagram === undefined || conn.pagePictureUrl == null)
   ) {
-    // Backfill for pages connected before social-profile detection shipped.
+    // Backfill for pages connected before social-profile detection shipped,
+    // or where the picture lookup failed at connect time (a null picture is
+    // retried; a page with genuinely no picture just resolves null again).
     const token = await resolvePageToken(workspaceId, "");
     if (token) {
       const social = await getPageSocialProfile(conn.pageId, token);
