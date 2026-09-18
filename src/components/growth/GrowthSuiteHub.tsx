@@ -24,6 +24,7 @@ interface GrowthSuiteHubProps {
   initialOverlayFilter?: OverlayType | 'all';
   availableBots?: Array<{ id: string; name: string }>;
   onNavigateToFlows?: (botId?: string) => void;
+  workspaceId?: string;
   workspaceName?: string;
   workspaceSlug?: string;
   onTabChange?: (tab: GrowthSuiteTab) => void;
@@ -34,6 +35,7 @@ export const GrowthSuiteHub: React.FC<GrowthSuiteHubProps> = ({
   initialOverlayFilter = 'all',
   availableBots,
   onNavigateToFlows,
+  workspaceId,
   workspaceName = 'Apex Marketing',
   workspaceSlug = 'apex-marketing',
   onTabChange
@@ -153,6 +155,7 @@ export const GrowthSuiteHub: React.FC<GrowthSuiteHubProps> = ({
 
       {activeTab === 'overlays' && (
         <WebsiteOverlaysView 
+          workspaceId={workspaceId}
           availableBots={availableBots}
           onNavigateToFlows={onNavigateToFlows}
           initialFilter={overlayFilter}

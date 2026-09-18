@@ -63,6 +63,15 @@ import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
 import { handleCloakerRequest, CloakerReq, CloakerRes } from "./cloaker";
 import {
+  overlayList,
+  overlaySave,
+  overlayDelete,
+  overlaySetStatus,
+  handleOverlayTrackRequest,
+  OverlayTrackReq,
+  OverlayTrackRes,
+} from "./overlays";
+import {
   resolvePersonalizationTags,
   getContactForRecipient,
   getContactForPhone,
@@ -249,6 +258,15 @@ export const metaWebhook = onRequest(
     // 0. send.chat link cloaker: host-based routing takes precedence over
     //    the Meta webhook logic. Non-send.chat hosts fall through untouched.
     if (await handleCloakerRequest(req as unknown as CloakerReq, res as unknown as CloakerRes)) {
+      return;
+    }
+
+    // 0b. Website Overlays SDK tracking: POST /__overlay/track (batched
+    //     impression/click/lead events from overlays.js). Folded in here
+    //     because creating new functions fails through the egress proxy.
+    if (
+      await handleOverlayTrackRequest(req as unknown as OverlayTrackReq, res as unknown as OverlayTrackRes)
+    ) {
       return;
     }
 
@@ -1551,6 +1569,21 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     const result = await selectWhatsAppNumber(workspaceId, uid, phoneNumberId);
     logger.info("WhatsApp number connected", { workspaceId, phoneNumberId: result.phoneNumberId });
     return result;
+  }
+  // Website Overlays SDK actions (folded in: proxy blocks new function
+  // creation; logic lives in ./overlays so it can split out later).
+  if (action === "overlayList") {
+    return overlayList(workspaceId);
+  }
+  if (action === "overlaySave") {
+    return overlaySave(workspaceId, uid, (request.data as Record<string, unknown>).overlay);
+  }
+  if (action === "overlayDelete") {
+    return overlayDelete(workspaceId, (request.data as Record<string, unknown>).overlayId);
+  }
+  if (action === "overlaySetStatus") {
+    const data = request.data as Record<string, unknown>;
+    return overlaySetStatus(workspaceId, data.overlayId, data.status);
   }
   const snap = await db()
     .collection("workspaces")
