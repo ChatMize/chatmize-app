@@ -156,7 +156,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
           <div className="p-2.5 pb-2 border-b border-slate-800 flex items-center justify-between">
             <div>
               <span className="text-xs font-bold text-white block">Karl Schuckert</span>
-              <span className="text-[10px] text-slate-400">Meta Account Anchor &bull; {workspaces.length} Connected Workspaces</span>
+              <span className="text-[10px] text-slate-400">Meta Account Anchor &bull; {workspaces.filter(w => !w.deleted).length} Connected Workspaces</span>
             </div>
             <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold">
               Meta Sync Ready
@@ -165,7 +165,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
 
           {/* Workspaces List with FB + IG hierarchy + SMS & Web Bot */}
           <div className="py-1.5 max-h-72 overflow-y-auto space-y-1">
-            {workspaces.map((ws) => {
+            {workspaces.filter(ws => !ws.deleted).map((ws) => {
               const isCurrent = ws.id === activeWorkspaceId;
               const hasSms = Boolean(ws.connectedSms?.connected);
               const hasBot = Boolean(ws.connectedStandaloneChat?.enabled);
