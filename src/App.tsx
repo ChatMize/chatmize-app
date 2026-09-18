@@ -1036,7 +1036,6 @@ export default function App() {
             <MetaReconnectBanner
               workspaceId={activeWorkspace.id}
               workspaceName={activeWorkspace.name}
-              onGoToChannels={() => { setSettingsInitialTab('channels'); setActiveTab('settings'); }}
             />
           )}
           {showPlanNudge && (

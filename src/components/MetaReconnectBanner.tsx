@@ -5,20 +5,17 @@ import { getMetaOAuthStatus, startMetaOAuth } from '../lib/meta';
 interface MetaReconnectBannerProps {
   workspaceId: string;
   workspaceName?: string;
-  /** Jump to Settings > Channels. */
-  onGoToChannels: () => void;
 }
 
 /**
  * Sticky top banner shown app-wide when the workspace's Meta page token was
  * killed (error 190). Inbound keeps flowing; outbound stays broken until the
- * owner reconnects. The Reconnect button starts OAuth and returns to the
- * Channels page so the owner can verify the card flipped to connected.
+ * owner reconnects. One button does the whole job: it starts OAuth and
+ * returns to the Channels page so the owner can verify the reconnect landed.
  */
 export const MetaReconnectBanner: React.FC<MetaReconnectBannerProps> = ({
   workspaceId,
   workspaceName,
-  onGoToChannels,
 }) => {
   const [tokenInvalid, setTokenInvalid] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -62,12 +59,6 @@ export const MetaReconnectBanner: React.FC<MetaReconnectBannerProps> = ({
           reconnect. It takes about 30 seconds.
         </p>
       </div>
-      <button
-        onClick={onGoToChannels}
-        className="text-xs font-semibold text-amber-200/80 hover:text-amber-100 underline underline-offset-2 shrink-0 cursor-pointer"
-      >
-        Channels
-      </button>
       <button
         onClick={handleReconnect}
         disabled={starting}
