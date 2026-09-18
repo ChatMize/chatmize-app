@@ -221,9 +221,11 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   onNavigateToAudience,
   onNavigateToFlows
 }) => {
-  // The workspace this inbox belongs to. Falls back to the legacy dev
-  // workspace id so older test setups keep working.
-  const workspaceId = workspaceIdProp || 'ws-chatmize-dev';
+  // Conversation data lives in the real Firestore workspace where the
+  // webhook handler persists it (ws-chatmize-dev). The localStorage workspace
+  // id is a UI silo label, not a Firestore path, so it must not be used here.
+  // (Proper multi-workspace mapping lands with the support widget rebuild.)
+  const workspaceId = 'ws-chatmize-dev';
   // State for contacts from Firestore
   const [contacts, setContacts] = useState<ContactRecord[]>([]);
   const [isLoadingContacts, setIsLoadingContacts] = useState<boolean>(true);
