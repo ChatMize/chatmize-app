@@ -95,6 +95,7 @@ export async function buildWhatsAppLoginUrl(
     scope: WHATSAPP_OAUTH_SCOPES.join(","),
     response_type: "code",
     state,
+    auth_type: "rerequest",
   });
   return `https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth?${params.toString()}`;
 }
