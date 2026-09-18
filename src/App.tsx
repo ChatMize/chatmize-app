@@ -69,7 +69,14 @@ import { WorkspaceSilo } from './types/workspace';
 import { DEFAULT_WORKSPACES } from './data/workspaceDefaults';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('bot-list');
+  const [activeTab, setActiveTab] = useState(() => {
+    // Restore the last viewed tab so refresh keeps you on the same page
+    try {
+      return localStorage.getItem('chatmize_activeTab') || 'bot-list';
+    } catch {
+      return 'bot-list';
+    }
+  });
   const [activeBotId, setActiveBotId] = useState<string>('bot-1');
   const [activeBotTitle, setActiveBotTitle] = useState<string>('(Ad) Build-A-Bot Invite');
   const [isBotsExpanded, setIsBotsExpanded] = useState<boolean>(true);
@@ -168,6 +175,15 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Persist the active tab so a browser refresh keeps you on the same page.
+  useEffect(() => {
+    try {
+      localStorage.setItem('chatmize_activeTab', activeTab);
+    } catch {
+      // storage unavailable; ignore
+    }
+  }, [activeTab]);
 
   // Deep link: ?snapshot=<id> opens the snapshot import view.
   const [deepSnapshotId, setDeepSnapshotId] = useState<string | null>(null);
