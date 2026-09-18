@@ -155,6 +155,11 @@ export function SettingsView({
     }
   }, [initialTab]);
 
+  // Persist the active tab so a refresh restores the same settings tab.
+  useEffect(() => {
+    try { localStorage.setItem('chatmize_settings_tab', activeTab); } catch {}
+  }, [activeTab]);
+
   // Channel placeholders. These describe the architecture honestly: only the Meta
   // Page anchor (MetaConnectCard below) and SMS (SmsChannelCard below) have live
   // status. Nothing here claims to be connected until its setup really exists.

@@ -25,6 +25,7 @@ const APP_RETURN_URL = "https://app.chatmize.com/";
 const WHATSAPP_OAUTH_SCOPES = [
   "whatsapp_business_management",
   "whatsapp_business_messaging",
+  "business_management",
 ];
 
 const STATE_TTL_MS = 10 * 60 * 1000;

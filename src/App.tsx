@@ -166,7 +166,11 @@ export default function App() {
   // localStorage bypass: a signed-out user sees the auth gate, period.
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan'>('general');
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan'>(() => {
+    try {
+      return (localStorage.getItem('chatmize_settings_tab') as 'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan') || 'general';
+    } catch { return 'general'; }
+  });
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges((user) => {
