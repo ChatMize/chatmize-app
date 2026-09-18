@@ -159,7 +159,7 @@ async function requireWorkspaceAccess(
  *   https://us-west2-<project>.cloudfunctions.net/metaWebhook?workspace=<workspaceId>
  */
 export const metaWebhook = onRequest(
-  { region: REGION, secrets: [META_APP_SECRET, META_VERIFY_TOKEN] },
+  { region: REGION, secrets: [META_APP_SECRET, META_INSTAGRAM_APP_SECRET, META_VERIFY_TOKEN] },
   async (req, res) => {
     // 1. Verification handshake
     if (req.method === "GET") {
@@ -183,10 +183,15 @@ export const metaWebhook = onRequest(
       return;
     }
 
-    // 2. Signature check: reject anything Meta did not sign.
+    // 2. Signature check: reject anything Meta did not sign. Events may be
+    //    signed by either the main Meta app or the ChatMize-IG app (Instagram
+    //    Login), so a signature valid against either secret is accepted.
     const rawBody: Buffer = (req as unknown as { rawBody?: Buffer }).rawBody ?? Buffer.from("");
     const signature = req.header("X-Hub-Signature-256");
-    if (!verifyMetaSignature(rawBody, signature, META_APP_SECRET.value())) {
+    const signatureOk =
+      verifyMetaSignature(rawBody, signature, META_APP_SECRET.value()) ||
+      verifyMetaSignature(rawBody, signature, META_INSTAGRAM_APP_SECRET.value());
+    if (!signatureOk) {
       logger.warn("Webhook rejected: invalid signature");
       res.sendStatus(401);
       return;
