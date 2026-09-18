@@ -107,3 +107,12 @@ current single-user behavior.
 4. **Push notification to the owner** (pending push system): once ChatMize has
    push notifications, a dead token also pushes to the owner's devices, same
    as the email. Push defaults are still an open product decision.
+
+## Reconnect is one click, no second page pick (shipped 2026-09-18)
+
+Karl flagged that reconnecting asked him to pick the page twice: once in
+Facebook's dialog, once in ChatMize's own picker. Fixed in commit d3799b0:
+the OAuth callback now auto-reselects the previously connected page when the
+fresh grant still includes it (`getPriorConnectedPageId` + `selectWorkspacePage`
+in `metaOAuthCallback`). The in-app picker only appears when there is no prior
+page or the prior page is no longer in the grant.
