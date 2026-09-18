@@ -89,6 +89,8 @@ export interface Workspace {
   connectedPage: MetaPageConnection;
   connectedSms?: SmsConnection;
   connectedStandaloneChat?: StandaloneChatbotConnection;
+  deleted?: boolean;
+  deletedAt?: string;
   planTier: WorkspacePlanTier;
   pricingModel: WorkspacePricingModel;
   whitelabel: WhitelabelSettings;

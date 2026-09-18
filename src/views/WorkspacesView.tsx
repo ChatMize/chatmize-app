@@ -99,6 +99,7 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const filteredWorkspaces = workspaces.filter(ws => {
+    if (ws.deleted) return false; // Hide soft-deleted from main list
     const matchesSearch = 
       ws.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       ws.connectedPage.pageName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -113,6 +114,8 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
     if (filterType === 'active') return ws.id === activeWorkspaceId;
     return true;
   });
+
+  const deletedWorkspaces = workspaces.filter(ws => ws.deleted);
 
   const handleCopy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -280,14 +283,39 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
   const handleConfirmDelete = () => {
     if (!deleteConfirmState) return;
     const { id } = deleteConfirmState;
-    const updated = workspaces.filter(ws => ws.id !== id);
+    // Soft delete: mark as deleted with timestamp, retain for 90 days
+    const updated = workspaces.map(ws =>
+      ws.id === id
+        ? { ...ws, deleted: true, deletedAt: new Date().toISOString() }
+        : ws
+    );
     onUpdateWorkspaces(updated);
-    if (activeWorkspaceId === id && updated.length > 0) {
-      onSelectWorkspace(updated[0].id);
+    const remaining = updated.filter(ws => !ws.deleted);
+    if (activeWorkspaceId === id && remaining.length > 0) {
+      onSelectWorkspace(remaining[0].id);
     }
     setDeleteConfirmState(null);
-    setToastMessage('Workspace removed successfully.');
+    setToastMessage('Workspace moved to Recently Deleted. You have 90 days to restore it.');
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handleRestoreWorkspace = (id: string) => {
+    const updated = workspaces.map(ws =>
+      ws.id === id
+        ? { ...ws, deleted: false, deletedAt: undefined }
+        : ws
+    );
+    onUpdateWorkspaces(updated);
+    setToastMessage('Workspace restored successfully.');
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const getDaysRemaining = (deletedAt?: string): number => {
+    if (!deletedAt) return 90;
+    const deleted = new Date(deletedAt).getTime();
+    const now = Date.now();
+    const daysPassed = Math.floor((now - deleted) / (1000 * 60 * 60 * 24));
+    return Math.max(0, 90 - daysPassed);
   };
 
   const handleSaveWhitelabel = (wsId: string, wlSettings: Workspace['whitelabel']) => {
@@ -787,6 +815,41 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* RECENTLY DELETED SECTION */}
+          {deletedWorkspaces.length > 0 && (
+            <div className="mt-8 rounded-2xl border border-amber-500/20 bg-amber-500/5 overflow-hidden">
+              <div className="px-5 py-4 border-b border-amber-500/10 flex items-center gap-2">
+                <Trash2 className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-bold text-amber-300">Recently Deleted</h3>
+                <span className="text-[11px] text-slate-400">({deletedWorkspaces.length} workspace{deletedWorkspaces.length !== 1 ? 's' : ''} • auto-permanently deleted after 90 days)</span>
+              </div>
+              <div className="divide-y divide-amber-500/10">
+                {deletedWorkspaces.map((ws) => {
+                  const daysLeft = getDaysRemaining(ws.deletedAt);
+                  return (
+                    <div key={ws.id} className="px-5 py-3.5 flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="font-bold text-sm text-slate-300">{ws.name}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          Deleted {ws.deletedAt ? new Date(ws.deletedAt).toLocaleDateString() : 'recently'} •{' '}
+                          <span className={daysLeft <= 7 ? 'text-rose-400 font-semibold' : 'text-amber-400'}>
+                            {daysLeft} day{daysLeft !== 1 ? 's' : ''} left to restore
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleRestoreWorkspace(ws.id)}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-colors flex-shrink-0 cursor-pointer"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         /* VIEW 2: OMNICHANNEL CARDS VIEW */
@@ -2026,15 +2089,20 @@ const DeleteWorkspaceModal: React.FC<{
 
         <div className="text-xs text-slate-300 bg-slate-950/60 p-3 rounded-xl border border-slate-800 leading-relaxed space-y-2">
           <p>
-            You are about to permanently delete <span className="font-bold text-white">"{workspaceName}"</span>.
+            You are about to delete <span className="font-bold text-white">"{workspaceName}"</span>.
+          </p>
+          <p className="text-emerald-300 font-medium">
+            Your data is safe: we hold deleted workspaces for 90 days. You can restore everything from the Recently Deleted section on the Workspaces page.
           </p>
           <ul className="list-disc list-inside space-y-1 text-slate-400">
-            <li>All bot flows and automations will be lost</li>
+            <li>All bot flows and automations will be deactivated</li>
             <li>All connected accounts (Facebook, Instagram, WhatsApp, SMS) will be unlinked</li>
-            <li>All audience contacts and conversation history will be deleted</li>
-            <li>All campaigns, broadcasts, and scheduled messages will be cancelled</li>
-            <li>API keys and integrations for this workspace will be revoked</li>
+            <li>All audience contacts and conversation history will be archived</li>
+            <li>All campaigns, broadcasts, and scheduled messages will be paused</li>
           </ul>
+          <p className="text-slate-500">
+            After 90 days the workspace and all its data will be permanently erased.
+          </p>
         </div>
 
         <label className="flex items-start gap-2.5 cursor-pointer group">
@@ -2045,7 +2113,7 @@ const DeleteWorkspaceModal: React.FC<{
             className="mt-0.5 w-4 h-4 rounded accent-rose-500 cursor-pointer"
           />
           <span className="text-xs text-slate-300 group-hover:text-white transition-colors">
-            I understand that deleting this workspace will permanently erase all bots, connected accounts, contacts, and data. This cannot be recovered.
+            I understand this workspace will be deactivated and held for 90 days before permanent deletion.
           </span>
         </label>
 
