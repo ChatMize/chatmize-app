@@ -568,6 +568,9 @@ export const sendChannelMessage = onCall(
             },
             { merge: true },
           );
+        // Fire-and-forget owner email; never breaks the send path.
+        const { notifyOwnerReconnect } = await import("./notifications.js");
+        void notifyOwnerReconnect(workspaceId, "meta");
         throw new HttpsError(
           "failed-precondition",
           "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
@@ -1666,3 +1669,9 @@ export const whatsappOAuthSelectNumber = onCall({ region: REGION }, async (reque
   logger.info("WhatsApp number connected", { workspaceId, phoneNumberId: result.phoneNumberId });
   return result;
 });
+
+/**
+ * Phase 1 SES notification triggers (see notifications.ts): owner reconnect
+ * emails on token invalidation, and human handoff emails.
+ */
+export { onIntegrationInvalidated, onHandoffCreated } from "./notifications";
