@@ -230,6 +230,10 @@ export async function ensureFreshPageToken(workspaceId: string): Promise<PageTok
       { merge: true },
     );
     cache.delete(`pagetoken:${workspaceId}`);
+    // Fire-and-forget owner email: the notification path must never break
+    // token health checking.
+    const { notifyOwnerReconnect } = await import("./notifications.js");
+    void notifyOwnerReconnect(workspaceId, "meta");
     logger.warn("Meta page token invalid, flagged for reconnect", { workspaceId, reason });
     return "invalid";
   }

@@ -465,6 +465,9 @@ export async function markIgTokenInvalid(workspaceId: string, reason: string): P
       { merge: true },
     );
   cache.delete(`igtoken:${workspaceId}`);
+  // Fire-and-forget owner email; never breaks the invalidation path.
+  const { notifyOwnerReconnect } = await import("./notifications.js");
+  void notifyOwnerReconnect(workspaceId, "instagram");
 }
 
 /** Step 3: persist the IG token as the workspace's own secret + connection doc. */
