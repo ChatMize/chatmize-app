@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, RefreshCw, Loader2, X } from 'lucide-react';
 import { startMetaOAuth } from '../lib/meta';
 
@@ -17,7 +18,9 @@ export function isConnectionExpiredError(message: string | null): boolean {
 }
 
 /**
- * Popup shown the moment a send fails because the Meta page token died.
+ * Full-screen popup shown the moment a send fails because the Meta page
+ * token died. Rendered through a portal to document.body so it sits on top
+ * of everything with the app faded behind it.
  * Owner: one-click reconnect right in the modal.
  * Non-owner: told to contact the workspace owner (only the owner can
  * reconnect through Facebook Login).
@@ -41,9 +44,9 @@ export const MetaReconnectModal: React.FC<MetaReconnectModalProps> = ({
     }
   };
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -120,6 +123,7 @@ export const MetaReconnectModal: React.FC<MetaReconnectModalProps> = ({
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
