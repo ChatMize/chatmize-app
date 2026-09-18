@@ -217,27 +217,36 @@ export async function exchangeWhatsAppCode(code: string): Promise<WhatsAppConnec
   }
   const token = longData.access_token;
 
-  // 3) WhatsApp Business Accounts owned by this user.
-  const wabas = (await graphGet("/me/whatsapp_business_accounts", token)) as {
+  // 3) WhatsApp Business Accounts: go through the user's Businesses.
+  // (There is no /me/whatsapp_business_accounts edge; WABAs are owned by Businesses.)
+  const businesses = (await graphGet("/me/businesses?fields=id,name&limit=50", token)) as {
     data?: Array<{ id: string; name: string }>;
   };
   const accounts: WhatsAppBusinessAccount[] = [];
-  for (const waba of wabas.data ?? []) {
-    const numbers = (await graphGet(
-      `/${waba.id}/phone_numbers?fields=id,display_phone_number,verified_name&limit=100`,
+  for (const biz of businesses.data ?? []) {
+    const wabas = (await graphGet(
+      `/${biz.id}/owned_whatsapp_business_accounts?fields=id,name&limit=50`,
       token,
     )) as {
-      data?: Array<{ id: string; display_phone_number: string; verified_name?: string }>;
+      data?: Array<{ id: string; name: string }>;
     };
-    accounts.push({
-      wabaId: waba.id,
-      wabaName: waba.name ?? waba.id,
-      phoneNumbers: (numbers.data ?? []).map((n) => ({
-        phoneNumberId: n.id,
-        displayPhoneNumber: n.display_phone_number ?? n.id,
-        verifiedName: n.verified_name ?? null,
-      })),
-    });
+    for (const waba of wabas.data ?? []) {
+      const numbers = (await graphGet(
+        `/${waba.id}/phone_numbers?fields=id,display_phone_number,verified_name&limit=100`,
+        token,
+      )) as {
+        data?: Array<{ id: string; display_phone_number: string; verified_name?: string }>;
+      };
+      accounts.push({
+        wabaId: waba.id,
+        wabaName: waba.name ?? waba.id,
+        phoneNumbers: (numbers.data ?? []).map((n) => ({
+          phoneNumberId: n.id,
+          displayPhoneNumber: n.display_phone_number ?? n.id,
+          verifiedName: n.verified_name ?? null,
+        })),
+      });
+    }
   }
 
   return { accounts, token };
