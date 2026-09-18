@@ -58,6 +58,7 @@ import {
   saveContact, 
   updateContactField, 
   seedInitialMetaContacts,
+  prodDb,
   ContactRecord 
 } from '../lib/firebase';
 
@@ -226,6 +227,12 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   // id is a UI silo label, not a Firestore path, so it must not be used here.
   // (Proper multi-workspace mapping lands with the support widget rebuild.)
   const workspaceId = 'ws-chatmize-dev';
+  // Inbox contacts and conversations live in the backend database
+  // (chatmize-prod), where the webhook handler persists them. The applet
+  // database only holds stale demo/seed records, so every inbox read and
+  // write must target prodDb until the workspace rebuild unifies this.
+  const updateInboxContact = (contactId: string, updates: Partial<ContactRecord>) =>
+    updateContactField(contactId, updates, prodDb);
   // State for contacts from Firestore
   const [contacts, setContacts] = useState<ContactRecord[]>([]);
   const [isLoadingContacts, setIsLoadingContacts] = useState<boolean>(true);
@@ -308,7 +315,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   const handleQuickStatusChange = async (newStatus: ContactRecord['status']) => {
     if (!activeContact) return;
     try {
-      await updateContactField(activeContact.id, { status: newStatus });
+      await updateInboxContact(activeContact.id, { status: newStatus });
       setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, status: newStatus } : c));
       setEditForm(prev => ({ ...prev, status: newStatus }));
     } catch (err) {
@@ -338,7 +345,9 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
         (err) => {
           console.error('Failed to subscribe to contacts:', err);
           setIsLoadingContacts(false);
-        }
+        },
+        500,
+        prodDb // Backend database: webhook-written contacts live here
       );
     };
 
@@ -384,7 +393,8 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       },
       (err) => {
         console.error('Failed to subscribe to real messages:', err);
-      }
+      },
+      prodDb // Backend database: webhook-written conversations live here
     );
 
     return () => unsubscribe();
@@ -753,11 +763,12 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
         )
       }));
 
-      // Write to Firestore so it persists and appears in realtime
+      // Write to Firestore so it persists and appears in realtime.
+      // Must target prodDb (backend database) so the message lands in the
+      // same conversation thread the webhook reads and writes.
       const { doc, setDoc, collection } = await import('firebase/firestore');
-      const { db } = await import('../lib/firebase');
       const convoId = `${activeContact.channel}_${activeContact.senderId || activeContact.id}`;
-      const msgRef = doc(collection(db, 'workspaces', workspaceId, 'conversations', convoId, 'messages'));
+      const msgRef = doc(collection(prodDb, 'workspaces', workspaceId, 'conversations', convoId, 'messages'));
       await setDoc(msgRef, {
         text: textToSend,
         direction: 'outbound',
@@ -790,7 +801,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     }
 
     // Update last interaction in Firestore
-    updateContactField(activeContact.id, {
+    updateInboxContact(activeContact.id, {
       lastInteractionAt: new Date().toISOString()
     }).catch(err => console.error('Error updating interaction:', err));
 
@@ -921,7 +932,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     const flowTag = `Delivered: ${content.title}`;
     if (!activeContact.tags.includes(flowTag)) {
       const updatedTags = [...activeContact.tags, flowTag];
-      updateContactField(activeContact.id, { tags: updatedTags }).catch(console.error);
+      updateInboxContact(activeContact.id, { tags: updatedTags }).catch(console.error);
     }
   };
 
@@ -1018,7 +1029,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
         notes: editForm.notes.trim()
       };
 
-      await updateContactField(activeContact.id, updates);
+      await updateInboxContact(activeContact.id, updates);
 
       // Update local contact record
       setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, ...updates } : c));
@@ -1053,7 +1064,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     if (activeContact.tags.includes(cleanTag)) return;
 
     const newTags = [...activeContact.tags, cleanTag];
-    await updateContactField(activeContact.id, { tags: newTags });
+    await updateInboxContact(activeContact.id, { tags: newTags });
     setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, tags: newTags } : c));
     setNewTagInput('');
   };
@@ -1062,7 +1073,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   const handleRemoveTag = async (tagToRemove: string) => {
     if (!activeContact) return;
     const newTags = activeContact.tags.filter(t => t !== tagToRemove);
-    await updateContactField(activeContact.id, { tags: newTags });
+    await updateInboxContact(activeContact.id, { tags: newTags });
     setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, tags: newTags } : c));
   };
 
@@ -1077,7 +1088,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       [key]: val
     };
 
-    await updateContactField(activeContact.id, { 
+    await updateInboxContact(activeContact.id, { 
       variables: updatedVars,
       customFields: updatedVars
     });

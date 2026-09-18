@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  getFirestore, 
+  getFirestore,
+  Firestore,
   collection, 
   doc, 
   getDocs, 
@@ -54,6 +55,16 @@ const app = getApps().length === 0 ? initializeApp(resolvedConfig) : getApp();
 
 // Initialize Firestore database using the configured database ID
 export const db = getFirestore(app, firestoreDatabaseId);
+
+/**
+ * The backend (Cloud Functions: webhooks, OAuth, senders) reads and writes
+ * the `chatmize-prod` database, NOT the applet database above. Any UI that
+ * must see live backend data (inbox contacts/conversations) has to use
+ * prodDb explicitly. The two databases diverged when backend work
+ * standardized on chatmize-prod while the frontend kept the AI Studio
+ * export's applet database id.
+ */
+export const prodDb = getFirestore(app, 'chatmize-prod');
 
 /**
  * Demo seeding is opt-in and dev-only. It must never run in staging or
@@ -339,9 +350,10 @@ export async function testFirebaseConnection(): Promise<boolean> {
 export function subscribeToContacts(
   onUpdate: (contacts: ContactRecord[]) => void,
   onError?: (err: Error) => void,
-  maxResults = 500
+  maxResults = 500,
+  dbInstance: Firestore = db
 ) {
-  const contactsRef = collection(db, 'contacts');
+  const contactsRef = collection(dbInstance, 'contacts');
   const q = query(contactsRef, orderBy('lastInteractionAt', 'desc'), limit(maxResults));
 
   return onSnapshot(
@@ -399,8 +411,9 @@ export function subscribeToConversationMessages(
   convoId: string,
   onUpdate: (messages: Array<{ id: string; direction: string; text: string; timestampMs: number; senderId: string }>) => void,
   onError?: (err: Error) => void,
+  dbInstance: Firestore = db,
 ) {
-  const messagesRef = collection(db, 'workspaces', workspaceId, 'conversations', convoId, 'messages');
+  const messagesRef = collection(dbInstance, 'workspaces', workspaceId, 'conversations', convoId, 'messages');
   const q = query(messagesRef, orderBy('timestampMs', 'asc'), limit(100));
 
   return onSnapshot(
@@ -453,9 +466,10 @@ export async function saveContact(contact: ContactRecord): Promise<void> {
 // Update specific fields on a contact
 export async function updateContactField(
   contactId: string, 
-  updates: Partial<ContactRecord>
+  updates: Partial<ContactRecord>,
+  dbInstance: Firestore = db
 ): Promise<void> {
-  const contactRef = doc(db, 'contacts', contactId);
+  const contactRef = doc(dbInstance, 'contacts', contactId);
   const patch: Record<string, any> = {
     ...updates,
     lastInteractionAt: new Date().toISOString(),
