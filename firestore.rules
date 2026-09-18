@@ -178,6 +178,25 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // SegMate migration importer: backend-written via Admin SDK; Super Admin
+    // reads (Karl's concierge dashboard). Clients never write.
+    match /migration_rows/{rowKey} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /migration_jobs/{jobId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /migration_staging/{rowKey} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /migration_billing/{rowKey} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
     // Explicit deny-all catch-all. (Firestore denies by default when no rule
     // matches; this makes the posture visible in the file itself.)
     match /{document=**} {
