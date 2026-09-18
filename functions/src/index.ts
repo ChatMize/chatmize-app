@@ -62,6 +62,17 @@ import {
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
 import { handleCloakerRequest, CloakerReq, CloakerRes } from "./cloaker";
+import { isWaitlistRequest, handleWaitlistRequest } from "./waitlist";
+import {
+  overlayList,
+  overlaySave,
+  overlayDelete,
+  overlaySetStatus,
+  handleOverlayTrackRequest,
+  OverlayTrackReq,
+  OverlayTrackRes,
+} from "./overlays";
+import { handleContestAdminAction, handleContestPublicRequest } from "./contest.js";
 import {
   resolvePersonalizationTags,
   getContactForRecipient,
@@ -246,9 +257,42 @@ async function requireWorkspaceAccess(
 export const metaWebhook = onRequest(
   { region: REGION, secrets: [META_APP_SECRET, META_INSTAGRAM_APP_SECRET, META_VERIFY_TOKEN] },
   async (req, res) => {
-    // 0. send.chat link cloaker: host-based routing takes precedence over
+    // 0. Contest engine public API (folded in: proxy blocks new function
+    //    creation). Unauthenticated by design — the entry page and referral
+    //    links hit POST /contest-api (hosting rewrite -> this function).
+    //    Anti-fraud (dedupe, rate limits, velocity flags) runs inside.
+    const reqPath = (req.path || "") as string;
+    if (reqPath === "/contest-api" || reqPath.endsWith("/contest-api")) {
+      await handleContestPublicRequest(
+        req as unknown as Parameters<typeof handleContestPublicRequest>[0],
+        res as unknown as Parameters<typeof handleContestPublicRequest>[1],
+      );
+      return;
+    }
+
+    // 0b. send.chat link cloaker: host-based routing takes precedence over
     //    the Meta webhook logic. Non-send.chat hosts fall through untouched.
     if (await handleCloakerRequest(req as unknown as CloakerReq, res as unknown as CloakerRes)) {
+      return;
+    }
+
+    // 0b. Public waitlist capture: folded into this function because creating
+    //     new Cloud Functions via the API is blocked through this VM's egress
+    //     proxy. Routed on the ?wl= query param (or a /waitlist path prefix).
+    if (isWaitlistRequest(req)) {
+      await handleWaitlistRequest(
+        req as unknown as Parameters<typeof handleWaitlistRequest>[0],
+        res as unknown as Parameters<typeof handleWaitlistRequest>[1],
+      );
+      return;
+    }
+
+    // 0c. Website Overlays SDK tracking: POST /__overlay/track (batched
+    //     impression/click/lead events from overlays.js). Folded in here
+    //     because creating new functions fails through the egress proxy.
+    if (
+      await handleOverlayTrackRequest(req as unknown as OverlayTrackReq, res as unknown as OverlayTrackRes)
+    ) {
       return;
     }
 
@@ -1546,6 +1590,12 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   };
   if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
   await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  // Contest engine admin actions (folded in: proxy blocks new function
+  // creation). All contest mutations go through ./contest.js; reads happen
+  // client-side via Firestore security rules.
+  if (typeof action === "string" && action.startsWith("contest")) {
+    return handleContestAdminAction(action, (request.data ?? {}) as Record<string, unknown>, uid);
+  }
   // WhatsApp actions (folded in: proxy blocks new function creation)
   if (action === "listWhatsAppAccounts") {
     return listPendingWhatsAppAccounts(workspaceId);
@@ -1555,6 +1605,21 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     const result = await selectWhatsAppNumber(workspaceId, uid, phoneNumberId);
     logger.info("WhatsApp number connected", { workspaceId, phoneNumberId: result.phoneNumberId });
     return result;
+  }
+  // Website Overlays SDK actions (folded in: proxy blocks new function
+  // creation; logic lives in ./overlays so it can split out later).
+  if (action === "overlayList") {
+    return overlayList(workspaceId);
+  }
+  if (action === "overlaySave") {
+    return overlaySave(workspaceId, uid, (request.data as Record<string, unknown>).overlay);
+  }
+  if (action === "overlayDelete") {
+    return overlayDelete(workspaceId, (request.data as Record<string, unknown>).overlayId);
+  }
+  if (action === "overlaySetStatus") {
+    const data = request.data as Record<string, unknown>;
+    return overlaySetStatus(workspaceId, data.overlayId, data.status);
   }
   const snap = await db()
     .collection("workspaces")

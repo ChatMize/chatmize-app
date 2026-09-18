@@ -20,7 +20,7 @@ export interface MobileTriggerConfig {
   scrollPercent: number;
 }
 
-export type OverlayCtaAction = 'open_bot' | 'lead_form' | 'redirect_url' | 'enter_contest';
+export type OverlayCtaAction = 'open_bot' | 'open_url' | 'copy_code' | 'enter_contest';
 
 /**
  * STUB — Contest entities don't exist yet (see viral-contests-spec.md).
@@ -69,10 +69,15 @@ export interface WebsiteOverlay {
   requireNameCapture: boolean;
   removeBranding: boolean;
   whitelistedDomains: string[];
-  // EXTENSION POINTS (not yet implemented — see convertmate-comparison.md):
-  // - page/URL targeting + frequency capping (display rules)
-  // - A/B variant traffic splitting + per-variant stats
-  // - real embed SDK runtime (overlays.js) + Firestore backend
+  /** Display rules: frequency capping + page/URL targeting (enforced by overlays.js). */
+  frequency: { cooldownHours: number; maxPerVisitor: number };
+  pageTargeting: { mode: 'all' | 'include' | 'exclude'; patterns: string[] };
+  /** A/B test allocation: overlays sharing an abGroup compete; the snippet
+      picks one winner per visitor weighted by abWeight, sticky per visitor. */
+  abGroup: string;
+  abWeight: number;
+  // EXTENSION POINTS (remaining — see convertmate-comparison.md):
+  // - per-variant stats in the admin dashboard
   totalViews: number;
   totalInteractions: number;
   totalLeads: number;
