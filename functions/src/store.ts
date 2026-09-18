@@ -113,6 +113,12 @@ export async function persistInboundMessage(
     return;
   }
 
+  // New conversations enter as INACTIVE: automation is handling them, so they
+  // stay out of the active agent queue until a handoff or agent takeover.
+  // Existing docs keep their status (merge must not reset an active handoff).
+  const convoSnap = await convoRef.get();
+  const isNewConvo = !convoSnap.exists;
+
   const batch = db().batch();
   batch.set(
     convoRef,
@@ -122,7 +128,9 @@ export async function persistInboundMessage(
       recipientId: msg.recipientId,
       lastMessageAt: FieldValue.serverTimestamp(),
       lastMessageText: msg.text ?? "",
+      lastMessageDirection: "inbound",
       updatedAt: FieldValue.serverTimestamp(),
+      ...(isNewConvo ? { status: "inactive", agentHandling: false } : {}),
     },
     { merge: true },
   );
@@ -235,6 +243,7 @@ export async function recordOutboundMessage(
       senderId: recipientId,
       lastMessageAt: FieldValue.serverTimestamp(),
       lastMessageText: text,
+      lastMessageDirection: "outbound",
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -244,6 +253,7 @@ export async function recordOutboundMessage(
     channel,
     senderId: recipientId,
     text,
+    timestampMs: Date.now(),
     ok,
     error: error ?? null,
     externalId: metaMessageId,
