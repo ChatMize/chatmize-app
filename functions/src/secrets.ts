@@ -23,6 +23,11 @@ export const BANDWIDTH_ACCOUNT_ID = defineSecret("BANDWIDTH_ACCOUNT_ID");
 export const BANDWIDTH_API_TOKEN = defineSecret("BANDWIDTH_API_TOKEN");
 export const BANDWIDTH_API_SECRET = defineSecret("BANDWIDTH_API_SECRET");
 
+// Email (ChatMize-owned Resend account; workspaces send from their own
+// verified sender identity). AWS SES is a planned swap-in behind the same
+// email provider adapter — its secrets get added when it is wired.
+export const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
+
 // Page-scoped access tokens are stored per workspace so each tenant's Meta
 // assets stay isolated. The secret name maps 1:1 to a workspace id; the
 // default workspace uses META_PAGE_TOKEN_DEFAULT.

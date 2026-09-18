@@ -71,6 +71,7 @@ import {
   BANDWIDTH_ACCOUNT_ID,
   BANDWIDTH_API_TOKEN,
   BANDWIDTH_API_SECRET,
+  RESEND_API_KEY,
 } from "./secrets";
 import {
   normalizePhone,
@@ -101,6 +102,23 @@ import {
   SmsProvider,
   ParsedInboundSms,
 } from "./sms";
+import {
+  sendEmailViaProvider,
+  providerOf as emailProviderOf,
+  senderOf,
+  isValidEmail,
+  getEmailConnection,
+  saveEmailConnection,
+  ensureEmailAllowanceMonth,
+  persistOutboundEmail,
+  logEmail,
+  chargeForEmailSend,
+  EMAIL_CREDITS_PER_EMAIL,
+  EMAIL_PROVIDERS,
+  EmailConnection,
+  EmailProvider,
+  SendEmailPayload,
+} from "./email";
 
 /** All SMS provider secrets, for functions that may send via any provider. */
 const SMS_SECRETS = [
@@ -112,6 +130,9 @@ const SMS_SECRETS = [
   BANDWIDTH_API_TOKEN,
   BANDWIDTH_API_SECRET,
 ];
+
+/** All email provider secrets, for functions that may send via any provider. */
+const EMAIL_SECRETS = [RESEND_API_KEY];
 
 initializeApp();
 
@@ -548,6 +569,235 @@ export const getSmsStatus = onCall({ region: REGION }, async (request) => {
     monthlyAllowance: conn.monthlyAllowance,
     usedThisMonth: conn.usedThisMonth,
     optedIn,
+  };
+});
+
+// ---------------------------------------------------------------------------
+// Email (Resend adapter)
+// ---------------------------------------------------------------------------
+
+/** Monthly email allowance from the workspace's plan. Throws when the plan lacks email. */
+async function emailPlanAllowance(workspaceId: string): Promise<number> {
+  const ws = await db().collection("workspaces").doc(workspaceId).get();
+  const planId = ws.data()?.planId as string | undefined;
+  if (!planId) {
+    logger.info("Email: workspace has no plan; grandfathered with zero allowance", { workspaceId });
+    return 0;
+  }
+  const plan = await db().collection("plans").doc(planId).get();
+  const data = plan.data() as { features?: string[]; emailAllowanceMonthly?: number } | undefined;
+  if (!data?.features?.includes("email")) {
+    throw new HttpsError("permission-denied", "Your plan does not include email.");
+  }
+  return data.emailAllowanceMonthly ?? 0;
+}
+
+interface ConnectEmailData {
+  workspaceId?: string;
+  /** Display name on outbound mail, e.g. "Karl's Fitness Coaching". */
+  fromName?: string;
+  /** Verified sender address. Must be verified in the Resend dashboard first. */
+  fromEmail?: string;
+  replyTo?: string;
+  /** Email provider. Defaults to resend (only live provider). */
+  provider?: string;
+}
+
+/**
+ * Authenticated callable: connect the workspace's email sender identity.
+ * One identity per workspace; re-running updates it. The sender address
+ * must already be verified in Resend — verification happens in the Resend
+ * dashboard, not here.
+ */
+export const connectEmail = onCall(
+  { region: REGION },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    const { workspaceId, fromName, fromEmail, replyTo, provider } = (request.data ?? {}) as ConnectEmailData;
+    if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+    if (!fromName?.trim()) throw new HttpsError("invalid-argument", "A sender name is required.");
+    if (!fromEmail || !isValidEmail(fromEmail)) {
+      throw new HttpsError("invalid-argument", "A valid sender email address is required.");
+    }
+    if (replyTo && !isValidEmail(replyTo)) {
+      throw new HttpsError("invalid-argument", "That reply-to address is not valid.");
+    }
+    await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+
+    const chosen: EmailProvider = provider === "ses" ? "ses" : "resend";
+    if (chosen === "ses") {
+      throw new HttpsError("unimplemented", "AWS SES is not wired yet. Use provider 'resend'.");
+    }
+    const allowance = await emailPlanAllowance(workspaceId);
+    const now = new Date().toISOString();
+    const conn: EmailConnection = {
+      workspaceId,
+      fromName: fromName.trim(),
+      fromEmail: fromEmail.trim().toLowerCase(),
+      ...(replyTo ? { replyTo: replyTo.trim().toLowerCase() } : {}),
+      provider: chosen,
+      status: "active",
+      monthlyAllowance: allowance,
+      usedThisMonth: 0,
+      usageMonth: now.slice(0, 7),
+      createdAt: now,
+      updatedAt: now,
+    };
+    await saveEmailConnection(conn);
+    logger.info("Email sender connected for workspace", {
+      workspaceId,
+      fromEmail: conn.fromEmail,
+      provider: chosen,
+    });
+    return { fromEmail: conn.fromEmail, fromName: conn.fromName, provider: chosen };
+  },
+);
+
+interface SendEmailData {
+  workspaceId?: string;
+  to?: string;
+  subject?: string;
+  html?: string;
+  text?: string;
+  replyTo?: string;
+  broadcastId?: string;
+}
+
+/**
+ * Authenticated callable: send one email. Requires a connected sender
+ * identity and either allowance or credits to cover the send.
+ */
+export const sendEmail = onCall(
+  { region: REGION, secrets: EMAIL_SECRETS },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    const { workspaceId, to, subject, html, text, replyTo, broadcastId } = (request.data ?? {}) as SendEmailData;
+    if (!workspaceId || !to || !subject || !html) {
+      throw new HttpsError("invalid-argument", "workspaceId, to, subject, and html are required.");
+    }
+    if (subject.length > 200) {
+      throw new HttpsError("invalid-argument", "Subject is too long (max 200 characters).");
+    }
+    if (html.length > 200_000) {
+      throw new HttpsError("invalid-argument", "Email body is too large (max 200KB).");
+    }
+    await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+    await emailPlanAllowance(workspaceId);
+
+    const conn = await ensureEmailAllowanceMonth(workspaceId);
+    if (!conn || conn.status !== "active") {
+      throw new HttpsError("failed-precondition", "Email is not enabled for this workspace yet.");
+    }
+    const recipient = to.trim().toLowerCase();
+    if (!isValidEmail(recipient)) {
+      throw new HttpsError("invalid-argument", "That recipient address is not valid.");
+    }
+    if (replyTo && !isValidEmail(replyTo)) {
+      throw new HttpsError("invalid-argument", "That reply-to address is not valid.");
+    }
+
+    let charged: { chargedTo: "allowance" | "credits"; creditsCharged: number } =
+      { chargedTo: "allowance", creditsCharged: 0 };
+    try {
+      charged = await chargeForEmailSend(
+        workspaceId,
+        1,
+        broadcastId ? `email broadcast ${broadcastId}` : "email send",
+      );
+    } catch (err) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Email allowance and credits are exhausted. Top up credits to keep sending.",
+      );
+    }
+
+    try {
+      const provider = emailProviderOf(conn);
+      const payload: SendEmailPayload = {
+        to: recipient,
+        subject,
+        html,
+        ...(text ? { text } : {}),
+        replyTo: replyTo ?? conn.replyTo,
+        ...(broadcastId ? { tags: [{ name: "broadcast_id", value: broadcastId }] } : {}),
+      };
+      const messageId = await sendEmailViaProvider(provider, senderOf(conn), payload);
+      await persistOutboundEmail(workspaceId, senderOf(conn), recipient, subject, messageId);
+      await logEmail({
+        workspaceId,
+        direction: "outbound",
+        to: recipient,
+        from: senderOf(conn),
+        subject,
+        creditsCharged: charged.creditsCharged,
+        messageId,
+        status: "sent",
+        broadcastId,
+      });
+      return { ok: true, messageId, chargedTo: charged.chargedTo };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Email send failed.";
+      // Compensating refund: the workspace was charged before the provider sent,
+      // and the provider never billed for this message, so give the charge back.
+      if (charged.chargedTo === "credits" && charged.creditsCharged > 0) {
+        await grantCredits(
+          workspaceId,
+          charged.creditsCharged,
+          "admin_adjust",
+          `refund: email send failed (${message})`,
+        ).catch((refundErr) =>
+          logger.error("Email refund failed", { workspaceId, refundErr }),
+        );
+      } else if (charged.chargedTo === "allowance") {
+        const conn2 = await getEmailConnection(workspaceId);
+        if (conn2) {
+          conn2.usedThisMonth = Math.max(0, conn2.usedThisMonth - 1);
+          await saveEmailConnection(conn2);
+        }
+      }
+      await logEmail({
+        workspaceId,
+        direction: "outbound",
+        to: recipient,
+        from: senderOf(conn),
+        subject,
+        creditsCharged: charged.creditsCharged,
+        status: "failed",
+        error: message,
+        broadcastId,
+      });
+      // Surface the "not configured" case as failed-precondition so the UI can
+      // point the operator at Secret Manager instead of showing a 500.
+      if (message.includes("RESEND_API_KEY")) {
+        throw new HttpsError("failed-precondition", message);
+      }
+      throw new HttpsError("internal", message);
+    }
+  },
+);
+
+/** Authenticated callable: real email connection state for the Settings UI. */
+export const getEmailStatus = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const conn = await ensureEmailAllowanceMonth(workspaceId);
+  if (!conn) {
+    return { connected: false as const };
+  }
+  return {
+    connected: true as const,
+    fromName: conn.fromName,
+    fromEmail: conn.fromEmail,
+    provider: emailProviderOf(conn),
+    providers: EMAIL_PROVIDERS,
+    status: conn.status,
+    monthlyAllowance: conn.monthlyAllowance,
+    usedThisMonth: conn.usedThisMonth,
   };
 });
 
