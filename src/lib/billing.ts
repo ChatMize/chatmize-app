@@ -45,7 +45,7 @@ export const FEATURE_LABELS: Record<PlanFeature, string> = {
   messenger: "Facebook Messenger channel",
   instagram: "Instagram DMs",
   whatsapp: "WhatsApp channel",
-  flow_builder: "Drag & drop flow builder",
+  flow_builder: "Drag & drop BotMaps builder",
   broadcasts: "Broadcasts & blasts",
   recurring_notifications: "Meta Recurring Notifications",
   sms: "SMS via Twilio",

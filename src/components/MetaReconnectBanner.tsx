@@ -1,39 +1,32 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
-import { getMetaOAuthStatus, startMetaOAuth } from '../lib/meta';
+import { startMetaOAuth } from '../lib/meta';
+import { useMetaTokenInvalid } from '../lib/useMetaTokenInvalid';
 
 interface MetaReconnectBannerProps {
   workspaceId: string;
   workspaceName?: string;
+  /** False when the signed-in user is not the workspace owner. Non-owners
+   * see the banner but get no reconnect button (mirrors MetaReconnectModal). */
+  isOwner?: boolean;
+  ownerName?: string;
 }
 
 /**
  * Sticky top banner shown app-wide when the workspace's Meta page token was
- * killed (error 190). Inbound keeps flowing; outbound stays broken until the
- * owner reconnects. One button does the whole job: it starts OAuth and
- * returns to the Channels page so the owner can verify the reconnect landed.
+ * killed (error 190). The token-invalid flag streams live from the backend
+ * integration doc, so the banner appears the moment the token dies instead
+ * of waiting for a poll cycle. Inbound keeps flowing; outbound stays broken
+ * until the owner reconnects.
  */
 export const MetaReconnectBanner: React.FC<MetaReconnectBannerProps> = ({
   workspaceId,
   workspaceName,
+  isOwner = true,
+  ownerName,
 }) => {
-  const [tokenInvalid, setTokenInvalid] = useState(false);
+  const tokenInvalid = useMetaTokenInvalid(workspaceId);
   const [starting, setStarting] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    setTokenInvalid(false);
-    getMetaOAuthStatus(workspaceId)
-      .then((s) => {
-        if (alive) setTokenInvalid(!!s?.tokenInvalid);
-      })
-      .catch(() => {
-        // Status check failed: stay silent rather than flashing a false alarm.
-      });
-    return () => {
-      alive = false;
-    };
-  }, [workspaceId]);
 
   if (!tokenInvalid) return null;
 
@@ -55,18 +48,23 @@ export const MetaReconnectBanner: React.FC<MetaReconnectBannerProps> = ({
           Facebook session expired{workspaceName ? ` for ${workspaceName}` : ''}
         </p>
         <p className="text-xs text-amber-200/70">
-          Incoming messages still arrive, but replies can&apos;t send until you
-          reconnect. It takes about 30 seconds.
+          {isOwner ? (
+            <>Incoming messages still arrive, but replies can&apos;t send until you reconnect. It takes about 30 seconds.</>
+          ) : (
+            <>Only the workspace owner can reconnect it. {ownerName ? `Ask ${ownerName} to reconnect it in Settings under Channels.` : 'Ask your workspace owner to reconnect it in Settings under Channels.'}</>
+          )}
         </p>
       </div>
-      <button
-        onClick={handleReconnect}
-        disabled={starting}
-        className="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white shadow-sm shrink-0 flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-      >
-        {starting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-        {starting ? 'Opening Facebook...' : 'Reconnect now'}
-      </button>
+      {isOwner && (
+        <button
+          onClick={handleReconnect}
+          disabled={starting}
+          className="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white shadow-sm shrink-0 flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+        >
+          {starting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          {starting ? 'Opening Facebook...' : 'Reconnect now'}
+        </button>
+      )}
     </div>
   );
 };

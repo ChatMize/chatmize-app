@@ -140,12 +140,16 @@ export function SettingsView({
   onNavigateToFlows,
   workspace,
   onUpdateWorkspace,
+  isOwner = true,
 }: { 
   initialTab?: 'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan';
   initialDocId?: string;
   onNavigateToFlows?: () => void;
   workspace?: WorkspaceSilo;
   onUpdateWorkspace?: (ws: WorkspaceSilo) => void;
+  /** False when the signed-in user is not the workspace owner. Gated
+   * actions (e.g. Meta reconnect) render read-only for non-owners. */
+  isOwner?: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan'>(initialTab);
 
@@ -515,7 +519,7 @@ export function SettingsView({
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {workspace?.id && <MetaConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={refreshAnchor} />}
+            {workspace?.id && <MetaConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={refreshAnchor} isOwner={isOwner} />}
             {workspace?.id && <InstagramConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" hasPageAnchor={anchor.connected} />}
             {workspace?.id && <WhatsAppConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={handleWhatsAppConnected} />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}

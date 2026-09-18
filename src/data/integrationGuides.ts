@@ -50,7 +50,7 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
         description: 'Paste both credentials into the Integration form, give your connection a nickname, and click "Save & Verify".',
       },
     ],
-    howItWorksInFlows: 'In Flow Builder, add an Action block -> choose "ActiveCampaign" -> select your target List and choose whether to apply custom Tags upon completing user input capture.',
+    howItWorksInFlows: 'In BotMaps, add an Action block -> choose "ActiveCampaign" -> select your target List and choose whether to apply custom Tags upon completing user input capture.',
     troubleshooting: [
       'Ensure the API URL begins with https:// and has no trailing slash.',
       'If verification fails, verify that your ActiveCampaign user has Developer Access permissions.',
@@ -509,7 +509,7 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
         description: 'Send a WhatsApp message to your connected number and confirm it appears in the Chatmize inbox, then reply from the inbox and confirm it arrives on your phone.',
       },
     ],
-    howItWorksInFlows: 'WhatsApp works as a channel in the inbox and in Flow Builder. Inbound WhatsApp messages create conversations you can reply to live; use Send Message actions with the WhatsApp channel for outbound follow-ups.',
+    howItWorksInFlows: 'WhatsApp works as a channel in the inbox and in BotMaps. Inbound WhatsApp messages create conversations you can reply to live; use Send Message actions with the WhatsApp channel for outbound follow-ups.',
     troubleshooting: [
       'Error (#200) Requires business_management permission: your Facebook grant was made before Chatmize requested that permission, and Meta freezes permissions at grant time. Fix: remove the Chatmize app and reconnect so a fresh grant is issued.',
       'To remove the old grant, open Facebook Business integrations, find Chatmize, and click Remove. Then reconnect in Chatmize and accept all permissions.',

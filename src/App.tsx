@@ -394,6 +394,7 @@ export default function App() {
             onNavigateToFlows={() => setActiveTab('flows')}
             workspace={activeWorkspace}
             onUpdateWorkspace={handleUpdateWorkspace}
+            isOwner={isWorkspaceOwner(activeWorkspace, currentUser)}
           />
         );
       case 'support-chat':
@@ -504,6 +505,7 @@ export default function App() {
             onNavigateToFlows={() => setActiveTab('flows')}
             workspace={activeWorkspace}
             onUpdateWorkspace={handleUpdateWorkspace}
+            isOwner={isWorkspaceOwner(activeWorkspace, currentUser)}
           />
         );
       case 'integrations':
@@ -513,6 +515,7 @@ export default function App() {
             onNavigateToFlows={() => setActiveTab('flows')}
             workspace={activeWorkspace}
             onUpdateWorkspace={handleUpdateWorkspace}
+            isOwner={isWorkspaceOwner(activeWorkspace, currentUser)}
           />
         );
       case 'docs':
@@ -524,6 +527,7 @@ export default function App() {
             onNavigateToFlows={() => setActiveTab('flows')}
             workspace={activeWorkspace}
             onUpdateWorkspace={handleUpdateWorkspace}
+            isOwner={isWorkspaceOwner(activeWorkspace, currentUser)}
           />
         );
       default:
@@ -1042,6 +1046,8 @@ export default function App() {
             <MetaReconnectBanner
               workspaceId={activeWorkspace.id}
               workspaceName={activeWorkspace.name}
+              isOwner={isWorkspaceOwner(activeWorkspace, currentUser)}
+              ownerName={activeWorkspace.ownerName}
             />
           )}
           {showPlanNudge && (

@@ -42,8 +42,8 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
         tip: 'Check your Instagram mobile app: Settings > Privacy > Messages > Connected Tools > Allow Access to Messages = ON.',
       },
       {
-        title: 'Step 2: Add Trigger in Flow Builder',
-        description: 'In Flow Builder, select the Starting Step card, click "+ Add Trigger", and choose "Instagram DM Keywords".',
+        title: 'Step 2: Add Trigger in BotMaps',
+        description: 'In BotMaps, select the Starting Step card, click "+ Add Trigger", and choose "Instagram DM Keywords".',
       },
       {
         title: 'Step 3: Define Trigger Keywords',
@@ -59,7 +59,7 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
         description: 'Click "Publish Flow" in the top bar. Open Instagram and DM your business account with the keyword to test the instant response.',
       },
     ],
-    howItWorksInFlows: 'In Flow Builder, the Starting Step receives the contact ID, Instagram handle, and full name. The contact is assigned the tag "ig_dm_keyword" and automatically passes to your first message block.',
+    howItWorksInFlows: 'In BotMaps, the Starting Step receives the contact ID, Instagram handle, and full name. The contact is assigned the tag "ig_dm_keyword" and automatically passes to your first message block.',
     examplePayload: `// Inbound Meta Webhook Event (Parsed by Chatmize)
 {
   "object": "instagram",
@@ -158,7 +158,7 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
     steps: [
       {
         title: 'Step 1: Add Story Mention Trigger',
-        description: 'Add the "Instagram Story Mention" trigger to your Starting Step in Flow Builder.',
+        description: 'Add the "Instagram Story Mention" trigger to your Starting Step in BotMaps.',
       },
       {
         title: 'Step 2: Compose Thank You Greeting',
@@ -273,7 +273,7 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
       },
       {
         title: 'Step 2: Copy JSON Setup Payload from Chatmize',
-        description: 'In Chatmize Flow Builder, select the "Instagram Direct Ad" trigger and click "Copy Meta Ads JSON Setup Payload".',
+        description: 'In Chatmize BotMaps, select the "Instagram Direct Ad" trigger and click "Copy Meta Ads JSON Setup Payload".',
       },
       {
         title: 'Step 3: Paste into Meta Ads Manager',
@@ -345,7 +345,7 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
       },
       {
         title: 'Step 2: Add Messenger Keywords Trigger',
-        description: 'In Flow Builder, add "Messenger Keywords" to the Starting Step.',
+        description: 'In BotMaps, add "Messenger Keywords" to the Starting Step.',
       },
       {
         title: 'Step 3: Enter Keywords & Match Rule',
@@ -548,7 +548,7 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
     steps: [
       {
         title: 'Step 1: Configure Checkbox Trigger',
-        description: 'Add "Website Checkbox Plugin" to your Starting Step in Flow Builder.',
+        description: 'Add "Website Checkbox Plugin" to your Starting Step in BotMaps.',
       },
       {
         title: 'Step 2: Embed on Your Form',
@@ -588,7 +588,7 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
       },
       {
         title: 'Step 2: Add WhatsApp Keywords Trigger',
-        description: 'Add "WhatsApp Inbound Keywords" to the Starting Step in Flow Builder.',
+        description: 'Add "WhatsApp Inbound Keywords" to the Starting Step in BotMaps.',
       },
       {
         title: 'Step 3: Define Trigger Keywords',

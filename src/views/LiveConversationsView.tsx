@@ -12,7 +12,6 @@ import {
   Clock, 
   Calendar, 
   Tag, 
-  Sparkles, 
   Plus, 
   Search, 
   Filter, 
@@ -81,7 +80,11 @@ export interface ConversationMessage {
     buttonUrl?: string;
     flowId?: string;
   };
-  deliveryStatus?: 'sent' | 'delivered' | 'read';
+  /** Send lifecycle: optimistic 'sending' -> 'delivered' on channel API
+   * success, 'failed' on error. Persisted outbound messages (which arrive
+   * via the Firestore subscription) show 'delivered' once the channel
+   * accepted them; 'sent' is kept for future channel-ack refinement. */
+  deliveryStatus?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 }
 
 // Follow-Up Rule interface
@@ -375,7 +378,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       workspaceId,
       convoId,
       (firestoreMessages) => {
-        if (firestoreMessages.length === 0) return; // Keep seed data if no real messages yet
+        if (firestoreMessages.length === 0) return; // Keep local state until real messages arrive
 
         const realMessages: ConversationMessage[] = firestoreMessages.map((m) => ({
           id: m.id,
@@ -384,6 +387,10 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
           text: m.text,
           timestamp: new Date(m.timestampMs).toISOString(),
           senderName: m.direction === 'inbound' ? activeContact.name : 'Agent',
+          // Outbound docs land here only after the channel API accepted
+          // the send, so they keep their terminal 'delivered' status instead
+          // of dropping the optimistic sending/delivered transition.
+          deliveryStatus: m.direction === 'inbound' ? undefined : 'delivered',
         }));
 
         setConversationsMap((prev) => ({
@@ -416,149 +423,11 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     }
   }, [activeContact?.id]);
 
-  // Initialize seed messages for demo contacts if empty
+  // Initialize sample follow-up rules when contacts load. Note: demo
+  // conversation seeding was removed here (2026-09-18). Threads now show
+  // only real messages, never fabricated transcripts.
   useEffect(() => {
     if (contacts.length === 0) return;
-
-    setConversationsMap(prev => {
-      if (Object.keys(prev).length > 0) return prev; // Already initialized
-
-      const initialMap: Record<string, ConversationMessage[]> = {};
-      const now = new Date();
-
-      contacts.forEach(c => {
-        const history: ConversationMessage[] = [];
-
-        if (c.id.includes('91827491823')) { // Sarah Jenkins
-          history.push(
-            {
-              id: 'm1',
-              contactId: c.id,
-              sender: 'system',
-              text: '⚡ Triggered by Meta Ad: "(Ad) Build-A-Bot VIP Workshop Invite" via Messenger',
-              timestamp: new Date(now.getTime() - 4 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              type: 'event_log'
-            },
-            {
-              id: 'm2',
-              contactId: c.id,
-              sender: 'customer',
-              text: 'Hi there! I saw your ad about the Build-A-Bot Live Workshop. Does this include the new Meta 2026 Recurring Notifications blueprint?',
-              timestamp: new Date(now.getTime() - 3 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            },
-            {
-              id: 'm3',
-              contactId: c.id,
-              sender: 'bot',
-              senderName: 'Chatmize AI Agent',
-              text: 'Hi Sarah! Yes, absolutely! The workshop covers the full Meta Recurring Notifications architecture, 24-hour compliance rules, and automated re-engagement workflows.',
-              timestamp: new Date(now.getTime() - 2.8 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              deliveryStatus: 'read'
-            },
-            {
-              id: 'm4',
-              contactId: c.id,
-              sender: 'bot',
-              senderName: 'Chatmize AI Agent',
-              text: 'Here is your official pass to claim your seat:',
-              timestamp: new Date(now.getTime() - 2.7 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              type: 'content_card',
-              contentCard: {
-                title: 'Build-A-Bot Live Workshop Pass',
-                description: 'Thursday 2:00 PM EST • Live Studio with AI bot architecture team.',
-                badge: 'Live Event RSVP',
-                buttonText: 'Confirm Studio Seat 🎟️',
-                flowId: 'bm-webinar-01'
-              },
-              deliveryStatus: 'read'
-            },
-            {
-              id: 'm5',
-              contactId: c.id,
-              sender: 'customer',
-              text: 'Awesome, just confirmed! Can I also get the VIP discount code for our agency account?',
-              timestamp: new Date(now.getTime() - 25 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }
-          );
-        } else if (c.id.includes('28471928471')) { // Marcus Reed
-          history.push(
-            {
-              id: 'mr-1',
-              contactId: c.id,
-              sender: 'system',
-              text: '⚡ Triggered by Instagram Story Reply: "Send me the shopify bot template"',
-              timestamp: new Date(now.getTime() - 6 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              type: 'event_log'
-            },
-            {
-              id: 'mr-2',
-              contactId: c.id,
-              sender: 'customer',
-              text: 'Hey! Saw your IG Story demo. Does Chatmize support abandoned cart recovery and tracking link sends directly inside Instagram DMs?',
-              timestamp: new Date(now.getTime() - 5 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            },
-            {
-              id: 'mr-3',
-              contactId: c.id,
-              sender: 'agent',
-              senderName: 'Alex (Support Specialist)',
-              text: 'Hey Marcus! Yes, our Instagram DM node integrates directly with Shopify Webhooks to fire automated recovery sequences within 15 minutes of an abandoned checkout.',
-              timestamp: new Date(now.getTime() - 4 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              deliveryStatus: 'read'
-            },
-            {
-              id: 'mr-4',
-              contactId: c.id,
-              sender: 'customer',
-              text: 'That\'s huge. What is the pricing for 15,000 monthly active subscribers?',
-              timestamp: new Date(now.getTime() - 15 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }
-          );
-        } else if (c.id.includes('84920194829')) { // Elena Rostova
-          history.push(
-            {
-              id: 'er-1',
-              contactId: c.id,
-              sender: 'customer',
-              text: 'Hello, our team is testing WhatsApp Business Cloud API with Chatmize. Where do we add our Meta Business Verification ID?',
-              timestamp: new Date(now.getTime() - 8 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            },
-            {
-              id: 'er-2',
-              contactId: c.id,
-              sender: 'bot',
-              senderName: 'Chatmize AI Agent',
-              text: 'Greetings Elena! You can enter your WhatsApp WABA ID directly in Settings > Channels > WhatsApp Cloud API. I\'ve also flagged this for our enterprise operations team.',
-              timestamp: new Date(now.getTime() - 7.5 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              deliveryStatus: 'read'
-            }
-          );
-        } else {
-          history.push(
-            {
-              id: `${c.id}-1`,
-              contactId: c.id,
-              sender: 'customer',
-              text: `Hello! I would like to learn more about Chatmize automations for ${c.company || 'our brand'}.`,
-              timestamp: new Date(now.getTime() - 2 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            },
-            {
-              id: `${c.id}-2`,
-              contactId: c.id,
-              sender: 'bot',
-              senderName: 'Chatmize AI Agent',
-              text: `Welcome ${c.name}! We're thrilled to connect with you. How can our bot and automation platform assist your workflow today?`,
-              timestamp: new Date(now.getTime() - 1.8 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              deliveryStatus: 'read'
-            }
-          );
-        }
-
-        initialMap[c.id] = history;
-      });
-
-      return initialMap;
-    });
 
     // Initialize sample Follow-Up Rules
     setFollowUpRulesMap(prev => {
@@ -841,61 +710,6 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     }));
   };
 
-  // Simulate Customer Reply
-  const handleSimulateCustomerReply = (presetText?: string) => {
-    if (!activeContact) return;
-
-    const sampleReplies = [
-      'That sounds great! Can you show me how to connect this to our CRM?',
-      'Yes, I registered! Will the replay be available for our team members?',
-      'Can you send over the documentation for custom webhook payloads?',
-      'What are the API rate limits on the Pro plan?'
-    ];
-    const textToSend = presetText || sampleReplies[Math.floor(Math.random() * sampleReplies.length)];
-
-    const incoming: ConversationMessage = {
-      id: `cust-${Date.now()}`,
-      contactId: activeContact.id,
-      sender: 'customer',
-      text: textToSend,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setConversationsMap(prev => ({
-      ...prev,
-      [activeContact.id]: [...(prev[activeContact.id] || []), incoming]
-    }));
-
-    // If bot is active, auto-reply after 1.2 seconds
-    const isBotActive = botModeMap[activeContact.id] ?? true;
-    if (isBotActive) {
-      setTimeout(() => {
-        const botResponse: ConversationMessage = {
-          id: `bot-reply-${Date.now()}`,
-          contactId: activeContact.id,
-          sender: 'bot',
-          senderName: 'Chatmize AI Agent',
-          text: `Thanks for asking, ${activeContact.firstName || 'there'}! I've logged your request into your profile. Here is our direct knowledge resource to guide you through it:`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          type: 'content_card',
-          contentCard: {
-            title: 'Knowledge Base: Automated Integrations',
-            description: 'Comprehensive guides for Webhooks, Zapier, Make, and Google Sheets connectors.',
-            badge: 'Instant Guide',
-            buttonText: 'Open Guide 📚',
-            flowId: 'bm-guide-docs'
-          },
-          deliveryStatus: 'read'
-        };
-
-        setConversationsMap(prev => ({
-          ...prev,
-          [activeContact.id]: [...(prev[activeContact.id] || []), botResponse]
-        }));
-      }, 1200);
-    }
-  };
-
   // Send Audience Content Card into thread
   const handleSendAudienceContent = (content: AudienceContentItem) => {
     if (!activeContact) return;
@@ -1161,16 +975,6 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
               <span className="text-[11px] text-cyan-400 capitalize">{activeContact.channel}</span>
             </div>
           )}
-
-          {/* Simulate Customer Inbound */}
-          <button
-            onClick={() => handleSimulateCustomerReply()}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 transition-all flex items-center gap-1.5 cursor-pointer hover:border-cyan-500/30 shadow-sm"
-            title="Simulate incoming customer message to test bot & follow-up rules"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Simulate Inbound</span>
-          </button>
 
           {/* Audience CRM View Shortcut */}
           <button
