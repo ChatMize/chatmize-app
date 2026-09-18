@@ -233,6 +233,10 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
           encrypted and scoped to this workspace only.
         </p>
 
+        {connected && (
+          <p className="text-[11px] text-slate-500 mb-3">Connected via Facebook Page</p>
+        )}
+
         {connected && status?.pageId && (
           <p className="text-[11px] text-slate-500 font-mono mb-3">Page ID {status.pageId}</p>
         )}

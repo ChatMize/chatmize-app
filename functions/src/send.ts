@@ -2,6 +2,7 @@ import { Channel } from "./store";
 
 const GRAPH_VERSION = "v21.0";
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const IG_GRAPH_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
 
 export interface SendResult {
   ok: boolean;
@@ -68,6 +69,23 @@ export function sendInstagramMessage(
   text: string,
 ): Promise<SendResult> {
   return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
+    recipient: { id: igsid },
+    message: { text },
+  });
+}
+
+/**
+ * Send an Instagram DM via an Instagram Login (IG-only) user token.
+ * IGSIDs are scoped to the app that received them, so a conversation that
+ * arrived through the standalone Instagram connection can only be answered
+ * with that connection's token. Never log the token.
+ */
+export function sendInstagramDirectMessage(
+  igAccessToken: string,
+  igsid: string,
+  text: string,
+): Promise<SendResult> {
+  return postJson(`${IG_GRAPH_BASE}/me/messages`, igAccessToken, {
     recipient: { id: igsid },
     message: { text },
   });
