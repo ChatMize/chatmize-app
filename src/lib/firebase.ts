@@ -29,6 +29,7 @@ import {
   GoogleAuthProvider,
   User as FirebaseUser
 } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Firebase web config: environment variables take precedence so each deploy
@@ -65,6 +66,15 @@ export function isDemoSeedEnabled(): boolean {
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);
+
+// Firebase Storage for user uploaded images. The app uses a dedicated bucket
+// (chatmize-uploads-246164058141) rather than the Firebase default bucket,
+// which was never provisioned on this project. Override with
+// VITE_CHATIMIZE_UPLOADS_BUCKET if the bucket ever changes.
+const uploadsBucket =
+  envVars.VITE_CHATIMIZE_UPLOADS_BUCKET || 'chatmize-uploads-246164058141';
+export const storage = getStorage(app, `gs://${uploadsBucket}`);
+export const uploadsBucketName = uploadsBucket;
 
 export interface AppUser {
   uid: string;

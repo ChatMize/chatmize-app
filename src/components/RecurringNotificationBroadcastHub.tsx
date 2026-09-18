@@ -44,6 +44,7 @@ import {
 } from '../lib/firebase';
 import { CampaignBuilderModal } from './CampaignBuilderModal';
 import { CampaignsListView } from './CampaignsListView';
+import { ImageUpload } from './ImageUpload';
 
 interface RecurringNotificationBroadcastHubProps {
   contacts?: ContactRecord[];
@@ -837,26 +838,14 @@ export function RecurringNotificationBroadcastHub({
                   />
                 </div>
 
-                {/* Media Image URL */}
+                {/* Media Image */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    Optional Media Banner Image URL
-                  </label>
-                  <input
-                    type="text"
+                  <ImageUpload
+                    label="Optional Media Banner Image"
                     value={mediaUrl}
-                    onChange={(e) => setMediaUrl(e.target.value)}
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-cyan-500 font-mono text-[11px]"
-                    placeholder="https://..."
+                    onChange={(url) => setMediaUrl(url)}
+                    accentClass="focus-within:border-cyan-500"
                   />
-                  {mediaUrl && (
-                    <div className="mt-2 rounded-xl overflow-hidden border border-white/10 max-h-36 relative">
-                      <img src={mediaUrl} alt="Preview" className="w-full h-full object-cover" />
-                      <span className="absolute bottom-2 left-2 bg-slate-950/80 px-2 py-0.5 rounded text-[10px] text-slate-300 font-mono">
-                        Media Card Preview
-                      </span>
-                    </div>
-                  )}
                 </div>
 
                 {/* Call To Action Button */}

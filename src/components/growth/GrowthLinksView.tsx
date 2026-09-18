@@ -25,6 +25,7 @@ import {
 import { SendChatCloakedLink, MmeLinkConfig, IgmeLinkConfig, CloakedDestinationType, CloakingMode } from '../../types/growthTools';
 import { DEFAULT_CLOAKED_LINKS } from '../../data/growthToolsDefaults';
 import { QrCodeModal } from './QrCodeModal';
+import { ImageUpload } from '../ImageUpload';
 
 export const LINK_PRESETS = [
   {
@@ -540,13 +541,11 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[11px] text-slate-400">Preview Thumbnail Image URL</label>
-                    <input
-                      type="url"
+                    <ImageUpload
+                      label="Preview Thumbnail Image"
                       value={newLinkImage}
-                      onChange={(e) => setNewLinkImage(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                      onChange={(url) => setNewLinkImage(url)}
+                      accentClass="focus-within:border-cyan-500"
                     />
                   </div>
                 </div>
