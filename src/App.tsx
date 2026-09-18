@@ -214,6 +214,11 @@ export default function App() {
               pageName: metaData.pageName || updated.connectedPage.pageName,
               serviceStatus: 'active',
             };
+            // Use the Facebook Page profile image as the workspace avatar
+            if (metaData.pagePictureUrl) {
+              updated.avatarUrl = metaData.pagePictureUrl;
+              updated.connectedPage.avatarUrl = metaData.pagePictureUrl;
+            }
             changed = true;
           }
         }

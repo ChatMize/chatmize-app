@@ -1996,6 +1996,41 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
         </div>
       )}
 
+      {/* RECENTLY DELETED SECTION (Cards View) */}
+      {viewMode !== 'table' && deletedWorkspaces.length > 0 && (
+        <div className="mt-8 rounded-2xl border border-amber-500/20 bg-amber-500/5 overflow-hidden">
+          <div className="px-5 py-4 border-b border-amber-500/10 flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-amber-400" />
+            <h3 className="text-sm font-bold text-amber-300">Recently Deleted</h3>
+            <span className="text-[11px] text-slate-400">({deletedWorkspaces.length} workspace{deletedWorkspaces.length !== 1 ? 's' : ''} • auto-permanently deleted after 90 days)</span>
+          </div>
+          <div className="divide-y divide-amber-500/10">
+            {deletedWorkspaces.map((ws) => {
+              const daysLeft = getDaysRemaining(ws.deletedAt);
+              return (
+                <div key={ws.id} className="px-5 py-3.5 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm text-slate-300">{ws.name}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Deleted {ws.deletedAt ? new Date(ws.deletedAt).toLocaleDateString() : 'recently'} •{' '}
+                      <span className={daysLeft <= 7 ? 'text-rose-400 font-semibold' : 'text-amber-400'}>
+                        {daysLeft} day{daysLeft !== 1 ? 's' : ''} left to restore
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleRestoreWorkspace(ws.id)}
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-colors flex-shrink-0 cursor-pointer"
+                  >
+                    Restore
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* DELETE WORKSPACE CONFIRMATION MODAL */}
       {deleteConfirmState && (
         <DeleteWorkspaceModal
