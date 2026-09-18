@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from '../emoji';
 import { 
   Layout, 
   Sliders, 
@@ -244,6 +245,8 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
   const [activeMode, setActiveMode] = useState<'list' | 'editor' | 'preview'>('list');
   const [selectedOverlayId, setSelectedOverlayId] = useState<string>(overlays[0]?.id || '');
   const [editingOverlay, setEditingOverlay] = useState<WebsiteOverlay | null>(null);
+  const overlayEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const overlayCtaEmoji = useEmojiTarget<HTMLInputElement>();
 
   // Embed modal
   const [embedModalOverlay, setEmbedModalOverlay] = useState<WebsiteOverlay | null>(null);
@@ -1055,9 +1058,13 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[11px] text-slate-400">Subheadline Description</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] text-slate-400">Subheadline Description</label>
+                  <EmojiPickerButton onPick={(e) => overlayEmoji.insert(e, editingOverlay.subheadline, (v) => setEditingOverlay({ ...editingOverlay, subheadline: v }))} placement="down" />
+                </div>
                 <textarea
                   rows={2}
+                  ref={overlayEmoji.ref}
                   value={editingOverlay.subheadline}
                   onChange={(e) => setEditingOverlay({ ...editingOverlay, subheadline: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
@@ -1067,12 +1074,18 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                 <div className="space-y-1.5">
                   <label className="text-[11px] text-slate-400">CTA Button Text</label>
-                  <input
-                    type="text"
-                    value={editingOverlay.ctaText}
-                    onChange={(e) => setEditingOverlay({ ...editingOverlay, ctaText: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      ref={overlayCtaEmoji.ref}
+                      value={editingOverlay.ctaText}
+                      onChange={(e) => setEditingOverlay({ ...editingOverlay, ctaText: e.target.value })}
+                      className="w-full pl-3 pr-9 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                    />
+                    <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                      <EmojiPickerButton onPick={(e) => overlayCtaEmoji.insert(e, editingOverlay.ctaText, (v) => setEditingOverlay({ ...editingOverlay, ctaText: v }))} placement="up" />
+                    </span>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">

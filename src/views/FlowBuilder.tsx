@@ -61,6 +61,7 @@ import {
   Hash
 } from 'lucide-react';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { EmojiPickerButton, useEmojiTarget, useEmojiTargetMap } from '../components/emoji';
 import { 
   getActiveConnectedIntegrations, 
   INTEGRATION_ACTION_TEMPLATES, 
@@ -3124,6 +3125,11 @@ function NodeEditor({
   const [newBtnText, setNewBtnText] = useState('');
   const [newTagText, setNewTagText] = useState('');
   const [newKeywordInput, setNewKeywordInput] = useState('');
+  // Emoji picker targets for bot message authoring
+  const msgTextEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const smsEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const btnEmoji = useEmojiTarget<HTMLInputElement>();
+  const compEmoji = useEmojiTargetMap<HTMLTextAreaElement | HTMLInputElement>();
   const [activeIntegrations, setActiveIntegrations] = useState<IntegrationApp[]>(() => getActiveConnectedIntegrations());
   const [selectedConnectionId, setSelectedConnectionId] = useState<string>('');
   const [selectedListId, setSelectedListId] = useState<string>('');
@@ -4828,6 +4834,7 @@ function NodeEditor({
             <div className="flex justify-between items-center mb-2">
               <label className="text-xs font-bold uppercase text-slate-400">Message Text</label>
               <div className="flex gap-1.5">
+                <EmojiPickerButton onPick={(e) => msgTextEmoji.insert(e, node.content || '', (v) => onAutoUpdate({ content: v }))} placement="down" />
                 <button 
                   onClick={() => onAutoUpdate({ content: (node.content || '') + ' {{first_name}}' })}
                   className="text-[11px] font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20"
@@ -4844,6 +4851,7 @@ function NodeEditor({
             </div>
             <textarea 
               rows={6}
+              ref={msgTextEmoji.ref}
               value={node.content || ''} 
               onChange={(e) => onAutoUpdate({ content: e.target.value })}
               className="w-full bg-slate-900 border border-white/10 rounded-xl p-3.5 text-sm text-white outline-none focus:border-blue-500 transition-colors resize-none leading-relaxed font-sans"
@@ -5042,6 +5050,7 @@ function NodeEditor({
                           <div className="flex justify-between items-center">
                             <label className="text-[10px] font-bold uppercase text-slate-400">Bubble Text</label>
                             <div className="flex gap-1">
+                              <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:text`, e, comp.text || '', (v) => handleUpdateComponent(comp.id, { text: v }))} placement="down" />
                               <button 
                                 type="button"
                                 onClick={() => handleUpdateComponent(comp.id, { text: (comp.text || '') + ' {{first_name}}' })}
@@ -5060,6 +5069,7 @@ function NodeEditor({
                           </div>
                           <textarea 
                             rows={3}
+                            ref={compEmoji.setRef(`${comp.id}:text`)}
                             value={comp.text || ''}
                             onChange={(e) => handleUpdateComponent(comp.id, { text: e.target.value })}
                             placeholder="Add additional message text..."
@@ -5161,36 +5171,54 @@ function NodeEditor({
 
                           <div>
                             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Card Title</label>
-                            <input 
-                              type="text" 
-                              value={comp.cardTitle || ''} 
-                              onChange={(e) => handleUpdateComponent(comp.id, { cardTitle: e.target.value })}
-                              placeholder="e.g. VIP Masterclass Pass"
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-purple-500 font-bold"
-                            />
+                            <div className="relative">
+                              <input 
+                                type="text" 
+                                ref={compEmoji.setRef(`${comp.id}:cardTitle`)}
+                                value={comp.cardTitle || ''} 
+                                onChange={(e) => handleUpdateComponent(comp.id, { cardTitle: e.target.value })}
+                                placeholder="e.g. VIP Masterclass Pass"
+                                className="w-full bg-slate-950 border border-white/10 rounded-xl pl-2.5 pr-9 py-1.5 text-xs text-white outline-none focus:border-purple-500 font-bold"
+                              />
+                              <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                                <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:cardTitle`, e, comp.cardTitle || '', (v) => handleUpdateComponent(comp.id, { cardTitle: v }))} placement="up" />
+                              </span>
+                            </div>
                           </div>
 
                           <div>
                             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Subtitle / Details</label>
-                            <textarea 
-                              rows={2}
-                              value={comp.cardSubtitle || ''} 
-                              onChange={(e) => handleUpdateComponent(comp.id, { cardSubtitle: e.target.value })}
-                              placeholder="Brief description of the offer or content..."
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 text-xs text-white outline-none focus:border-purple-500 resize-none leading-relaxed"
-                            />
+                            <div className="relative">
+                              <textarea 
+                                rows={2}
+                                ref={compEmoji.setRef(`${comp.id}:cardSubtitle`)}
+                                value={comp.cardSubtitle || ''} 
+                                onChange={(e) => handleUpdateComponent(comp.id, { cardSubtitle: e.target.value })}
+                                placeholder="Brief description of the offer or content..."
+                                className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 pr-9 text-xs text-white outline-none focus:border-purple-500 resize-none leading-relaxed"
+                              />
+                              <span className="absolute right-1.5 bottom-1.5">
+                                <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:cardSubtitle`, e, comp.cardSubtitle || '', (v) => handleUpdateComponent(comp.id, { cardSubtitle: v }))} placement="up" />
+                              </span>
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Button Label</label>
-                              <input 
-                                type="text" 
-                                value={comp.cardButtonLabel || ''} 
-                                onChange={(e) => handleUpdateComponent(comp.id, { cardButtonLabel: e.target.value })}
-                                placeholder="e.g. Reserve Spot"
-                                className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-purple-500"
-                              />
+                              <div className="relative">
+                                <input 
+                                  type="text" 
+                                  ref={compEmoji.setRef(`${comp.id}:cardButtonLabel`)}
+                                  value={comp.cardButtonLabel || ''} 
+                                  onChange={(e) => handleUpdateComponent(comp.id, { cardButtonLabel: e.target.value })}
+                                  placeholder="e.g. Reserve Spot"
+                                  className="w-full bg-slate-950 border border-white/10 rounded-xl pl-2.5 pr-9 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+                                />
+                                <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                                  <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:cardButtonLabel`, e, comp.cardButtonLabel || '', (v) => handleUpdateComponent(comp.id, { cardButtonLabel: v }))} placement="up" />
+                                </span>
+                              </div>
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Button Link</label>
@@ -5258,13 +5286,19 @@ function NodeEditor({
                                     placeholder="Image URL"
                                     className="w-full bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white outline-none focus:border-amber-500"
                                   />
-                                  <input 
-                                    type="text"
-                                    value={gcard.buttonLabel || ''}
-                                    onChange={(e) => handleUpdateGalleryCard(comp.id, gcard.id, { buttonLabel: e.target.value })}
-                                    placeholder="Button text"
-                                    className="w-full bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white outline-none focus:border-amber-500"
-                                  />
+                                  <div className="relative">
+                                    <input 
+                                      type="text"
+                                      ref={compEmoji.setRef(`${comp.id}:${gcard.id}:btn`)}
+                                      value={gcard.buttonLabel || ''}
+                                      onChange={(e) => handleUpdateGalleryCard(comp.id, gcard.id, { buttonLabel: e.target.value })}
+                                      placeholder="Button text"
+                                      className="w-full bg-slate-900 border border-white/10 rounded-lg pl-2 pr-8 py-1 text-[11px] text-white outline-none focus:border-amber-500"
+                                    />
+                                    <span className="absolute right-0.5 top-1/2 -translate-y-1/2">
+                                      <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:${gcard.id}:btn`, e, gcard.buttonLabel || '', (v) => handleUpdateGalleryCard(comp.id, gcard.id, { buttonLabel: v }))} placement="up" />
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             ))}
@@ -5404,13 +5438,19 @@ function NodeEditor({
 
                           <div>
                             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Template Body (Approved Copy)</label>
-                            <textarea 
-                              rows={3}
-                              value={comp.waBody || ''} 
-                              onChange={(e) => handleUpdateComponent(comp.id, { waBody: e.target.value })}
-                              placeholder="Hi {{1}}, your order has been dispatched. Track here: {{2}}"
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500 resize-none font-sans"
-                            />
+                            <div className="relative">
+                              <textarea 
+                                rows={3}
+                                ref={compEmoji.setRef(`${comp.id}:waBody`)}
+                                value={comp.waBody || ''} 
+                                onChange={(e) => handleUpdateComponent(comp.id, { waBody: e.target.value })}
+                                placeholder="Hi {{1}}, your order has been dispatched. Track here: {{2}}"
+                                className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 pr-9 text-xs text-white outline-none focus:border-emerald-500 resize-none font-sans"
+                              />
+                              <span className="absolute right-1.5 bottom-1.5">
+                                <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:waBody`, e, comp.waBody || '', (v) => handleUpdateComponent(comp.id, { waBody: v }))} placement="up" />
+                              </span>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -5450,15 +5490,21 @@ function NodeEditor({
             </div>
 
             {/* Add new button input */}
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                placeholder="Button label..." 
-                value={newBtnText} 
-                onChange={(e) => setNewBtnText(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddButton()}
-                className="flex-1 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500 transition-colors"
-              />
+            <div className="flex gap-2 items-center">
+              <div className="relative flex-1">
+                <input 
+                  type="text" 
+                  placeholder="Button label..." 
+                  ref={btnEmoji.ref}
+                  value={newBtnText} 
+                  onChange={(e) => setNewBtnText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddButton()}
+                  className="w-full bg-slate-900 border border-white/10 rounded-xl pl-3 pr-9 py-2 text-xs text-white outline-none focus:border-blue-500 transition-colors"
+                />
+                <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                  <EmojiPickerButton onPick={(e) => btnEmoji.insert(e, newBtnText, setNewBtnText)} placement="up" />
+                </span>
+              </div>
               <button 
                 onClick={handleAddButton}
                 className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
@@ -5523,8 +5569,10 @@ function NodeEditor({
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 <MessageSquareText className="w-3 h-3 text-amber-400" />
                 <span>Send SMS</span>
+                <span className="ml-auto"><EmojiPickerButton onPick={(e) => smsEmoji.insert(e, node.smsMessage || '', (v) => onAutoUpdate({ smsMessage: v }))} placement="up" /></span>
               </label>
               <textarea
+                ref={smsEmoji.ref}
                 value={node.smsMessage || ''}
                 onChange={(e) => onAutoUpdate({ smsMessage: e.target.value })}
                 rows={3}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { EmojiPickerButton, useEmojiTargetMap } from './emoji';
 import { 
   AlertCircle, 
   AlertTriangle, 
@@ -96,6 +97,7 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
   const [isSending, setIsSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const followEmoji = useEmojiTargetMap<HTMLTextAreaElement>();
 
   // Policy validation for Message Tag
   const tagValidation = validateMessageTagCompliance(messageBody, selectedTag);
@@ -360,14 +362,18 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                      Promotional Broadcast Copy (Marketing Allowed)
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-semibold text-slate-300 block">
+                        Promotional Broadcast Copy (Marketing Allowed)
+                      </label>
+                      <EmojiPickerButton onPick={(e) => followEmoji.insert('rnPromo', e, rnPromoText, setRnPromoText)} placement="up" />
+                    </div>
                     <textarea
                       rows={3}
+                      ref={followEmoji.setRef('rnPromo')}
                       value={rnPromoText}
                       onChange={(e) => setRnPromoText(e.target.value)}
-                      className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-cyan-500 leading-relaxed"
+                      className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-cyan-500 leading-relaxed"
                     />
                   </div>
 
@@ -407,11 +413,15 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                  Message Content (Non-Promotional Copy Only)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-slate-300 block">
+                    Message Content (Non-Promotional Copy Only)
+                  </label>
+                  <EmojiPickerButton onPick={(e) => followEmoji.insert('tagBody', e, messageBody, setMessageBody)} placement="up" />
+                </div>
                 <textarea
                   rows={3}
+                  ref={followEmoji.setRef('tagBody')}
                   value={messageBody}
                   onChange={(e) => setMessageBody(e.target.value)}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 leading-relaxed"
@@ -481,11 +491,15 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                   </div>
 
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                      Notification Body
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-semibold text-slate-300 block">
+                        Notification Body
+                      </label>
+                      <EmojiPickerButton onPick={(e) => followEmoji.insert('otn', e, otnText, setOtnText)} placement="up" />
+                    </div>
                     <textarea
                       rows={3}
+                      ref={followEmoji.setRef('otn')}
                       value={otnText}
                       onChange={(e) => setOtnText(e.target.value)}
                       className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-purple-500 leading-relaxed"
@@ -533,11 +547,15 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                  Message with Click-to-Chat Link
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-slate-300 block">
+                    Message with Click-to-Chat Link
+                  </label>
+                  <EmojiPickerButton onPick={(e) => followEmoji.insert('fallback', e, fallbackText, setFallbackText)} placement="up" />
+                </div>
                 <textarea
                   rows={3}
+                  ref={followEmoji.setRef('fallback')}
                   value={fallbackText}
                   onChange={(e) => setFallbackText(e.target.value)}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-amber-500 leading-relaxed font-mono text-[11px]"
@@ -558,11 +576,15 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                  Message Copy
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-slate-300 block">
+                    Message Copy
+                  </label>
+                  <EmojiPickerButton onPick={(e) => followEmoji.insert('stdBody', e, messageBody, setMessageBody)} placement="up" />
+                </div>
                 <textarea
                   rows={3}
+                  ref={followEmoji.setRef('stdBody')}
                   value={messageBody}
                   onChange={(e) => setMessageBody(e.target.value)}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-emerald-500 leading-relaxed"

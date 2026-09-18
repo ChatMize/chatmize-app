@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from '../components/emoji';
 import { MessageSquareText, Send, Loader2, CheckCircle2, AlertTriangle, Users } from 'lucide-react';
 import {
   getSmsStatus,
@@ -25,6 +26,7 @@ export const SmsBroadcastView: React.FC<SmsBroadcastViewProps> = ({ workspace, o
   const [confirming, setConfirming] = useState(false);
   const [report, setReport] = useState<SmsBroadcastReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const smsEmoji = useEmojiTarget<HTMLTextAreaElement>();
 
   useEffect(() => {
     if (!workspace?.id) {
@@ -128,14 +130,18 @@ export const SmsBroadcastView: React.FC<SmsBroadcastViewProps> = ({ workspace, o
           </span>
         </div>
 
-        <div>
+        <div className="relative">
           <textarea
+            ref={smsEmoji.ref}
             value={message}
             onChange={(e) => setMessage(e.target.value.slice(0, 1600))}
             rows={5}
             placeholder="Your blast message... (include your business name; replies like STOP are handled automatically)"
-            className="w-full bg-slate-800/60 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50 resize-none"
+            className="w-full bg-slate-800/60 border border-white/10 rounded-2xl px-4 py-3 pr-11 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500/50 resize-none"
           />
+          <span className="absolute right-2.5 bottom-2.5">
+            <EmojiPickerButton onPick={(e) => smsEmoji.insert(e, message, (v) => setMessage(v.slice(0, 1600)))} placement="up" />
+          </span>
           <div className="flex items-center justify-between mt-2 text-[11px] text-slate-500">
             <span>{chars}/1600 characters · {segments} segment{segments === 1 ? '' : 's'}</span>
             <span>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from '../emoji';
 import { 
   Sparkles, 
   MessageSquare, 
@@ -307,6 +308,7 @@ export const NurtureStepWizard: React.FC<NurtureStepWizardProps> = ({
   const [currentStep, setCurrentStep] = useState<number>(editingTool ? 2 : 1);
   const [copiedEmbed, setCopiedEmbed] = useState<boolean>(false);
   const [newReplyLabel, setNewReplyLabel] = useState<string>('');
+  const wizardEmoji = useEmojiTarget<HTMLTextAreaElement>();
 
   // Initial tool state
   const [form, setForm] = useState<NurtureTool>(() => {
@@ -811,9 +813,13 @@ export const NurtureStepWizard: React.FC<NurtureStepWizardProps> = ({
 
               {/* Welcome Message */}
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-300">First Bot Greeting Message</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300">First Bot Greeting Message</label>
+                  <EmojiPickerButton onPick={(e) => wizardEmoji.insert(e, form.welcomeMessage, (v) => setForm({ ...form, welcomeMessage: v }))} placement="down" />
+                </div>
                 <textarea
                   rows={2}
+                  ref={wizardEmoji.ref}
                   value={form.welcomeMessage}
                   onChange={(e) => setForm({ ...form, welcomeMessage: e.target.value })}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400"

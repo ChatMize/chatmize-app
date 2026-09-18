@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from '../components/emoji';
 import { MetaReconnectModal, isConnectionExpiredError } from '../components/MetaReconnectModal';
 import { getApp } from 'firebase/app';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -249,6 +250,9 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
   // Composer state
   const [messageInput, setMessageInput] = useState<string>('');
+  const composerEmoji = useEmojiTarget<HTMLInputElement>();
+  const notesEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const ruleContentEmoji = useEmojiTarget<HTMLTextAreaElement>();
   const [selectedMetaTag, setSelectedMetaTag] = useState<ConversationMessage['metaTag'] | ''>('');
   const [isSending, setIsSending] = useState<boolean>(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -1667,6 +1671,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
+                    ref={composerEmoji.ref}
                     value={messageInput}
                     onChange={(e) => setMessageInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -1678,6 +1683,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
                     placeholder={`Reply as ${ (botModeMap[activeContact.id] ?? true) ? 'Chatmize AI Agent' : 'Live Agent' }...`}
                     className="flex-1 px-3.5 py-2.5 bg-slate-950/80 border border-white/15 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
                   />
+                  <EmojiPickerButton onPick={(e) => composerEmoji.insert(e, messageInput, setMessageInput)} />
                   <button
                     onClick={handleSendMessage}
                     disabled={!messageInput.trim() || isSending}
@@ -1855,9 +1861,13 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
                       </div>
                     </div>
                     <div>
-                      <label className="text-[10px] text-slate-400 block mb-1">Agent Scratchpad Notes</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] text-slate-400 block">Agent Scratchpad Notes</label>
+                        <EmojiPickerButton onPick={(e) => notesEmoji.insert(e, editForm.notes, (v) => setEditForm(prev => ({ ...prev, notes: v })))} placement="down" />
+                      </div>
                       <textarea
                         rows={2}
+                        ref={notesEmoji.ref}
                         value={editForm.notes}
                         onChange={(e) => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
                         placeholder="Internal notes regarding deals, preferences..."
@@ -2267,9 +2277,13 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Message Content / Action Payload</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 block">Message Content / Action Payload</label>
+                  <EmojiPickerButton onPick={(e) => ruleContentEmoji.insert(e, newRuleContent, setNewRuleContent)} placement="up" />
+                </div>
                 <textarea
                   rows={3}
+                  ref={ruleContentEmoji.ref}
                   value={newRuleContent}
                   onChange={(e) => setNewRuleContent(e.target.value)}
                   placeholder="Message or flow instructions to execute..."

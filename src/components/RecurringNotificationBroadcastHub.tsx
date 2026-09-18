@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from './emoji';
 import { 
   BellRing, 
   Send, 
@@ -100,6 +101,7 @@ export function RecurringNotificationBroadcastHub({
   const [messageBody, setMessageBody] = useState<string>(
     '🔥 Hey {{first_name}}! Here is your exclusive VIP access code for this week:\n\nUse code VIP30 at checkout for 30% OFF our entire automation library!\n\nThis offer is valid for the next 48 hours only. Tap below to claim your spot 👇'
   );
+  const rnEmoji = useEmojiTarget<HTMLTextAreaElement>();
   const [mediaUrl, setMediaUrl] = useState<string>('https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=800&auto=format&fit=crop&q=80');
   const [ctaTitle, setCtaTitle] = useState<string>('Claim 30% Off Now 🚀');
   const [ctaUrl, setCtaUrl] = useState<string>('https://chatmize.io/vip-offer');
@@ -807,7 +809,8 @@ export function RecurringNotificationBroadcastHub({
                     <label className="text-xs font-bold text-slate-300">
                       Message Text (Sent via Meta Marketing Messages API)
                     </label>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 items-center">
+                      <EmojiPickerButton onPick={(e) => rnEmoji.insert(e, messageBody, setMessageBody)} placement="down" />
                       <button
                         type="button"
                         onClick={() => insertVariable('first_name')}
@@ -826,6 +829,7 @@ export function RecurringNotificationBroadcastHub({
                   </div>
                   <textarea
                     rows={4}
+                    ref={rnEmoji.ref}
                     value={messageBody}
                     onChange={(e) => setMessageBody(e.target.value)}
                     className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-cyan-500 leading-relaxed font-sans"

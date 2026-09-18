@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { EmojiPickerButton, useEmojiTarget, useEmojiTargetMap } from './emoji';
 import { 
   X, 
   Calendar, 
@@ -73,6 +74,8 @@ export function CampaignBuilderModal({
     return d.toISOString().slice(0, 10);
   });
   const [scheduledTime, setScheduledTime] = useState<string>('10:00');
+  const broadcastEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const dripEmoji = useEmojiTargetMap<HTMLTextAreaElement | HTMLInputElement>();
   const [timezone, setTimezone] = useState<string>('America/New_York');
 
   // Drip Sequence Configuration
@@ -786,14 +789,18 @@ export function CampaignBuilderModal({
                     </div>
 
                     {/* Step Message Content */}
-                    <div>
+                    <div className="relative">
                       <textarea
                         rows={2}
+                        ref={dripEmoji.setRef(`step:${idx}`)}
                         value={step.messageText}
                         onChange={(e) => handleUpdateDripStep(idx, { messageText: e.target.value })}
                         placeholder="Write step message... Use {{first_name}} for personalization"
-                        className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 text-xs text-white outline-none focus:border-amber-500 resize-none"
+                        className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 pr-9 text-xs text-white outline-none focus:border-amber-500 resize-none"
                       />
+                      <span className="absolute right-1.5 bottom-1.5">
+                        <EmojiPickerButton onPick={(e) => dripEmoji.insert(`step:${idx}`, e, step.messageText, (v) => handleUpdateDripStep(idx, { messageText: v }))} placement="up" />
+                      </span>
                     </div>
 
                     {/* Step Optional Media & CTA Button */}
@@ -808,13 +815,19 @@ export function CampaignBuilderModal({
                         />
                       </div>
                       <div>
-                        <input 
-                          type="text" 
-                          placeholder="Button Label (e.g. Claim Offer)" 
-                          value={step.buttonText || ''} 
-                          onChange={(e) => handleUpdateDripStep(idx, { buttonText: e.target.value })}
-                          className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-amber-500"
-                        />
+                        <div className="relative">
+                          <input 
+                            type="text" 
+                            placeholder="Button Label (e.g. Claim Offer)" 
+                            ref={dripEmoji.setRef(`btn:${idx}`)}
+                            value={step.buttonText || ''} 
+                            onChange={(e) => handleUpdateDripStep(idx, { buttonText: e.target.value })}
+                            className="w-full bg-slate-950 border border-white/10 rounded-lg pl-2.5 pr-8 py-1.5 text-[11px] text-white outline-none focus:border-amber-500"
+                          />
+                          <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                            <EmojiPickerButton onPick={(e) => dripEmoji.insert(`btn:${idx}`, e, step.buttonText || '', (v) => handleUpdateDripStep(idx, { buttonText: v }))} placement="up" />
+                          </span>
+                        </div>
                       </div>
                       <div>
                         <input 
@@ -868,12 +881,14 @@ export function CampaignBuilderModal({
                       {`{{${v}}}`}
                     </button>
                   ))}
+                  <EmojiPickerButton onPick={(e) => broadcastEmoji.insert(e, messageText, setMessageText)} placement="down" />
                 </div>
               </div>
 
               <div>
                 <textarea
                   rows={4}
+                  ref={broadcastEmoji.ref}
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
                   placeholder="Type the message copy... Markdown formatting supported."
@@ -895,13 +910,19 @@ export function CampaignBuilderModal({
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Call-To-Action Button</label>
-                  <input 
-                    type="text" 
-                    value={ctaButtonText} 
-                    onChange={(e) => setCtaButtonText(e.target.value)}
-                    placeholder="Claim VIP Offer 🚀"
-                    className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
-                  />
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      ref={dripEmoji.setRef('cta')}
+                      value={ctaButtonText} 
+                      onChange={(e) => setCtaButtonText(e.target.value)}
+                      placeholder="Claim VIP Offer 🚀"
+                      className="w-full bg-slate-900 border border-white/15 rounded-xl pl-3 pr-9 py-2 text-xs text-white outline-none focus:border-blue-500"
+                    />
+                    <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                      <EmojiPickerButton onPick={(e) => dripEmoji.insert('cta', e, ctaButtonText, setCtaButtonText)} placement="up" />
+                    </span>
+                  </div>
                 </div>
 
                 <div>

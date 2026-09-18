@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from '../components/emoji';
 import { 
   Building2, 
   Plus, 
@@ -63,6 +64,7 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
   const [isPageSyncModalOpen, setIsPageSyncModalOpen] = useState(false);
   const [activeWhitelabelModalWs, setActiveWhitelabelModalWs] = useState<Workspace | null>(null);
   const [activeChatbotModalWs, setActiveChatbotModalWs] = useState<Workspace | null>(null);
+  const wsWelcomeEmoji = useEmojiTarget<HTMLTextAreaElement>();
   const [activeSmsModalWs, setActiveSmsModalWs] = useState<Workspace | null>(null);
   const [editingWsId, setEditingWsId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -1427,9 +1429,19 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-slate-400 text-[11px] mb-1">Welcome Greeting Prompt</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-slate-400 text-[11px]">Welcome Greeting Prompt</label>
+                      <EmojiPickerButton onPick={(e) => wsWelcomeEmoji.insert(e, activeChatbotModalWs.connectedStandaloneChat?.welcomeMessage || '', (v) => setActiveChatbotModalWs({
+                        ...activeChatbotModalWs,
+                        connectedStandaloneChat: {
+                          ...(activeChatbotModalWs.connectedStandaloneChat as any),
+                          welcomeMessage: v
+                        }
+                      }))} placement="up" />
+                    </div>
                     <textarea
                       rows={2}
+                      ref={wsWelcomeEmoji.ref}
                       value={activeChatbotModalWs.connectedStandaloneChat?.welcomeMessage || 'Hey there! How can we help automate your business today?'}
                       onChange={(e) => setActiveChatbotModalWs({
                         ...activeChatbotModalWs,
