@@ -28,9 +28,9 @@ export const DEFAULT_SUPPORT_WIDGETS: SupportChatWidgetConfig[] = [
     removeBranding: false,
     autoOpenDelaySeconds: 3,
     whitelistedDomains: ['*.yourdomain.com', 'localhost:3000'],
-    totalViews: 6840,
-    totalConversations: 1240,
-    totalLeads: 412,
+    totalViews: 0,
+    totalConversations: 0,
+    totalLeads: 0,
     createdAt: '2026-08-10T10:00:00Z',
     updatedAt: '2026-09-12T14:30:00Z'
   },
@@ -60,9 +60,9 @@ export const DEFAULT_SUPPORT_WIDGETS: SupportChatWidgetConfig[] = [
     removeBranding: true,
     autoOpenDelaySeconds: 5,
     whitelistedDomains: ['yourdomain.com/vip', 'yourdomain.com/pricing'],
-    totalViews: 3120,
-    totalConversations: 640,
-    totalLeads: 285,
+    totalViews: 0,
+    totalConversations: 0,
+    totalLeads: 0,
     createdAt: '2026-08-20T11:00:00Z',
     updatedAt: '2026-09-13T09:15:00Z'
   }

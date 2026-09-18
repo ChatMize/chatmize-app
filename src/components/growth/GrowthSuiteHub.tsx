@@ -24,21 +24,30 @@ interface GrowthSuiteHubProps {
   initialOverlayFilter?: OverlayType | 'all';
   availableBots?: Array<{ id: string; name: string }>;
   onNavigateToFlows?: (botId?: string) => void;
+  workspaceId: string;
   workspaceName?: string;
   workspaceSlug?: string;
   onTabChange?: (tab: GrowthSuiteTab) => void;
 }
 
+const GROWTH_TAB_KEY = 'chatmize_growth_tab';
+
 export const GrowthSuiteHub: React.FC<GrowthSuiteHubProps> = ({
-  initialTab = 'support_chat',
+  initialTab,
   initialOverlayFilter = 'all',
   availableBots,
   onNavigateToFlows,
+  workspaceId,
   workspaceName = 'Apex Marketing',
   workspaceSlug = 'apex-marketing',
   onTabChange
 }) => {
-  const [activeTab, setActiveTab] = useState<GrowthSuiteTab>(initialTab);
+  // Tab persists across refreshes (task: page selection survives reload).
+  const [activeTab, setActiveTab] = useState<GrowthSuiteTab>(() => {
+    if (initialTab) return initialTab;
+    const saved = localStorage.getItem(GROWTH_TAB_KEY);
+    return saved === 'overlays' || saved === 'growth_links' ? saved : 'support_chat';
+  });
   const [overlayFilter, setOverlayFilter] = useState<OverlayType | 'all'>(initialOverlayFilter);
 
   useEffect(() => {
@@ -55,6 +64,7 @@ export const GrowthSuiteHub: React.FC<GrowthSuiteHubProps> = ({
 
   const handleTabSwitch = (tab: GrowthSuiteTab) => {
     setActiveTab(tab);
+    try { localStorage.setItem(GROWTH_TAB_KEY, tab); } catch { /* ignore */ }
     onTabChange?.(tab);
   };
 
@@ -145,9 +155,10 @@ export const GrowthSuiteHub: React.FC<GrowthSuiteHubProps> = ({
 
       {/* Render the Active Isolated Tool */}
       {activeTab === 'support_chat' && (
-        <SupportChatView 
+        <SupportChatView
           availableBots={availableBots}
           onNavigateToFlows={onNavigateToFlows}
+          workspaceId={workspaceId}
         />
       )}
 

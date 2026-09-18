@@ -57,7 +57,7 @@ import { NurtureToolType } from './types/nurture';
 import { OverlayType } from './types/growthTools';
 import { RecurringNotificationBroadcastHub } from './components/RecurringNotificationBroadcastHub';
 import { AuthGateModal } from './components/AuthGateModal';
-import { subscribeToAuthChanges, signOutUser, AppUser, db } from './lib/firebase';
+import { subscribeToAuthChanges, signOutUser, AppUser, prodDb } from './lib/firebase';
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
 import { CopilotGuide } from './components/CopilotGuide';
@@ -145,8 +145,11 @@ export default function App() {
     return DEFAULT_WORKSPACES;
   });
 
+  // Workspace selection is derived at runtime from chatmize-prod — never a
+  // hardcoded id. The stored value is validated against real workspace
+  // documents by resolveActiveWorkspaceId() once auth state is known.
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(() => {
-    return localStorage.getItem('chatmize_active_workspace_id') || 'ws-biz-1';
+    return localStorage.getItem('chatmize_active_workspace_id') || '';
   });
 
   const handleUpdateWorkspaces = (newWorkspaces: WorkspaceSilo[]) => {
@@ -184,6 +187,28 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Resolve the real active workspace from chatmize-prod once auth is known.
+  // The stored selection wins only when that workspace document still exists;
+  // otherwise the first real workspace document becomes active. No demo ids.
+  useEffect(() => {
+    if (authLoading) return;
+    let cancelled = false;
+    import('./lib/activeWorkspace')
+      .then(({ resolveActiveWorkspaceId }) => resolveActiveWorkspaceId(currentUser))
+      .then((resolved) => {
+        if (cancelled) return;
+        if (resolved && resolved !== activeWorkspaceId) {
+          setActiveWorkspaceId(resolved);
+          try {
+            localStorage.setItem('chatmize_active_workspace_id', resolved);
+          } catch { /* ignore */ }
+        }
+      })
+      .catch(() => { /* resolver falls back to stored value */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, currentUser]);
+
   // Persist the active tab so a browser refresh keeps you on the same page.
   useEffect(() => {
     try {
@@ -199,17 +224,16 @@ export default function App() {
   useEffect(() => {
     const syncIntegrations = async () => {
       try {
+        if (!activeWorkspaceId) return; // workspace not resolved yet — no demo ids
         const { doc, getDoc } = await import('firebase/firestore');
-        // Map UI workspace to Firestore workspace (Dev Sandbox -> ws-chatmize-dev)
+        // Map UI workspace to the real Firestore workspace id (resolved live
+        // from chatmize-prod, never a hardcoded demo id).
         const ws = workspaces.find(w => w.id === activeWorkspaceId);
         if (!ws) return;
-        // Sync the active workspace with the real Firestore data (ws-chatmize-dev)
-        // Note: was name-based ('dev sandbox'), now syncs any active workspace since
-        // there's only one real Firestore workspace until multi-workspace is built.
 
-        const firestoreWsId = 'ws-chatmize-dev';
-        const metaSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'meta'));
-        const igSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'instagram'));
+        const firestoreWsId = activeWorkspaceId;
+        const metaSnap = await getDoc(doc(prodDb, 'workspaces', firestoreWsId, 'integrations', 'meta'));
+        const igSnap = await getDoc(doc(prodDb, 'workspaces', firestoreWsId, 'integrations', 'instagram'));
 
         let updated = { ...ws };
         let changed = false;
@@ -374,7 +398,7 @@ export default function App() {
       case 'conversations':
         return (
           <LiveConversationsView
-            workspaceId={activeWorkspace?.id}
+            workspaceId={activeWorkspaceId}
             workspaceName={activeWorkspace?.name}
             ownerName={activeWorkspace?.ownerName}
             isOwner={isWorkspaceOwner(activeWorkspace, currentUser)}
@@ -459,6 +483,7 @@ export default function App() {
             }
             workspaceName={activeWorkspace?.name || 'Apex Marketing'}
             workspaceSlug={activeWorkspace?.slug || 'apex-marketing'}
+            workspaceId={activeWorkspaceId}
             onNavigateToFlows={(botId) => {
               if (botId) setActiveBotId(botId);
               setActiveTab('flows');
