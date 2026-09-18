@@ -20,6 +20,12 @@
  *     reason?: string,           // plain English, shown in the email
  *     requestedAt?: Timestamp
  *   }
+ *
+ * IMPORTANT: the onHandoffCreated trigger resource below is NOT deployed
+ * (this VM's egress proxy blocks new function creation). Every writer of a
+ * handoff doc must call handleHandoffCreated(workspaceId, handoffId, data)
+ * right after creating the doc. Dedupe keeps both mechanisms from ever
+ * double sending if the trigger is ever registered.
  */
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
@@ -425,7 +431,60 @@ export const onIntegrationInvalidated = onDocumentWritten(
 );
 
 // ---------------------------------------------------------------------------
-// Trigger 2: human handoff requested -> email the assignee (or owner) once
+// Handoff email. Call handleHandoffCreated right after a handoff record is
+// created. (The Firestore trigger below is the long term path; its Cloud
+// Function resource cannot be created through this VM's egress proxy, so
+// every writer of workspaces/{ws}/handoffs/{id} calls this directly instead.
+// Dedupe keeps both mechanisms from ever double sending.)
+// ---------------------------------------------------------------------------
+
+export interface HandoffRecord {
+  conversationId?: string;
+  assigneeUid?: string;
+  assigneeEmail?: string;
+  reason?: string;
+}
+
+/** Send the human handoff email for a newly created handoff record. */
+export async function handleHandoffCreated(
+  workspaceId: string,
+  handoffId: string,
+  data: HandoffRecord | undefined,
+): Promise<void> {
+  if (!data?.conversationId) return;
+
+  let to: string | null = data.assigneeEmail?.trim() || null;
+  if (!to && data.assigneeUid) {
+    try {
+      to = (await getAuth().getUser(data.assigneeUid)).email ?? null;
+    } catch {
+      to = null;
+    }
+  }
+  if (!to) to = await getWorkspaceOwnerEmail(workspaceId);
+  if (!to) {
+    logger.warn("Handoff email skipped: no recipient email found", { workspaceId, handoffId });
+    return;
+  }
+
+  const conversationUrl = `${APP_BASE}/?workspace=${encodeURIComponent(
+    workspaceId,
+  )}&conversation=${encodeURIComponent(data.conversationId)}`;
+  const copy = handoffCopy(conversationUrl, data.reason);
+  await sendNotificationEmail({
+    workspaceId,
+    type: "handoff",
+    to,
+    subject: copy.subject,
+    html: copy.html,
+    text: copy.text,
+    dedupeKey: `handoff:${handoffId}`,
+    cooldownMs: 7 * 24 * 3600 * 1000,
+  });
+}
+
+// Trigger 2 (long term path; resource not yet created): human handoff
+// requested -> email the assignee (or owner) once
 // ---------------------------------------------------------------------------
 
 export const onHandoffCreated = onDocumentCreated(
@@ -435,48 +494,11 @@ export const onHandoffCreated = onDocumentCreated(
     document: "workspaces/{workspaceId}/handoffs/{handoffId}",
   },
   async (event) => {
-    const data = event.data?.data() as
-      | {
-          conversationId?: string;
-          assigneeUid?: string;
-          assigneeEmail?: string;
-          reason?: string;
-        }
-      | undefined;
-    if (!data?.conversationId) return;
-
+    const data = event.data?.data() as HandoffRecord | undefined;
     const { workspaceId, handoffId } = event.params as {
       workspaceId: string;
       handoffId: string;
     };
-
-    let to: string | null = data.assigneeEmail?.trim() || null;
-    if (!to && data.assigneeUid) {
-      try {
-        to = (await getAuth().getUser(data.assigneeUid)).email ?? null;
-      } catch {
-        to = null;
-      }
-    }
-    if (!to) to = await getWorkspaceOwnerEmail(workspaceId);
-    if (!to) {
-      logger.warn("Handoff email skipped: no recipient email found", { workspaceId, handoffId });
-      return;
-    }
-
-    const conversationUrl = `${APP_BASE}/?workspace=${encodeURIComponent(
-      workspaceId,
-    )}&conversation=${encodeURIComponent(data.conversationId)}`;
-    const copy = handoffCopy(conversationUrl, data.reason);
-    await sendNotificationEmail({
-      workspaceId,
-      type: "handoff",
-      to,
-      subject: copy.subject,
-      html: copy.html,
-      text: copy.text,
-      dedupeKey: `handoff:${handoffId}`,
-      cooldownMs: 7 * 24 * 3600 * 1000,
-    });
+    await handleHandoffCreated(workspaceId, handoffId, data);
   },
 );
