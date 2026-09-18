@@ -137,21 +137,23 @@ export async function persistInboundMessage(
   });
   // Upsert the contact so the inbox UI (which lists contacts) shows the conversation.
   // NOTE: UI reads from root `contacts` collection (not workspace subcollection).
+  // NOTE: the contact/message batch commits FIRST with a fallback display name.
+  // The sender profile fetch (Secret Manager + Graph API, several slow network
+  // hops) used to block the batch and delayed inbox updates by ~a minute.
+  // It now runs after the commit and merges name/avatar when it lands.
   const contactId = `contact_${msg.channel}_${msg.senderId}`;
   const contactRef = db().collection("contacts").doc(contactId);
 
-  // Fetch the sender's real name and profile photo using the Page token.
-  const profile = await fetchSenderProfile(workspaceId, msg.senderId, msg.channel);
-  const displayName = profile.name
-    || (msg.channel === "instagram" ? "Instagram User"
-      : msg.channel === "messenger" ? "Messenger User"
-      : msg.channel === "whatsapp" ? "WhatsApp User"
-      : "Web User");
+  const fallbackName =
+    msg.channel === "instagram" ? "Instagram User"
+    : msg.channel === "messenger" ? "Messenger User"
+    : msg.channel === "whatsapp" ? "WhatsApp User"
+    : "Web User";
 
   const contactData: Record<string, unknown> = {
     id: contactId,
-    name: displayName,
-    firstName: displayName,
+    name: fallbackName,
+    firstName: fallbackName,
     channel: msg.channel,
     senderId: msg.senderId,
     lastMessageAt: FieldValue.serverTimestamp(),
@@ -159,10 +161,23 @@ export async function persistInboundMessage(
     lastInteractionAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   };
-  if (profile.avatarUrl) contactData.avatarUrl = profile.avatarUrl;
 
   batch.set(contactRef, contactData, { merge: true });
   await batch.commit();
+
+  // Background profile enrichment: never blocks the inbox.
+  fetchSenderProfile(workspaceId, msg.senderId, msg.channel)
+    .then((profile) => {
+      if (!profile.name && !profile.avatarUrl) return;
+      const enrichment: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+      if (profile.name) {
+        enrichment.name = profile.name;
+        enrichment.firstName = profile.name;
+      }
+      if (profile.avatarUrl) enrichment.avatarUrl = profile.avatarUrl;
+      return contactRef.set(enrichment, { merge: true });
+    })
+    .catch((e) => logger.warn("Background profile enrichment failed", { senderId: msg.senderId, error: String(e) }));
 }
 
 /** Park a webhook event that failed processing so it can be retried/inspected. */
