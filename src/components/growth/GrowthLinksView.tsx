@@ -20,7 +20,8 @@ import {
   Bot,
   Eye,
   TrendingUp,
-  MousePointer
+  MousePointer,
+  Lock
 } from 'lucide-react';
 import { SendChatCloakedLink, MmeLinkConfig, IgmeLinkConfig, CloakedDestinationType, CloakingMode } from '../../types/growthTools';
 import { DEFAULT_CLOAKED_LINKS } from '../../data/growthToolsDefaults';
@@ -102,7 +103,6 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
 
   // New Cloaked Link Form
   const [isCreatingLink, setIsCreatingLink] = useState(false);
-  const [newLinkWorkspace, setNewLinkWorkspace] = useState(workspaceSlug || 'my-workspace');
   const [newLinkSlug, setNewLinkSlug] = useState('special-offer');
   const [newLinkDestType, setNewLinkDestType] = useState<CloakedDestinationType>('messenger');
   const [newLinkDestUrl, setNewLinkDestUrl] = useState('https://m.me/YourBrand?ref=promo');
@@ -140,10 +140,14 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
     return input.toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-');
   };
 
+  // Workspace slug is locked to the current workspace: users cannot change it,
+  // so every branded link stays namespaced to the workspace that owns it.
+  const lockedWorkspaceSlug = cleanSlug(workspaceSlug) || 'workspace';
+
   const handleSaveNewLink = (e: React.FormEvent) => {
     e.preventDefault();
     const finalSlug = cleanSlug(newLinkSlug) || 'link';
-    const finalWorkspace = cleanSlug(newLinkWorkspace) || 'workspace';
+    const finalWorkspace = lockedWorkspaceSlug;
     const fullUrl = `https://send.chat/${finalWorkspace}/${finalSlug}`;
 
     const newCloakedLink: SendChatCloakedLink = {
@@ -377,7 +381,6 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                       key={tmpl.name}
                       type="button"
                       onClick={() => {
-                        setNewLinkWorkspace(tmpl.workspaceSlug);
                         setNewLinkSlug(tmpl.slug);
                         setNewLinkDestType(tmpl.destType);
                         setNewLinkDestUrl(tmpl.destUrl);
@@ -409,7 +412,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                   <div>
                     <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider block">Your Branded Short Link</span>
                     <span className="text-sm font-mono font-bold text-white">
-                      https://send.chat/<span className="text-cyan-400">{cleanSlug(newLinkWorkspace) || 'workspace'}</span>/<span className="text-emerald-400">{cleanSlug(newLinkSlug) || 'slug'}</span>
+                      https://send.chat/<span className="text-cyan-400">{lockedWorkspaceSlug}</span>/<span className="text-emerald-400">{cleanSlug(newLinkSlug) || 'slug'}</span>
                     </span>
                   </div>
                   <span className="text-xs text-slate-400">Automatic 301/Bridge Redirect</span>
@@ -418,17 +421,17 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                 {/* Workspace & Slug inputs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-300">Workspace Namespace Slug</label>
-                    <div className="flex items-center px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      Workspace Namespace Slug
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
+                        <Lock className="w-3 h-3" />
+                        Locked to this workspace
+                      </span>
+                    </label>
+                    <div className="flex items-center px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs select-none" title="The workspace slug is fixed and cannot be changed">
                       <span className="text-slate-500 mr-1">send.chat/</span>
-                      <input
-                        type="text"
-                        value={newLinkWorkspace}
-                        onChange={(e) => setNewLinkWorkspace(e.target.value)}
-                        placeholder="your-workspace"
-                        className="flex-1 bg-transparent focus:outline-none text-cyan-300 font-mono"
-                        required
-                      />
+                      <span className="flex-1 text-cyan-300 font-mono">{lockedWorkspaceSlug}</span>
+                      <Lock className="w-3.5 h-3.5 text-slate-600" />
                     </div>
                   </div>
 
