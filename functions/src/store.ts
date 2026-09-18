@@ -18,13 +18,77 @@ export interface NormalizedMessage {
 
 const db = () => getFirestore("chatmize-prod");
 
+const PROJECT_ID = "gen-lang-client-0433776094";
+
 /**
- * NOTE: Instagram's API does not allow fetching the profile (name/photo) of
- * someone who sends a DM to a business account. This is a Meta privacy
- * restriction, not a code issue. The contact shows as "Instagram User" with
- * the Instagram icon; users can rename it manually via Edit Info in the UI.
- * (Messenger via Facebook Page CAN fetch profiles using the Page token.)
+ * Fetch the sender's profile (name, photo) using the workspace's Page token.
+ * For Instagram/Messenger DMs, the Page token can look up the sender's IGSID/PSID.
  */
+async function fetchSenderProfile(
+  workspaceId: string,
+  senderId: string,
+  channel: Channel,
+): Promise<{ name?: string; avatarUrl?: string }> {
+  try {
+    // Get the Page token secret name from the meta integration
+    const integSnap = await db()
+      .collection("workspaces")
+      .doc(workspaceId)
+      .collection("integrations")
+      .doc("meta")
+      .get();
+    if (!integSnap.exists) return {};
+    const integData = integSnap.data()!;
+    const secretName = integData.secretName as string | undefined;
+    if (!secretName) return {};
+
+    // Get the Page token from Secret Manager
+    const { GoogleAuth } = await import("google-auth-library");
+    const auth = new GoogleAuth({
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    });
+    const client = await auth.getClient();
+    const gtoken = await client.getAccessToken();
+    const res = await fetch(
+      `https://secretmanager.googleapis.com/v1/projects/${PROJECT_ID}/secrets/${secretName}/versions/latest:access`,
+      { headers: { Authorization: `Bearer ${gtoken.token}` } },
+    );
+    if (!res.ok) return {};
+    const data = (await res.json()) as { payload?: { data?: string } };
+    const payload = data.payload?.data;
+    if (!payload) return {};
+    const pageToken = Buffer.from(payload, "base64").toString("utf8");
+
+    // Fetch the sender's profile via Facebook Graph API
+    // For Instagram: IGSID works with Page token that has instagram_manage_messages
+    // For Messenger: PSID works with Page token
+    const profileRes = await fetch(
+      `https://graph.facebook.com/v18.0/${senderId}?fields=id,name,username,first_name,last_name,profile_pic&access_token=${encodeURIComponent(pageToken)}`,
+    );
+    if (!profileRes.ok) {
+      const errText = await profileRes.text();
+      logger.warn("Profile fetch failed", { senderId, status: profileRes.status, error: errText.slice(0, 200) });
+      return {};
+    }
+    const profile = (await profileRes.json()) as {
+      name?: string;
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+      profile_pic?: string;
+    };
+    const name = profile.name
+      || (profile.first_name ? `${profile.first_name} ${profile.last_name || ""}`.trim() : undefined)
+      || profile.username;
+    return {
+      name,
+      avatarUrl: profile.profile_pic,
+    };
+  } catch (e) {
+    logger.warn("Failed to fetch sender profile", { senderId, error: String(e) });
+    return {};
+  }
+}
 
 /**
  * Upsert the conversation and append the inbound message.
@@ -73,31 +137,31 @@ export async function persistInboundMessage(
   });
   // Upsert the contact so the inbox UI (which lists contacts) shows the conversation.
   // NOTE: UI reads from root `contacts` collection (not workspace subcollection).
-  // NOTE: We cannot fetch the IG sender's name/photo (Meta privacy restriction).
-  // The contact shows as "Instagram User"; rename manually via Edit Info.
   const contactId = `contact_${msg.channel}_${msg.senderId}`;
   const contactRef = db().collection("contacts").doc(contactId);
 
-  const displayName = msg.channel === "instagram" ? "Instagram User"
-    : msg.channel === "messenger" ? "Messenger User"
-    : msg.channel === "whatsapp" ? "WhatsApp User"
-    : "Web User";
+  // Fetch the sender's real name and profile photo using the Page token.
+  const profile = await fetchSenderProfile(workspaceId, msg.senderId, msg.channel);
+  const displayName = profile.name
+    || (msg.channel === "instagram" ? "Instagram User"
+      : msg.channel === "messenger" ? "Messenger User"
+      : msg.channel === "whatsapp" ? "WhatsApp User"
+      : "Web User");
 
-  batch.set(
-    contactRef,
-    {
-      id: contactId,
-      name: displayName,
-      firstName: displayName,
-      channel: msg.channel,
-      senderId: msg.senderId,
-      lastMessageAt: FieldValue.serverTimestamp(),
-      lastMessageText: msg.text ?? "",
-      lastInteractionAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
+  const contactData: Record<string, unknown> = {
+    id: contactId,
+    name: displayName,
+    firstName: displayName,
+    channel: msg.channel,
+    senderId: msg.senderId,
+    lastMessageAt: FieldValue.serverTimestamp(),
+    lastMessageText: msg.text ?? "",
+    lastInteractionAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (profile.avatarUrl) contactData.avatarUrl = profile.avatarUrl;
+
+  batch.set(contactRef, contactData, { merge: true });
   await batch.commit();
 }
 
