@@ -198,6 +198,26 @@ export function SettingsView({
     }
   };
 
+  // Keep the workspace's local channel flags in sync when the real WhatsApp
+  // OAuth flow completes, so the switcher pills and other UI reflect it.
+  const handleWhatsAppConnected = (displayName: string, phoneNumberId: string) => {
+    if (!workspace || !onUpdateWorkspace) return;
+    const page = workspace.connectedPage ?? ({} as NonNullable<typeof workspace.connectedPage>);
+    onUpdateWorkspace({
+      ...workspace,
+      connectedPage: {
+        ...page,
+        connectedWhatsApp: {
+          phoneNumber: displayName || phoneNumberId,
+          wabaId: page.connectedWhatsApp?.wabaId || '',
+          verified: true,
+          connected: true,
+          status: 'active',
+        },
+      },
+    });
+  };
+
   useEffect(() => {
     if (activeTab === 'channels') refreshAnchor();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -497,7 +517,7 @@ export function SettingsView({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {workspace?.id && <MetaConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={refreshAnchor} />}
             {workspace?.id && <InstagramConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" hasPageAnchor={anchor.connected} />}
-            {workspace?.id && <WhatsAppConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" />}
+            {workspace?.id && <WhatsAppConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={handleWhatsAppConnected} />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
             {channels.map(channel => (
               <div
