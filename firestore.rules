@@ -129,6 +129,19 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Website Overlays SDK (overlays.js): the published config snapshot is
+    // read directly from Firestore by the unauthenticated snippet, so it is
+    // public-read. Only the backend publishes it (Admin SDK bypasses rules);
+    // clients can never write it. Stats are member-read, backend-write only.
+    match /overlayConfigs/{workspaceId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /overlayStats/{workspaceId} {
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+
     // Explicit deny-all catch-all. (Firestore denies by default when no rule
     // matches; this makes the posture visible in the file itself.)
     match /{document=**} {

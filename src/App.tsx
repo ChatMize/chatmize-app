@@ -452,6 +452,7 @@ export default function App() {
                 ? 'growth_links'
                 : 'support_chat'
             }
+            workspaceId={activeWorkspace?.id}
             initialOverlayFilter={
               ['popup_modal', 'slider', 'page_takeover', 'sticky_bar'].includes(nurtureSubTab)
                 ? (nurtureSubTab as any)
