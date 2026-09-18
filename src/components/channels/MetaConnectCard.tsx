@@ -14,6 +14,7 @@ import {
   WhatsAppOAuthStatus,
 } from '../../lib/whatsapp';
 import { useCachedConnectionStatus, timeAgo } from '../../lib/useCachedConnectionStatus';
+import { useMetaTokenInvalid } from '../../lib/useMetaTokenInvalid';
 
 interface MetaConnectCardProps {
   workspaceId: string;
@@ -22,6 +23,9 @@ interface MetaConnectCardProps {
   /** Opaque descriptor of where the user was, e.g. "onboarding:connect" or "app:settings_channels".
    *  Sent through the OAuth state and returned as ?return_to= so the app can restore the spot. */
   returnTo?: string;
+  /** False when the signed-in user is not the workspace owner. Non-owners
+   * see the connection state but cannot act on the reconnect buttons. */
+  isOwner?: boolean;
 }
 
 /**
@@ -29,7 +33,7 @@ interface MetaConnectCardProps {
  * connect -> pick one of the user's Pages -> the page token is stored as the
  * workspace's own Secret Manager secret. Powers Messenger + Instagram.
  */
-export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, onConnected, returnTo }) => {
+export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, onConnected, returnTo, isOwner = true }) => {
   const [starting, setStarting] = useState(false);
   const [pages, setPages] = useState<MetaPage[]>([]);
   const [showPicker, setShowPicker] = useState(false);
@@ -169,8 +173,11 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
 
   const connected = status?.connected ?? false;
   /** Meta killed the page token (error 190). Inbound keeps flowing; outbound
-   * stays broken until the owner reconnects. This is the persistent flag. */
-  const tokenInvalid = status?.tokenInvalid ?? false;
+   * stays broken until the owner reconnects. This is the persistent flag.
+   * The realtime flag fires the instant the backend marks the token invalid,
+   * so the card reacts without waiting for the next status revalidation. */
+  const tokenInvalidRealtime = useMetaTokenInvalid(workspaceId);
+  const tokenInvalid = tokenInvalidRealtime || (status?.tokenInvalid ?? false);
 
   const pageQueryLower = pageQuery.trim().toLowerCase();
   // Normalize: ignore spaces, dashes, and other punctuation so
@@ -327,12 +334,18 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
                   : 'Reconnect to keep Messenger working.'}
               </p>
             </div>
-            <button
-              onClick={handleConnect}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white cursor-pointer"
-            >
-              Reconnect
-            </button>
+            {isOwner ? (
+              <button
+                onClick={handleConnect}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white cursor-pointer"
+              >
+                Reconnect
+              </button>
+            ) : (
+              <span className="text-[11px] text-amber-200/70 shrink-0 font-semibold">
+                Only the owner can reconnect
+              </span>
+            )}
           </div>
         )}
 
@@ -360,7 +373,8 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
         </span>
         <button
           onClick={handleConnect}
-          disabled={starting || loading}
+          disabled={starting || loading || !isOwner}
+          title={!isOwner ? 'Only the workspace owner can connect or reconnect the Facebook Page.' : undefined}
           className="px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-sm disabled:opacity-60"
         >
           {starting ? (

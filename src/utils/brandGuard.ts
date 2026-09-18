@@ -4,7 +4,7 @@
  * Mandate: Under no circumstances may competitor brand names (e.g. ManyChat)
  * appear in any user-facing interface, documentation, templates, or exports.
  * Chatmize is designed from the ground up as a superior, more intuitive,
- * omnichannel flow builder and growth engine.
+ * omnichannel BotMaps builder and growth engine.
  */
 
 export const FORBIDDEN_COMPETITOR_TERMS = [

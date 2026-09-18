@@ -2,24 +2,46 @@ rules_version = '2';
 
 // ChatMize user uploaded images. Bucket: chatmize-uploads-246164058141.
 // Images live under workspaces/{workspaceId}/images/ so each workspace's
-// files stay organized and the path can be tightened to membership checks
-// later without moving data.
+// files stay organized.
 //
-// Current posture: any signed-in user can read and write images. Workspace
-// membership is enforced at the app layer today (team ownership is not fully
-// built yet); this rule blocks anonymous access and caps abuse via file size
-// and content type. Tighten to per workspace membership when the backend
-// ownership model lands.
+// Access is scoped to real workspace membership, mirroring firestore.rules:
+// the requester must hold a member doc (workspaces/{ws}/members/{uid}) or
+// carry the Super Admin custom claim. The backend auto-provisions a member
+// doc on the first callable touch (requireWorkspaceAccess), so first use
+// self-heals; cross-workspace image reads/writes are blocked. Anonymous
+// access stays denied, the 5MB image-only cap stays in place, and nothing
+// outside the workspace image folders is readable or writable.
 service firebase.storage {
   match /b/{bucket}/o {
-    match /workspaces/{workspaceId}/images/{fileName} {
-      allow read: if request.auth != null;
+    function isSignedIn() {
+      return request.auth != null;
+    }
 
-      allow create, update: if request.auth != null
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.superadmin == true;
+    }
+
+    // Phase 3 tenancy model: every workspace has a members subcollection
+    // of uids. Cross-service lookup against the chatmize-prod database,
+    // where the workspace docs and member docs live.
+    function isWorkspaceMember(workspaceId) {
+      return isSignedIn() && firestore.exists(
+        /databases/(default)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)
+      );
+    }
+
+    function canAccessWorkspace(workspaceId) {
+      return isWorkspaceMember(workspaceId) || isSuperAdmin();
+    }
+
+    match /workspaces/{workspaceId}/images/{fileName} {
+      allow read: if canAccessWorkspace(workspaceId);
+
+      allow create, update: if canAccessWorkspace(workspaceId)
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|gif|webp)');
 
-      allow delete: if request.auth != null;
+      allow delete: if canAccessWorkspace(workspaceId);
     }
 
     // Deny everything outside the workspace image folders.

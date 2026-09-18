@@ -94,7 +94,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
       case 'bot-list':
         return { title: 'Bot Maps & Automation', category: 'Automation', icon: Workflow };
       case 'flows':
-        return { title: 'Flow Builder Canvas', category: 'Canvas', icon: Workflow };
+        return { title: 'BotMaps Canvas', category: 'Canvas', icon: Workflow };
       case 'nurture':
       case 'convertmate':
         return { title: 'Nurture Website Tools', category: 'Conversion', icon: Sparkles };

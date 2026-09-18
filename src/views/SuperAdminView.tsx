@@ -269,7 +269,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         setMigrationLogs(prev => [
           ...prev,
           '✓ Successfully imported 1,280 Contacts into Audience View.',
-          '✓ Successfully recreated 14 Flows in Flow Builder.',
+          '✓ Successfully recreated 14 Flows in BotMaps.',
           '✓ Tagged accounts with "Imported Account" badge.',
           'Migration completed with 0 errors.'
         ]);
