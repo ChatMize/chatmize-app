@@ -16,6 +16,15 @@ interface MetaEntry {
       id?: string;
       text?: string;
       timestamp?: string;
+      // WhatsApp Cloud API: value.messages[] + value.metadata.phone_number_id
+      metadata?: { phone_number_id?: string; display_phone_number?: string };
+      messages?: Array<{
+        from?: string;
+        id?: string;
+        timestamp?: string;
+        type?: string;
+        text?: { body?: string };
+      }>;
     };
   }>;
   messages?: Array<{
@@ -60,6 +69,24 @@ export function normalizeEntry(entry: MetaEntry, object: string): NormalizedMess
   for (const c of entry.changes ?? []) {
     if (c.field !== "messages") continue;
     const v = c.value;
+    // WhatsApp Cloud API: messages live in value.messages[] with the phone
+    // number id in value.metadata (entry.id is the WABA id).
+    if (object === "whatsapp_business_account") {
+      const phoneNumberId = v?.metadata?.phone_number_id ?? entry.id ?? "";
+      for (const w of v?.messages ?? []) {
+        if (!w.from || !w.id) continue;
+        out.push({
+          channel: "whatsapp",
+          senderId: w.from,
+          recipientId: phoneNumberId,
+          externalId: w.id,
+          text: w.text?.body,
+          timestampMs: w.timestamp ? Number(w.timestamp) * 1000 : Date.now(),
+          raw: w,
+        });
+      }
+      continue;
+    }
     const from = v?.from?.id;
     const id = v?.id;
     if (!from || !id) continue;

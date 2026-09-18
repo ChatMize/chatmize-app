@@ -43,6 +43,17 @@ import {
   getInstagramConnection,
   instagramAppReturnUrl,
 } from "./instagramOAuth";
+import {
+  buildWhatsAppLoginUrl,
+  isWhatsAppOAuthState,
+  consumeWhatsAppOAuthState,
+  exchangeWhatsAppCode,
+  storePendingWhatsAppAccounts,
+  getWhatsAppConnection,
+  listPendingWhatsAppAccounts,
+  selectWhatsAppNumber,
+  whatsappAppReturnUrl,
+} from "./whatsappOAuth";
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
 import {
@@ -95,16 +106,24 @@ async function resolveWorkspace(workspaceId: unknown): Promise<string | null> {
  * Route a webhook entry to its workspace by the receiving Meta account id.
  * Meta allows exactly one callback URL per app, so with many workspaces the
  * event itself must say where it belongs: entry.id is the Page id for
- * `page` events and the IG business account id for `instagram` events.
- * Matches only connections with status "connected".
+ * `page` events, the IG business account id for `instagram` events, and the
+ * phone number id (from the change metadata) for `whatsapp_business_account`
+ * events. Matches only connections with status "connected".
  */
 async function resolveWorkspaceByAccount(
   object: string,
   accountId: string,
+  fallbackAccountId?: string,
 ): Promise<string | null> {
   if (!accountId) return null;
   const field =
-    object === "instagram" ? "igUserId" : object === "page" ? "pageId" : null;
+    object === "instagram"
+      ? "igUserId"
+      : object === "page"
+        ? "pageId"
+        : object === "whatsapp_business_account"
+          ? "phoneNumberId"
+          : null;
   if (!field) return null;
   const snap = await db()
     .collectionGroup("integrations")
@@ -115,6 +134,34 @@ async function resolveWorkspaceByAccount(
     if ((doc.data() as { status?: string }).status === "connected") {
       return doc.ref.parent.parent?.id ?? null;
     }
+  }
+  // WhatsApp: entry.id is the WABA id, which we also store on the doc, so a
+  // phone-number-id miss falls back to the WABA id.
+  if (object === "whatsapp_business_account" && fallbackAccountId && fallbackAccountId !== accountId) {
+    const wabaSnap = await db()
+      .collectionGroup("integrations")
+      .where("wabaId", "==", fallbackAccountId)
+      .limit(5)
+      .get();
+    for (const doc of wabaSnap.docs) {
+      if ((doc.data() as { status?: string }).status === "connected") {
+        return doc.ref.parent.parent?.id ?? null;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * For whatsapp_business_account events, entry.id is the WABA id; the phone
+ * number that received the message lives in each change's metadata.
+ */
+function whatsAppPhoneNumberId(entry: Record<string, unknown>): string | null {
+  const changes = (entry as { changes?: Array<{ value?: { metadata?: { phone_number_id?: unknown } } }> })
+    .changes;
+  for (const change of changes ?? []) {
+    const id = change?.value?.metadata?.phone_number_id;
+    if (typeof id === "string" && id.length > 0) return id;
   }
   return null;
 }
@@ -209,9 +256,15 @@ export const metaWebhook = onRequest(
       const object = body.object ?? "page";
       let received = 0;
       for (const entry of body.entry ?? []) {
-        const accountId = typeof entry.id === "string" ? entry.id : "";
+        const entryId = typeof entry.id === "string" ? entry.id : "";
+        // WhatsApp events carry the WABA id in entry.id; route by the phone
+        // number id in the change metadata (WABA id as fallback).
+        const phoneNumberId =
+          object === "whatsapp_business_account" ? whatsAppPhoneNumberId(entry) : null;
+        const accountId = phoneNumberId ?? entryId;
         const workspaceId =
-          overrideWorkspaceId ?? (await resolveWorkspaceByAccount(object, accountId));
+          overrideWorkspaceId ??
+          (await resolveWorkspaceByAccount(object, accountId, entryId));
         if (!workspaceId) {
           logger.warn("Webhook entry unroutable: no workspace for account", {
             object,
@@ -1046,6 +1099,12 @@ export const metaOAuthStart = onCall({ region: REGION }, async (request) => {
     logger.info("Instagram OAuth started", { workspaceId, uid });
     return { url };
   }
+  // WhatsApp path: Facebook Login for Business on the main ChatMize app.
+  if (provider === "whatsapp") {
+    const url = await buildWhatsAppLoginUrl(workspaceId, uid, returnTo);
+    logger.info("WhatsApp OAuth started", { workspaceId, uid });
+    return { url };
+  }
   const url = await buildLoginUrl(workspaceId, uid, returnTo);
   logger.info("Meta OAuth started", { workspaceId, uid });
   return { url };
@@ -1060,6 +1119,7 @@ export const metaOAuthCallback = onRequest(
     // Capture routing info before the one-time state is consumed, so the
     // error path below can still route back to the right place afterwards.
     let isIg = false;
+    let isWa = false;
     let returnTo: string | undefined;
     try {
       if (typeof code !== "string" || typeof state !== "string") {
@@ -1080,6 +1140,20 @@ export const metaOAuthCallback = onRequest(
         res.redirect(302, instagramAppReturnUrl("success", undefined, returnTo));
         return;
       }
+      // WhatsApp states live in their own collection.
+      if (await isWhatsAppOAuthState(state)) {
+        isWa = true;
+        const consumed = await consumeWhatsAppOAuthState(state);
+        returnTo = consumed.returnTo;
+        const result = await exchangeWhatsAppCode(code);
+        await storePendingWhatsAppAccounts(consumed.workspaceId, consumed.uid, result);
+        logger.info("WhatsApp OAuth callback ok", {
+          workspaceId: consumed.workspaceId,
+          accountCount: result.accounts.length,
+        });
+        res.redirect(302, whatsappAppReturnUrl("success", undefined, returnTo));
+        return;
+      }
       const fb = await consumeOAuthState(state);
       const workspaceId = fb.workspaceId;
       const uid = fb.uid;
@@ -1098,11 +1172,13 @@ export const metaOAuthCallback = onRequest(
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed.";
       logger.warn("Meta OAuth callback failed", { message });
-      // isIg and returnTo were captured before the one-time state was
-      // consumed, so the error still routes back to the right place.
+      // isIg/isWa and returnTo were captured before the one-time state was
+      // consumed, so the error still routes back to the right place afterwards.
       const url = isIg
         ? instagramAppReturnUrl("error", message, returnTo)
-        : appReturnUrl("error", message, returnTo);
+        : isWa
+          ? whatsappAppReturnUrl("error", message, returnTo)
+          : appReturnUrl("error", message, returnTo);
       res.redirect(302, url);
     }
   },
@@ -1156,6 +1232,8 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     instagram,
     // IG-only anchor (Instagram Login, no Facebook Page required).
     instagramOnly: await getInstagramConnection(workspaceId),
+    // WhatsApp anchor (Facebook Login for Business, customer's own number).
+    whatsappOnly: await getWhatsAppConnection(workspaceId),
   };
 });
 
@@ -1201,5 +1279,36 @@ export const metaOAuthSelectPage = onCall({ region: REGION }, async (request) =>
   await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
   const result = await selectWorkspacePage(workspaceId, uid, pageId);
   logger.info("Meta page connected", { workspaceId, pageId: result.pageId });
+  return result;
+});
+
+// ---------------------------------------------------------------------------
+// WhatsApp connection (customer's own number)
+// ---------------------------------------------------------------------------
+
+/** WhatsApp Business Accounts awaiting number selection (no tokens reach the client). */
+export const whatsappOAuthListAccounts = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  return listPendingWhatsAppAccounts(workspaceId);
+});
+
+/** Persist the chosen WhatsApp phone number for this workspace. */
+export const whatsappOAuthSelectNumber = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, phoneNumberId } = (request.data ?? {}) as {
+    workspaceId?: string;
+    phoneNumberId?: string;
+  };
+  if (!workspaceId || !phoneNumberId) {
+    throw new HttpsError("invalid-argument", "workspaceId and phoneNumberId are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const result = await selectWhatsAppNumber(workspaceId, uid, phoneNumberId);
+  logger.info("WhatsApp number connected", { workspaceId, phoneNumberId: result.phoneNumberId });
   return result;
 });

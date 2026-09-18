@@ -20,6 +20,15 @@ export interface MetaOAuthStatus {
     pictureUrl: string | null;
     expiresAtMs: number | null;
   };
+  /** WhatsApp anchor (customer's own number). Present when the backend ships it. */
+  whatsappOnly?: {
+    connected: boolean;
+    pending: boolean;
+    phoneNumberId: string | null;
+    wabaId: string | null;
+    displayName: string | null;
+    verifiedName: string | null;
+  };
 }
 
 export interface MetaPage {

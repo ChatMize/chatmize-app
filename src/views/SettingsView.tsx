@@ -41,6 +41,7 @@ import { WorkspaceSilo } from '../types/workspace';
 import { SmsChannelCard } from '../components/channels/SmsChannelCard';
 import { MetaConnectCard } from '../components/channels/MetaConnectCard';
 import { InstagramConnectCard } from '../components/channels/InstagramConnectCard';
+import { WhatsAppConnectCard } from '../components/channels/WhatsAppConnectCard';
 import { getMetaOAuthStatus, startMetaOAuth } from '../lib/meta';
 import { usePlans, usePlan } from '../lib/entitlements';
 import { Plan, PlanMode, formatPrice } from '../lib/billing';
@@ -491,6 +492,7 @@ export function SettingsView({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {workspace?.id && <MetaConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={refreshAnchor} />}
             {workspace?.id && <InstagramConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" hasPageAnchor={anchor.connected} />}
+            {workspace?.id && <WhatsAppConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
             {channels.map(channel => (
               <div
