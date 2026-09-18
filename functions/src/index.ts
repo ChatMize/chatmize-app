@@ -341,6 +341,9 @@ interface SendMessageData {
   channel?: Channel;
   recipientId?: string;
   text?: string;
+  /** Frontend's optimistic message id, echoed back as clientId on the
+   * persisted doc so the UI can reconcile instead of duplicating. */
+  clientMessageId?: string;
 }
 
 /** Meta error text means the page token is dead (not a transient send error). */
@@ -440,7 +443,7 @@ export const sendChannelMessage = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "Sign in required.");
     }
-    const { workspaceId, channel, recipientId, text } = (request.data ?? {}) as SendMessageData;
+    const { workspaceId, channel, recipientId, text, clientMessageId } = (request.data ?? {}) as SendMessageData;
     if (!workspaceId || !channel || !recipientId || !text) {
       throw new HttpsError("invalid-argument", "workspaceId, channel, recipientId, and text are required.");
     }
@@ -537,6 +540,7 @@ export const sendChannelMessage = onCall(
       result.metaMessageId,
       result.ok,
       result.error,
+      clientMessageId ?? null,
     );
 
     if (!result.ok) {

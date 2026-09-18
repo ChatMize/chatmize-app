@@ -498,6 +498,7 @@ export async function persistInboundSms(
     senderId: from,
     text: body,
     externalId,
+    timestampMs: Date.now(),
     createdAt: FieldValue.serverTimestamp(),
   });
   await batch.commit();
@@ -537,6 +538,7 @@ export async function persistOutboundSms(
     senderId: from,
     text: body,
     externalId,
+    timestampMs: Date.now(),
     createdAt: FieldValue.serverTimestamp(),
   });
   await batch.commit();
