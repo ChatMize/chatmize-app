@@ -1388,6 +1388,9 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   return {
     connected: conn.status === "connected",
     pending: conn.status === "pending",
+    /** The page token died (Meta error 190). Nothing auto-revives it; the
+     * owner must reconnect. Surfaces as a "session expired" flag in Settings. */
+    tokenInvalid: conn.status === "token_invalid",
     pageId: conn.pageId ?? null,
     pageName: conn.pageName ?? null,
     pagePictureUrl,

@@ -168,6 +168,9 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
   };
 
   const connected = status?.connected ?? false;
+  /** Meta killed the page token (error 190). Inbound keeps flowing; outbound
+   * stays broken until the owner reconnects. This is the persistent flag. */
+  const tokenInvalid = status?.tokenInvalid ?? false;
 
   const pageQueryLower = pageQuery.trim().toLowerCase();
   // Normalize: ignore spaces, dashes, and other punctuation so
@@ -208,7 +211,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
             <div>
               <h3 className="font-bold text-white text-sm">Facebook Page (Meta Anchor)</h3>
               <p className="text-xs font-mono text-slate-400">
-                {loading ? 'Checking connection...' : connected ? status?.pageName : 'Not connected'}
+                {loading ? 'Checking connection...' : tokenInvalid ? 'Session expired' : connected ? status?.pageName : 'Not connected'}
               </p>
             </div>
           </div>
@@ -307,12 +310,18 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
           </div>
         )}
 
-        {connectionLost && (
+        {(connectionLost || tokenInvalid) && (
           <div className="mb-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
             <div className="flex-1 text-xs">
-              <p className="text-amber-200 font-semibold">Facebook connection lost</p>
-              <p className="text-amber-200/70">Reconnect to keep Messenger working.</p>
+              <p className="text-amber-200 font-semibold">
+                {tokenInvalid ? 'Facebook session expired' : 'Facebook connection lost'}
+              </p>
+              <p className="text-amber-200/70">
+                {tokenInvalid
+                  ? 'Reconnect to resume sending. Incoming messages are unaffected.'
+                  : 'Reconnect to keep Messenger working.'}
+              </p>
             </div>
             <button
               onClick={handleConnect}
@@ -333,7 +342,9 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
 
       <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs">
         <span className="text-slate-400 flex items-center gap-1.5">
-          {connected
+          {tokenInvalid
+            ? 'Session expired · reconnect to resume sending'
+            : connected
             ? status?.instagram
               ? 'Messenger + Instagram ready'
               : 'Messenger ready · Instagram not linked'
