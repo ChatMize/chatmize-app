@@ -32,6 +32,7 @@ import {
   recordRecurringNotificationSent,
   subscribeToContacts
 } from '../lib/firebase';
+import { ImageUpload } from './ImageUpload';
 
 interface CampaignBuilderModalProps {
   isOpen: boolean;
@@ -799,12 +800,12 @@ export function CampaignBuilderModal({
                     {/* Step Optional Media & CTA Button */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                       <div>
-                        <input 
-                          type="text" 
-                          placeholder="Media Image URL (Optional)" 
-                          value={step.mediaUrl || ''} 
-                          onChange={(e) => handleUpdateDripStep(idx, { mediaUrl: e.target.value })}
-                          className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-amber-500"
+                        <ImageUpload
+                          label="Media Image (Optional)"
+                          value={step.mediaUrl || ''}
+                          onChange={(url) => handleUpdateDripStep(idx, { mediaUrl: url })}
+                          accentClass="focus-within:border-amber-500"
+                          compact
                         />
                       </div>
                       <div>
@@ -883,13 +884,12 @@ export function CampaignBuilderModal({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-1">
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Media Banner Image</label>
-                  <input 
-                    type="text" 
-                    value={mediaUrl} 
-                    onChange={(e) => setMediaUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                  <ImageUpload
+                    label="Media Banner Image"
+                    value={mediaUrl}
+                    onChange={(url) => setMediaUrl(url)}
+                    accentClass="focus-within:border-blue-500"
+                    compact
                   />
                 </div>
 

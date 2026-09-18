@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { SupportChatWidgetConfig } from '../../types/growthTools';
 import { DEFAULT_SUPPORT_WIDGETS } from '../../data/growthToolsDefaults';
+import { ImageUpload } from '../ImageUpload';
 
 interface SupportChatViewProps {
   availableBots?: Array<{ id: string; name: string }>;
@@ -816,12 +817,11 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[11px] text-slate-400">Avatar Image URL</label>
-                <input
-                  type="text"
+                <ImageUpload
+                  label="Avatar Image"
                   value={editingWidget.avatarUrl}
-                  onChange={(e) => setEditingWidget({ ...editingWidget, avatarUrl: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                  onChange={(url) => setEditingWidget({ ...editingWidget, avatarUrl: url })}
+                  accentClass="focus-within:border-cyan-500"
                 />
               </div>
             </div>

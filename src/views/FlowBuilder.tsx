@@ -82,6 +82,7 @@ import {
 } from '../types/metaMessaging';
 import { MetaPolicyModal } from '../components/MetaPolicyModal';
 import { TriggerSelectorModal } from '../components/TriggerSelectorModal';
+import { ImageUpload } from '../components/ImageUpload';
 import { loadBotMapData, saveBotMapData } from '../utils/botMapStorage';
 
 export type MessageComponentType = 
@@ -5093,13 +5094,11 @@ function NodeEditor({
                           </div>
 
                           <div>
-                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Image URL</label>
-                            <input 
-                              type="text" 
-                              value={comp.imageUrl || ''} 
-                              onChange={(e) => handleUpdateComponent(comp.id, { imageUrl: e.target.value })}
-                              placeholder="https://images.unsplash.com/..."
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                            <ImageUpload
+                              label="Image"
+                              value={comp.imageUrl || ''}
+                              onChange={(url) => handleUpdateComponent(comp.id, { imageUrl: url })}
+                              accentClass="focus-within:border-emerald-500"
                             />
                           </div>
 
@@ -5114,17 +5113,6 @@ function NodeEditor({
                             />
                           </div>
 
-                          {/* Image Preview */}
-                          {comp.imageUrl && (
-                            <div className="rounded-xl overflow-hidden border border-white/10 bg-slate-950 relative h-28">
-                              <img 
-                                src={comp.imageUrl} 
-                                alt={comp.imageCaption || 'Preview'} 
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
-                            </div>
-                          )}
                         </div>
                       )}
 
@@ -5150,12 +5138,10 @@ function NodeEditor({
                                 </button>
                               ))}
                             </div>
-                            <input 
-                              type="text" 
-                              value={comp.cardImageUrl || ''} 
-                              onChange={(e) => handleUpdateComponent(comp.id, { cardImageUrl: e.target.value })}
-                              placeholder="Image URL..."
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+                            <ImageUpload
+                              value={comp.cardImageUrl || ''}
+                              onChange={(url) => handleUpdateComponent(comp.id, { cardImageUrl: url })}
+                              accentClass="focus-within:border-purple-500"
                             />
                           </div>
 
@@ -5251,12 +5237,11 @@ function NodeEditor({
                                   className="w-full bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-xs text-white outline-none focus:border-amber-500"
                                 />
                                 <div className="grid grid-cols-2 gap-1.5">
-                                  <input 
-                                    type="text"
+                                  <ImageUpload
                                     value={gcard.imageUrl || ''}
-                                    onChange={(e) => handleUpdateGalleryCard(comp.id, gcard.id, { imageUrl: e.target.value })}
-                                    placeholder="Image URL"
-                                    className="w-full bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white outline-none focus:border-amber-500"
+                                    onChange={(url) => handleUpdateGalleryCard(comp.id, gcard.id, { imageUrl: url })}
+                                    accentClass="focus-within:border-amber-500"
+                                    compact
                                   />
                                   <input 
                                     type="text"
