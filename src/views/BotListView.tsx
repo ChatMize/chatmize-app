@@ -229,9 +229,11 @@ interface BotListViewProps {
   onNewBotMap: (newBot: BotMapRecord) => void;
   triggerCreateModal?: number;
   onOpenLibrary?: () => void;
+  /** Current workspace slug; used for Firestore-backed snapshot exports. */
+  workspaceSlug?: string;
 }
 
-export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onOpenLibrary }: BotListViewProps) {
+export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onOpenLibrary, workspaceSlug }: BotListViewProps) {
   // Groups State & Persistence
   const [groups, setGroups] = useState<BotGroup[]>(() => {
     try {
@@ -1753,7 +1755,7 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onO
       )}
 
       {/* Modal: Share Workspace Snapshot */}
-      {showShareModal && <ShareSnapshotModal onClose={() => setShowShareModal(false)} />}
+      {showShareModal && <ShareSnapshotModal onClose={() => setShowShareModal(false)} workspaceSlug={workspaceSlug} />}
 
     </div>
   );

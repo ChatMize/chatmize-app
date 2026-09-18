@@ -323,6 +323,7 @@ export default function App() {
         return (
           <BotListView 
             triggerCreateModal={createModalTrigger}
+            workspaceSlug={activeWorkspace?.slug}
             onOpenLibrary={() => setActiveTab('snapshot-library')}
             onOpenBotMap={(bot) => {
               setActiveBotId(bot.id);
@@ -349,6 +350,7 @@ export default function App() {
           <SnapshotImportView
             snapshotId={deepSnapshotId}
             workspaceName={activeWorkspace?.name || 'your workspace'}
+            workspaceSlug={activeWorkspace?.slug}
             onBack={() => setActiveTab('bot-list')}
             onImported={() => setActiveTab('bot-list')}
           />
