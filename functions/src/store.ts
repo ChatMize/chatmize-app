@@ -18,52 +18,13 @@ export interface NormalizedMessage {
 
 const db = () => getFirestore("chatmize-prod");
 
-const PROJECT_ID = "gen-lang-client-0433776094";
-
-/** Fetch the IG sender's public profile (name, username, pic) for the contact card. */
-async function fetchInstagramSenderProfile(
-  workspaceId: string,
-  senderId: string,
-): Promise<{ name?: string; username?: string; avatarUrl?: string }> {
-  try {
-    const { GoogleAuth } = await import("google-auth-library");
-    const auth = new GoogleAuth({
-      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-    });
-    const client = await auth.getClient();
-    const gtoken = await client.getAccessToken();
-    const safe = workspaceId.toUpperCase().replace(/[^A-Z0-9_]/g, "_").slice(0, 100);
-    const secretName = `IG_TOKEN_WS_${safe}`;
-    const res = await fetch(
-      `https://secretmanager.googleapis.com/v1/projects/${PROJECT_ID}/secrets/${secretName}/versions/latest:access`,
-      { headers: { Authorization: `Bearer ${gtoken.token}` } },
-    );
-    if (!res.ok) return {};
-    const data = (await res.json()) as { payload?: { data?: string } };
-    const payload = data.payload?.data;
-    if (!payload) return {};
-    const igToken = Buffer.from(payload, "base64").toString("utf8");
-
-    // Try the Instagram Graph API for the sender's profile
-    const profileRes = await fetch(
-      `https://graph.instagram.com/${senderId}?fields=id,username,name,profile_picture_url&access_token=${encodeURIComponent(igToken)}`,
-    );
-    if (!profileRes.ok) return {};
-    const profile = (await profileRes.json()) as {
-      username?: string;
-      name?: string;
-      profile_picture_url?: string;
-    };
-    return {
-      name: profile.name || profile.username,
-      username: profile.username,
-      avatarUrl: profile.profile_picture_url,
-    };
-  } catch (e) {
-    logger.warn("Failed to fetch IG sender profile", { senderId, error: String(e) });
-    return {};
-  }
-}
+/**
+ * NOTE: Instagram's API does not allow fetching the profile (name/photo) of
+ * someone who sends a DM to a business account. This is a Meta privacy
+ * restriction, not a code issue. The contact shows as "Instagram User" with
+ * the Instagram icon; users can rename it manually via Edit Info in the UI.
+ * (Messenger via Facebook Page CAN fetch profiles using the Page token.)
+ */
 
 /**
  * Upsert the conversation and append the inbound message.
@@ -112,32 +73,31 @@ export async function persistInboundMessage(
   });
   // Upsert the contact so the inbox UI (which lists contacts) shows the conversation.
   // NOTE: UI reads from root `contacts` collection (not workspace subcollection).
+  // NOTE: We cannot fetch the IG sender's name/photo (Meta privacy restriction).
+  // The contact shows as "Instagram User"; rename manually via Edit Info.
   const contactId = `contact_${msg.channel}_${msg.senderId}`;
   const contactRef = db().collection("contacts").doc(contactId);
 
-  // Fetch the sender's real profile (name, pic) for Instagram/Messenger.
-  let profileName = "Instagram User";
-  let avatarUrl: string | undefined;
-  if (msg.channel === "instagram") {
-    const profile = await fetchInstagramSenderProfile(workspaceId, msg.senderId);
-    if (profile.name) profileName = profile.name;
-    if (profile.avatarUrl) avatarUrl = profile.avatarUrl;
-  }
+  const displayName = msg.channel === "instagram" ? "Instagram User"
+    : msg.channel === "messenger" ? "Messenger User"
+    : msg.channel === "whatsapp" ? "WhatsApp User"
+    : "Web User";
 
-  const contactData: Record<string, unknown> = {
-    id: contactId,
-    name: profileName,
-    firstName: profileName,
-    channel: msg.channel,
-    senderId: msg.senderId,
-    lastMessageAt: FieldValue.serverTimestamp(),
-    lastMessageText: msg.text ?? "",
-    lastInteractionAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  };
-  if (avatarUrl) contactData.avatarUrl = avatarUrl;
-
-  batch.set(contactRef, contactData, { merge: true });
+  batch.set(
+    contactRef,
+    {
+      id: contactId,
+      name: displayName,
+      firstName: displayName,
+      channel: msg.channel,
+      senderId: msg.senderId,
+      lastMessageAt: FieldValue.serverTimestamp(),
+      lastMessageText: msg.text ?? "",
+      lastInteractionAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
   await batch.commit();
 }
 
