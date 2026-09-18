@@ -1347,7 +1347,7 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
 
                   {/* Add Asset field */}
                   <div className="flex items-center gap-2 pt-1">
-                    <input
+                    <input data-no-emoji
                       type="text"
                       placeholder="e.g. shopify.mystore.com or Lead Funnel"
                       value={newTargetAssetInput}
@@ -1611,7 +1611,7 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
 
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">Dedicated Phone Number (Twilio / Carrier)</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   placeholder="+1 (833) 734-6283 or local +1 (512) 555-0199"
                   value={activeSmsModalWs.connectedSms?.phoneNumber || ''}
@@ -1817,7 +1817,7 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
 
                 <div>
                   <label className="block text-xs text-slate-300 mb-1">SMS Phone Line (10DLC)</label>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     placeholder="+1 (833) 734-6283 or local number"
                     value={newSmsPhone}
@@ -1937,7 +1937,7 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
 
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">Custom CNAME Domain</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   placeholder="e.g. chat.dentalcareaustin.com"
                   value={activeWhitelabelModalWs.whitelabel.customDomain || ''}

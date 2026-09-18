@@ -131,7 +131,7 @@ export const SmsChannelCard: React.FC<SmsChannelCardProps> = ({ workspaceId }) =
                 Local number instead of toll-free
               </label>
               {useLocal && (
-                <input
+                <input data-no-emoji
                   value={areaCode}
                   onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
                   placeholder="Area code"
@@ -142,7 +142,7 @@ export const SmsChannelCard: React.FC<SmsChannelCardProps> = ({ workspaceId }) =
           ) : (
             <div className="space-y-1.5">
               <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Your {provider === 'telnyx' ? 'Telnyx' : 'Bandwidth'} number</p>
-              <input
+              <input data-no-emoji
                 value={ownNumber}
                 onChange={(e) => setOwnNumber(e.target.value)}
                 placeholder="+15551234567"

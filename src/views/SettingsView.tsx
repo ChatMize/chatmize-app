@@ -1193,8 +1193,8 @@ export function SettingsView({
               </button>
             </div>
 
-            {/* Form Fields */}
-            <div className="space-y-3.5 mb-6">
+            {/* Form Fields — plumbing (API keys, secrets, tokens): no emoji buddy */}
+            <div className="space-y-3.5 mb-6" data-no-emoji>
               {activeModalApp.fields.map(field => (
                 <div key={field.name}>
                   <label className="block text-xs font-bold text-slate-300 mb-1">

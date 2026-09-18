@@ -526,7 +526,7 @@ export const WorkspaceSiloManager: React.FC<WorkspaceSiloManagerProps> = ({
                   </div>
                   <div>
                     <label className="block text-xs text-slate-300 mb-1">WhatsApp Cloud Number</label>
-                    <input
+                    <input data-no-emoji
                       type="text"
                       placeholder="+1 (512) 555-0100"
                       value={newWhatsAppPhone}
@@ -634,7 +634,7 @@ export const WorkspaceSiloManager: React.FC<WorkspaceSiloManagerProps> = ({
 
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">Custom CNAME Domain</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   placeholder="e.g. chat.dentalcareaustin.com"
                   value={activeWhitelabelModalWs.whitelabel.customDomain || ''}

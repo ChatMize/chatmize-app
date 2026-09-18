@@ -1607,7 +1607,7 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>
                   <label className="block text-slate-400 font-semibold mb-1">Tool Internal Name</label>
-                  <input 
+                  <input data-no-emoji 
                     type="text"
                     value={draftTool.name}
                     onChange={(e) => setDraftTool({ ...draftTool, name: e.target.value })}
@@ -2436,7 +2436,7 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Plan Name *</label>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={planForm.name}
                     onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })}
@@ -2447,7 +2447,7 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
 
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Display Price (Optional)</label>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={planForm.price || ''}
                     onChange={(e) => setPlanForm({ ...planForm, price: e.target.value })}

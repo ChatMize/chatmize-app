@@ -742,7 +742,7 @@ export const NurtureStepWizard: React.FC<NurtureStepWizardProps> = ({
                   <Globe className="w-3.5 h-3.5 text-blue-400" />
                   Whitelisted Domains (Comma Separated)
                 </label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={form.whitelistedDomains.join(', ')}
                   onChange={(e) => setForm({ 

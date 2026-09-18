@@ -178,7 +178,7 @@ export const QrBuilderTab: React.FC<QrBuilderTabProps> = ({
           <label className="text-xs font-bold text-slate-300">Link or Text to Encode</label>
           <div className="flex items-center px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus-within:border-violet-500/60 transition-colors">
             <Link2 className="w-4 h-4 text-slate-500 mr-2 flex-shrink-0" />
-            <input
+            <input data-no-emoji
               type="text"
               value={text}
               onChange={(e) => setText(e.target.value)}

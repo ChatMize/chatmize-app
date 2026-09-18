@@ -509,7 +509,7 @@ export function CampaignBuilderModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1.5">Campaign Name</label>
-                <input 
+                <input data-no-emoji 
                   type="text" 
                   value={name} 
                   onChange={(e) => setName(e.target.value)}
@@ -535,7 +535,7 @@ export function CampaignBuilderModal({
 
             <div>
               <label className="block text-xs font-bold text-slate-300 mb-1.5">Description (Internal Notes)</label>
-              <input 
+              <input data-no-emoji 
                 type="text" 
                 value={description} 
                 onChange={(e) => setDescription(e.target.value)}
@@ -566,7 +566,7 @@ export function CampaignBuilderModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5">Approved Topic Name</label>
-                  <input 
+                  <input data-no-emoji 
                     type="text" 
                     value={rnTopic} 
                     onChange={(e) => setRnTopic(e.target.value)}
@@ -709,7 +709,7 @@ export function CampaignBuilderModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-900/80 rounded-xl border border-white/10 text-xs">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Enrollment Trigger Tag</label>
-                  <input 
+                  <input data-no-emoji 
                     type="text" 
                     value={triggerOnTag} 
                     onChange={(e) => setTriggerOnTag(e.target.value)}
@@ -743,7 +743,7 @@ export function CampaignBuilderModal({
                         <span className="w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-black flex items-center justify-center">
                           {step.stepNumber}
                         </span>
-                        <input 
+                        <input data-no-emoji 
                           type="text" 
                           value={step.title}
                           onChange={(e) => handleUpdateDripStep(idx, { title: e.target.value })}
@@ -834,7 +834,7 @@ export function CampaignBuilderModal({
                         </div>
                       </div>
                       <div>
-                        <input 
+                        <input data-no-emoji 
                           type="text" 
                           placeholder="Destination URL (https://...)" 
                           value={step.buttonUrl || ''} 
@@ -942,7 +942,7 @@ export function CampaignBuilderModal({
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Destination URL</label>
-                  <input 
+                  <input data-no-emoji 
                     type="text" 
                     value={ctaButtonUrl} 
                     onChange={(e) => setCtaButtonUrl(e.target.value)}

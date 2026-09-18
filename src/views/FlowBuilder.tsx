@@ -1545,7 +1545,7 @@ export function FlowBuilder({
             </div>
             
             {isEditingTitle ? (
-              <input 
+              <input data-no-emoji 
                 type="text" 
                 value={flowTitle} 
                 onChange={(e) => {
@@ -3887,7 +3887,7 @@ function NodeEditor({
                               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                                 Trigger Label
                               </label>
-                              <input
+                              <input data-no-emoji
                                 type="text"
                                 value={trig.title}
                                 onChange={(e) => handleUpdateTrigger(trig.id, { title: e.target.value })}
@@ -4115,7 +4115,7 @@ function NodeEditor({
                                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                                     Target Post or Reel URL
                                   </label>
-                                  <input
+                                  <input data-no-emoji
                                     type="text"
                                     value={trig.postUrl || ''}
                                     onChange={(e) => handleUpdateTrigger(trig.id, { postUrl: e.target.value })}
@@ -5221,7 +5221,7 @@ function NodeEditor({
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Button Link</label>
-                              <input 
+                              <input data-no-emoji 
                                 type="text" 
                                 value={comp.cardButtonUrl || ''} 
                                 onChange={(e) => handleUpdateComponent(comp.id, { cardButtonUrl: e.target.value })}

@@ -56,6 +56,7 @@ function isEmojiTextField(el: EventTarget | null): el is Field {
   if (!(el instanceof HTMLElement)) return false;
   // Skip fields that already have their own inline picker, and the picker's own search box.
   if (el.closest('[data-emoji-panel]')) return false;
+  if (el.closest('[data-personalization-panel]')) return false;
   const tagged = el as HTMLElement;
   if (tagged.dataset && tagged.dataset.emojiInline) return false;
   // Explicit opt-out: data-no-emoji on the field or any ancestor (plumbing fields:

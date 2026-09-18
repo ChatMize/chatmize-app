@@ -78,7 +78,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, defaultM
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-white/10 rounded-2xl shadow-2xl p-6">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-white/10 rounded-2xl shadow-2xl p-6" data-no-emoji>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-bold text-white">
             {plan ? `Edit Tier: ${plan.name}` : 'Create New Tier'}

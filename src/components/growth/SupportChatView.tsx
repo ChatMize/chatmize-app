@@ -702,7 +702,7 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">Widget Name</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={editingWidget.name}
                   onChange={(e) => setEditingWidget({ ...editingWidget, name: e.target.value })}

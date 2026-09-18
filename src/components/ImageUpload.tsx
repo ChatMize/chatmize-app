@@ -245,7 +245,7 @@ export function ImageUpload({
         </button>
       ) : (
         <div className="mt-1.5 flex gap-1.5">
-          <input
+          <input data-no-emoji
             type="text"
             value={urlDraft}
             onChange={(e) => setUrlDraft(e.target.value)}

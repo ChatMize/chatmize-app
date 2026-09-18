@@ -824,7 +824,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">Overlay Campaign Name</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={editingOverlay.name}
                   onChange={(e) => setEditingOverlay({ ...editingOverlay, name: e.target.value })}
@@ -1037,7 +1037,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
 
                 <div className="space-y-1.5">
                   <label className="text-[11px] text-slate-400">Voucher / Coupon Code (Optional)</label>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={editingOverlay.offerCode || ''}
                     onChange={(e) => setEditingOverlay({ ...editingOverlay, offerCode: e.target.value })}

@@ -659,7 +659,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   Platform Export API Token or Webhook URL
                 </label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={legacyApiKey}
                   onChange={(e) => setLegacyApiKey(e.target.value)}

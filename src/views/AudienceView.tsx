@@ -1209,7 +1209,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
 
                   <div>
                     <label className="text-[10px] text-slate-400 block mb-0.5">Mobile Phone</label>
-                    <input
+                    <input data-no-emoji
                       type="text"
                       value={editPhone}
                       onChange={(e) => setEditPhone(e.target.value)}
@@ -1556,7 +1556,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
 
               {/* Add Tag Input */}
               <div className="flex gap-1.5 pt-1">
-                <input
+                <input data-no-emoji
                   type="text"
                   placeholder="Add tag (e.g. VIP-Lead)..."
                   value={newTagInput}
@@ -2157,7 +2157,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
 
                 {/* Add variable row */}
                 <div className="flex gap-1.5 pt-1">
-                  <input
+                  <input data-no-emoji
                     type="text"
                     placeholder="Var key (e.g. budget)"
                     value={newModalVarKey}

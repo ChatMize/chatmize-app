@@ -659,7 +659,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-300">Custom Campaign Slug</label>
-                    <input
+                    <input data-no-emoji
                       type="text"
                       value={newLinkSlug}
                       onChange={(e) => setNewLinkSlug(e.target.value)}
@@ -1018,7 +1018,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                 <label className="text-xs font-bold text-slate-300">Facebook Page Username or Page ID</label>
                 <div className="flex items-center px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white">
                   <span className="text-slate-500 mr-1 font-mono">https://m.me/</span>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={mmePage}
                     onChange={(e) => setMmePage(e.target.value)}
@@ -1044,7 +1044,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">Ref Payload Parameter</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={mmeRefPayload}
                   onChange={(e) => setMmeRefPayload(e.target.value)}
@@ -1178,7 +1178,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                 <label className="text-xs font-bold text-slate-300">Instagram Handle (Username)</label>
                 <div className="flex items-center px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white">
                   <span className="text-slate-500 mr-1 font-mono">https://ig.me/m/</span>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={igHandle}
                     onChange={(e) => setIgHandle(e.target.value)}
@@ -1204,7 +1204,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">Ref Payload / Keyword Starter</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={igRefPayload}
                   onChange={(e) => setIgRefPayload(e.target.value)}

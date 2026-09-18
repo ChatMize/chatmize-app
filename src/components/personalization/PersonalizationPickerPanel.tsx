@@ -29,7 +29,7 @@ export default function PersonalizationPickerPanel({ onPick }: Props) {
       className="w-[300px] max-w-[calc(100vw-3rem)] rounded-2xl border border-white/15 bg-slate-900 shadow-2xl shadow-black/60 overflow-hidden"
     >
       <div className="p-2.5 border-b border-white/10">
-        <input
+        <input data-no-emoji
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}

@@ -1852,7 +1852,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
                     </div>
                     <div>
                       <label className="text-[10px] text-slate-400 block mb-1">Mobile / Phone</label>
-                      <input
+                      <input data-no-emoji
                         type="text"
                         value={editForm.phone}
                         onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
@@ -1973,7 +1973,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
                 {/* Add Tag row */}
                 <div className="flex items-center gap-1.5 pt-1">
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={newTagInput}
                     onChange={(e) => setNewTagInput(e.target.value)}
@@ -2085,7 +2085,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
                 {/* Add variable input */}
                 <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={newVarKey}
                     onChange={(e) => setNewVarKey(e.target.value)}
@@ -2264,7 +2264,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Rule Name</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={newRuleTitle}
                   onChange={(e) => setNewRuleTitle(e.target.value)}
@@ -2276,7 +2276,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Timing / Trigger</label>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={newRuleDelay}
                     onChange={(e) => setNewRuleDelay(e.target.value)}

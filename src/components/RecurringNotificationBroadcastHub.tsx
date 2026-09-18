@@ -866,7 +866,7 @@ export function RecurringNotificationBroadcastHub({
                     <label className="block text-xs font-bold text-slate-300 mb-1">
                       CTA Destination URL
                     </label>
-                    <input
+                    <input data-no-emoji
                       type="text"
                       value={ctaUrl}
                       onChange={(e) => setCtaUrl(e.target.value)}
