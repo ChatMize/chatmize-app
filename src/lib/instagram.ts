@@ -10,6 +10,8 @@ export interface InstagramOAuthStatus {
   username: string | null;
   pictureUrl: string | null;
   expiresAtMs: number | null;
+  /** True after the workspace upgraded this account to the Facebook Page anchor. */
+  anchoredViaPage: boolean;
 }
 
 /**
@@ -41,5 +43,6 @@ export async function getInstagramOAuthStatus(workspaceId: string): Promise<Inst
     username: ig?.username ?? null,
     pictureUrl: ig?.pictureUrl ?? null,
     expiresAtMs: ig?.expiresAtMs ?? null,
+    anchoredViaPage: ig?.anchoredViaPage ?? false,
   };
 }

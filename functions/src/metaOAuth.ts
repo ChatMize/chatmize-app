@@ -575,6 +575,9 @@ export async function selectWorkspacePage(
       instagram: social.instagram,
       connectedAt: FieldValue.serverTimestamp(),
       connectedBy: uid,
+      // Clear stale invalidation flags from an earlier dead page token.
+      tokenInvalidAt: FieldValue.delete(),
+      tokenInvalidReason: FieldValue.delete(),
       // Drop the raw tokens now that the chosen one lives in Secret Manager.
       pages: FieldValue.delete(),
       pendingExpiresAtMs: FieldValue.delete(),
@@ -582,6 +585,44 @@ export async function selectWorkspacePage(
     // merge:true is required for FieldValue.delete() sentinels in set().
     { merge: true }
   );
+
+  // Non-destructive upgrade: if this workspace already has an IG-only
+  // connection for the same Instagram account the Page links to,
+  // re-anchor it to this Page. The IG-only doc and its secret are never
+  // deleted; send routing moves to the Page token from here on, with the
+  // IG token kept as a fallback. Nothing the user built is touched.
+  if (social.instagram?.id) {
+    try {
+      const igRef = db()
+        .collection("workspaces")
+        .doc(workspaceId)
+        .collection("integrations")
+        .doc("instagram");
+      const igSnap = await igRef.get();
+      const igData = igSnap.data() as
+        | { status?: string; igUserId?: string }
+        | undefined;
+      if (
+        igData?.status === "connected" &&
+        igData.igUserId === social.instagram.id
+      ) {
+        await igRef.set(
+          { anchoredViaPage: true, anchoredPageId: page.id },
+          { merge: true },
+        );
+        logger.info("IG-only connection re-anchored to Facebook Page", {
+          workspaceId,
+          igUserId: igData.igUserId,
+          pageId: page.id,
+        });
+      }
+    } catch (e) {
+      logger.warn("IG re-anchor check failed", {
+        workspaceId,
+        error: (e as Error).message,
+      });
+    }
+  }
 
   // Subscribe the app to the page so Messenger inbound webhooks flow.
   // (Instagram DMs arrive via the app-level Instagram webhook subscription

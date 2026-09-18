@@ -44,6 +44,9 @@ import {
   connectInstagramAccount,
   getInstagramConnection,
   instagramAppReturnUrl,
+  getIgToken,
+  ensureFreshIgToken,
+  markIgTokenInvalid,
 } from "./instagramOAuth";
 import {
   buildWhatsAppLoginUrl,
@@ -64,7 +67,11 @@ import {
   recordOutboundMessage,
   Channel,
 } from "./store";
-import { CHANNEL_SENDERS } from "./send";
+import {
+  CHANNEL_SENDERS,
+  sendInstagramMessage,
+  sendInstagramDirectMessage,
+} from "./send";
 import {
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN,
@@ -332,6 +339,83 @@ function isMetaTokenError(error: string | undefined): boolean {
   );
 }
 
+/** Meta rejected the recipient because the IGSID is scoped to a different
+ * app/connection than the token used (Graph error 100 / subcode 2018001). */
+function isWrongScopeRecipientError(error: string | undefined): boolean {
+  if (!error) return false;
+  return /no matching user found/i.test(error);
+}
+
+/**
+ * Decide which token answers an Instagram conversation.
+ *
+ * IGSIDs are scoped to the Meta app that received them, so each conversation
+ * must be answered with the token of the connection that received it:
+ * - "ig": the conversation arrived through the IG-only connection
+ *   (ChatMize-IG app) -> send with the IG user token on graph.instagram.com.
+ * - "page": the conversation arrived through the Facebook-anchored linked
+ *   Instagram account (or the IG-only connection was upgraded to the Page
+ *   anchor) -> send with the Page token on graph.facebook.com as before.
+ * - null: no Instagram connection is live on this workspace.
+ */
+async function resolveInstagramRoute(
+  workspaceId: string,
+  recipientId: string,
+): Promise<"ig" | "page" | null> {
+  const integRef = db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("integrations");
+  const convoRef = db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("conversations")
+    .doc(`instagram_${recipientId}`);
+  const [convoSnap, igSnap, metaSnap] = await Promise.all([
+    convoRef.get(),
+    integRef.doc("instagram").get(),
+    integRef.doc("meta").get(),
+  ]);
+  const accountId =
+    (convoSnap.data() as { recipientId?: string } | undefined)?.recipientId ??
+    null;
+  const ig = igSnap.data() as
+    | {
+        status?: string;
+        igUserId?: string;
+        anchoredViaPage?: boolean;
+        anchoredPageId?: string;
+      }
+    | undefined;
+  const meta = metaSnap.data() as
+    | { status?: string; pageId?: string; instagram?: { id?: string } }
+    | undefined;
+  const igConnected = ig?.status === "connected" && !!ig.igUserId;
+  const pageIgId =
+    meta?.status === "connected" ? (meta.instagram?.id ?? null) : null;
+
+  // Upgraded anchor: the IG-only connection was re-anchored to the Page
+  // anchor, so its conversations now go out on the Page token.
+  if (
+    igConnected &&
+    ig.anchoredViaPage &&
+    pageIgId &&
+    pageIgId === ig.igUserId &&
+    ig.anchoredPageId === meta?.pageId
+  ) {
+    return "page";
+  }
+  if (accountId) {
+    if (igConnected && accountId === ig.igUserId) return "ig";
+    if (pageIgId && accountId === pageIgId) return "page";
+  }
+  // Fallback when the conversation is unknown: prefer the IG-only
+  // connection, otherwise the Page anchor.
+  if (igConnected) return "ig";
+  if (pageIgId || meta?.status === "connected") return "page";
+  return null;
+}
+
 /**
  * Authenticated callable: send a message on Messenger, Instagram, or WhatsApp.
  * The caller must be a member of the workspace (or Super Admin). Tokens come
@@ -355,9 +439,65 @@ export const sendChannelMessage = onCall(
     // Membership check (Super Admin claim bypasses).
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
 
-    // Token self-heal: refresh a near-expiry page token, or fail fast with a
-    // clear reconnect prompt when Meta has killed the session outright.
-    if (channel === "messenger" || channel === "instagram") {
+    // Token self-heal, per connection:
+    // - Messenger always runs on the Page token.
+    // - Instagram is answered with the token of the connection that received
+    //   the conversation (IG-only token on graph.instagram.com, or the Page
+    //   token on graph.facebook.com), because IGSIDs are app-scoped.
+    let result;
+    let igRoute: "ig" | "page" | null = null;
+    if (channel === "whatsapp") {
+      result = await CHANNEL_SENDERS[channel](
+        WHATSAPP_TOKEN_DEFAULT.value(),
+        recipientId,
+        text,
+        WHATSAPP_PHONE_NUMBER_ID.value(),
+      );
+    } else if (channel === "instagram") {
+      igRoute = await resolveInstagramRoute(workspaceId, recipientId);
+      if (igRoute === null) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Instagram is not connected. Connect it in Settings under Channels, then send again.",
+        );
+      }
+      if (igRoute === "ig") {
+        const health = await ensureFreshIgToken(workspaceId);
+        if (health === "invalid") {
+          throw new HttpsError(
+            "failed-precondition",
+            "The Instagram connection expired. Reconnect it in Settings under Channels, then send again.",
+          );
+        }
+        if (health === "unconnected") {
+          throw new HttpsError(
+            "failed-precondition",
+            "Instagram is not connected. Connect it in Settings under Channels, then send again.",
+          );
+        }
+        const igToken = await getIgToken(workspaceId);
+        if (!igToken) {
+          throw new HttpsError(
+            "failed-precondition",
+            "Could not read the Instagram token. Reconnect Instagram in Settings under Channels, then send again.",
+          );
+        }
+        result = await sendInstagramDirectMessage(igToken, recipientId, text);
+      } else {
+        const health = await ensureFreshPageToken(workspaceId);
+        if (health === "invalid") {
+          throw new HttpsError(
+            "failed-precondition",
+            "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
+          );
+        }
+        result = await sendInstagramMessage(
+          await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()),
+          recipientId,
+          text,
+        );
+      }
+    } else {
       const health = await ensureFreshPageToken(workspaceId);
       if (health === "invalid") {
         throw new HttpsError(
@@ -365,19 +505,11 @@ export const sendChannelMessage = onCall(
           "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
         );
       }
-    }
-
-    const sender = CHANNEL_SENDERS[channel];
-    let result;
-    if (channel === "whatsapp") {
-      result = await sender(
-        WHATSAPP_TOKEN_DEFAULT.value(),
+      result = await CHANNEL_SENDERS[channel](
+        await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()),
         recipientId,
         text,
-        WHATSAPP_PHONE_NUMBER_ID.value(),
       );
-    } else {
-      result = await sender(await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()), recipientId, text);
     }
 
     await recordOutboundMessage(
@@ -392,7 +524,25 @@ export const sendChannelMessage = onCall(
 
     if (!result.ok) {
       logger.error("Outbound send failed", { workspaceId, channel, error: result.error });
+      if (isWrongScopeRecipientError(result.error)) {
+        // The recipient id belongs to a different Meta app/connection than
+        // the token used. Once the contact messages again, the reply will
+        // route through the right connection.
+        throw new HttpsError(
+          "failed-precondition",
+          "This conversation arrived through a different connection, so Meta rejected the reply. When the contact messages you again, the reply will go through.",
+        );
+      }
       if (isMetaTokenError(result.error)) {
+        if (channel === "instagram" && igRoute === "ig") {
+          // Reactive catch for the IG-only path: flag the IG integration so
+          // the UI prompts an Instagram reconnect instead of a bare failure.
+          await markIgTokenInvalid(workspaceId, result.error ?? "Send failed.");
+          throw new HttpsError(
+            "failed-precondition",
+            "The Instagram connection expired. Reconnect it in Settings under Channels, then send again.",
+          );
+        }
         // Reactive catch: the token died between health checks. Flag the
         // integration so the UI prompts a reconnect instead of a bare failure.
         await db()
