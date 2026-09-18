@@ -232,9 +232,9 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
                     )}
 
                     {ws.connectedPage.connectedWhatsApp?.connected && (
-                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1" title={`WhatsApp: ${ws.connectedPage.connectedWhatsApp.phoneNumber}`}>
                         <Phone className="w-2.5 h-2.5" />
-                        <span>WA</span>
+                        <span>{ws.connectedPage.connectedWhatsApp.phoneNumber || 'WA'}</span>
                       </span>
                     )}
 
