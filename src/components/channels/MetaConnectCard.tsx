@@ -9,6 +9,10 @@ import {
   MetaOAuthStatus,
   MetaPage,
 } from '../../lib/meta';
+import {
+  getWhatsAppOAuthStatus,
+  WhatsAppOAuthStatus,
+} from '../../lib/whatsapp';
 import { useCachedConnectionStatus, timeAgo } from '../../lib/useCachedConnectionStatus';
 
 interface MetaConnectCardProps {
@@ -55,6 +59,13 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
         loadPages(true);
       }
     },
+  });
+  // WhatsApp connection state for the status pills. Separate flow, separate
+  // status — the pill must reflect reality, not a hardcoded placeholder.
+  const { status: waStatus } = useCachedConnectionStatus<WhatsAppOAuthStatus>({
+    cacheKey: `chatmize_conn_whatsapp_${workspaceId}`,
+    fetchStatus: () => getWhatsAppOAuthStatus(workspaceId),
+    isConnected: (s) => s?.connected ?? false,
   });
   // Close the page picker on Escape.
   useEffect(() => {
@@ -267,13 +278,22 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
                   <span className="text-[11px] text-slate-500">Instagram not linked</span>
                 </span>
               )}
-              <span
-                className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-white/5 border border-dashed border-white/15"
-                title="WhatsApp Business Cloud API — coming soon"
-              >
-                <MessageCircle className="w-4 h-4 text-slate-500 ml-1" />
-                <span className="text-[11px] text-slate-500">WhatsApp soon</span>
-              </span>
+              {waStatus?.connected ? (
+                <span className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                  <MessageCircle className="w-4 h-4 text-emerald-400 ml-1" />
+                  <span className="text-[11px] font-medium text-emerald-200">
+                    {waStatus.displayName ?? waStatus.verifiedName ?? 'WhatsApp'}
+                  </span>
+                </span>
+              ) : (
+                <span
+                  className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-white/5 border border-dashed border-white/15"
+                  title="WhatsApp Business Cloud API — coming soon"
+                >
+                  <MessageCircle className="w-4 h-4 text-slate-500 ml-1" />
+                  <span className="text-[11px] text-slate-500">WhatsApp soon</span>
+                </span>
+              )}
             </div>
             {!status?.instagram && (
               <p className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-300/90">
