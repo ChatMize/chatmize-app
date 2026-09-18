@@ -14,6 +14,15 @@ export const META_INSTAGRAM_APP_SECRET = defineSecret("META_INSTAGRAM_APP_SECRET
 export const TWILIO_ACCOUNT_SID = defineSecret("TWILIO_ACCOUNT_SID");
 export const TWILIO_AUTH_TOKEN = defineSecret("TWILIO_AUTH_TOKEN");
 
+// Telnyx (ChatMize-owned account; workspaces connect their own Telnyx number).
+export const TELNYX_API_KEY = defineSecret("TELNYX_API_KEY");
+export const TELNYX_PUBLIC_KEY = defineSecret("TELNYX_PUBLIC_KEY");
+
+// Bandwidth (ChatMize-owned account; workspaces connect their own Bandwidth number).
+export const BANDWIDTH_ACCOUNT_ID = defineSecret("BANDWIDTH_ACCOUNT_ID");
+export const BANDWIDTH_API_TOKEN = defineSecret("BANDWIDTH_API_TOKEN");
+export const BANDWIDTH_API_SECRET = defineSecret("BANDWIDTH_API_SECRET");
+
 // Page-scoped access tokens are stored per workspace so each tenant's Meta
 // assets stay isolated. The secret name maps 1:1 to a workspace id; the
 // default workspace uses META_PAGE_TOKEN_DEFAULT.

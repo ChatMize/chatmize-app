@@ -66,6 +66,11 @@ import { CHANNEL_SENDERS } from "./send";
 import {
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN,
+  TELNYX_API_KEY,
+  TELNYX_PUBLIC_KEY,
+  BANDWIDTH_ACCOUNT_ID,
+  BANDWIDTH_API_TOKEN,
+  BANDWIDTH_API_SECRET,
 } from "./secrets";
 import {
   normalizePhone,
@@ -73,7 +78,11 @@ import {
   classifyKeyword,
   complianceReply,
   provisionTwilioNumber,
-  twilioSendSms,
+  sendSmsViaProvider,
+  providerOf,
+  parseTelnyxWebhook,
+  parseBandwidthWebhook,
+  verifyTelnyxSignature,
   getSmsConnection,
   saveSmsConnection,
   ensureAllowanceMonth,
@@ -87,8 +96,22 @@ import {
   checkInboundThrottle,
   markComplianceReplySent,
   SMS_CREDITS_PER_SEGMENT,
+  SMS_PROVIDERS,
   SmsConnection,
+  SmsProvider,
+  ParsedInboundSms,
 } from "./sms";
+
+/** All SMS provider secrets, for functions that may send via any provider. */
+const SMS_SECRETS = [
+  TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN,
+  TELNYX_API_KEY,
+  TELNYX_PUBLIC_KEY,
+  BANDWIDTH_ACCOUNT_ID,
+  BANDWIDTH_API_TOKEN,
+  BANDWIDTH_API_SECRET,
+];
 
 initializeApp();
 
@@ -518,6 +541,7 @@ export const getSmsStatus = onCall({ region: REGION }, async (request) => {
   return {
     connected: true as const,
     phoneNumber: conn.phoneNumber,
+    provider: providerOf(conn),
     status: conn.status,
     tenDlc: conn.compliance.tenDlc,
     complianceNote: conn.compliance.note,
@@ -531,6 +555,10 @@ interface ProvisionSmsData {
   workspaceId?: string;
   /** Optional NANP area code for a local long-code number. Omit for toll-free. */
   areaCode?: string;
+  /** SMS provider. Defaults to twilio. For telnyx/bandwidth, phoneNumber is required. */
+  provider?: string;
+  /** E.164 number to connect (telnyx/bandwidth only; twilio auto-provisions). */
+  phoneNumber?: string;
 }
 
 /**
@@ -538,11 +566,11 @@ interface ProvisionSmsData {
  * One number per workspace; re-running returns the existing one.
  */
 export const provisionSmsNumber = onCall(
-  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN] },
+  { region: REGION, secrets: SMS_SECRETS },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
-    const { workspaceId, areaCode } = (request.data ?? {}) as ProvisionSmsData;
+    const { workspaceId, areaCode, provider, phoneNumber } = (request.data ?? {}) as ProvisionSmsData;
     if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
 
@@ -551,34 +579,69 @@ export const provisionSmsNumber = onCall(
       return { phoneNumber: existing.phoneNumber, alreadyProvisioned: true };
     }
 
+    const chosen: SmsProvider = provider === "telnyx" || provider === "bandwidth" ? provider : "twilio";
     const allowance = await smsPlanAllowance(workspaceId);
     const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT ?? "";
     const webhookUrl = `https://us-west2-${projectId}.cloudfunctions.net/smsWebhook?workspace=${workspaceId}`;
-    const { phoneNumber, sid } = await provisionTwilioNumber(workspaceId, webhookUrl, areaCode);
+    const now = new Date().toISOString();
 
-    const conn: SmsConnection = {
-      workspaceId,
-      phoneNumber,
-      twilioSid: sid,
-      status: "active",
-      compliance: areaCode
-        ? {
-            tenDlc: "pending",
-            note: "Number active. 10DLC brand/campaign registration is completed by the ChatMize team before high-volume sending.",
-          }
-        : {
-            tenDlc: "not_required",
-            note: "Toll-free number: no 10DLC registration required. Toll-free verification is handled by the ChatMize team.",
-          },
-      monthlyAllowance: allowance,
-      usedThisMonth: 0,
-      usageMonth: new Date().toISOString().slice(0, 7),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    let conn: SmsConnection;
+    if (chosen === "twilio") {
+      const { phoneNumber: num, sid } = await provisionTwilioNumber(workspaceId, webhookUrl, areaCode);
+      conn = {
+        workspaceId,
+        phoneNumber: num,
+        provider: "twilio",
+        twilioSid: sid,
+        status: "active",
+        compliance: areaCode
+          ? {
+              tenDlc: "pending",
+              note: "Number active. 10DLC brand/campaign registration is completed by the ChatMize team before high-volume sending.",
+            }
+          : {
+              tenDlc: "not_required",
+              note: "Toll-free number: no 10DLC registration required. Toll-free verification is handled by the ChatMize team.",
+            },
+        monthlyAllowance: allowance,
+        usedThisMonth: 0,
+        usageMonth: now.slice(0, 7),
+        createdAt: now,
+        updatedAt: now,
+      };
+    } else {
+      // Telnyx/Bandwidth: workspace connects their own number. They configure
+      // the webhook URL in their provider dashboard (returned to the UI).
+      const e164 = phoneNumber ? normalizePhone(phoneNumber) : null;
+      if (!e164) {
+        throw new HttpsError(
+          "invalid-argument",
+          `A valid phone number is required to connect ${chosen}.`,
+        );
+      }
+      conn = {
+        workspaceId,
+        phoneNumber: e164,
+        provider: chosen,
+        status: "active",
+        compliance: {
+          tenDlc: "not_required",
+          note: `Connected via ${chosen}. Carrier registration and compliance are managed in your ${chosen} account. Point your number's inbound webhook at the URL shown.`,
+        },
+        monthlyAllowance: allowance,
+        usedThisMonth: 0,
+        usageMonth: now.slice(0, 7),
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
     await saveSmsConnection(conn);
-    logger.info("SMS number provisioned for workspace", { workspaceId, phoneNumber });
-    return { phoneNumber, alreadyProvisioned: false };
+    logger.info("SMS number provisioned for workspace", {
+      workspaceId,
+      phoneNumber: conn.phoneNumber,
+      provider: chosen,
+    });
+    return { phoneNumber: conn.phoneNumber, alreadyProvisioned: false, webhookUrl, provider: chosen };
   },
 );
 
@@ -616,7 +679,7 @@ interface SendSmsData {
  * opted-in recipient, and either allowance or credits to cover the segments.
  */
 export const sendSms = onCall(
-  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN] },
+  { region: REGION, secrets: SMS_SECRETS },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
@@ -657,8 +720,9 @@ export const sendSms = onCall(
     }
 
     try {
-      const twilioSid = await twilioSendSms(conn.phoneNumber, e164, body);
-      await persistOutboundSms(workspaceId, conn.phoneNumber, e164, body, twilioSid);
+      const provider = providerOf(conn);
+      const messageId = await sendSmsViaProvider(provider, conn.phoneNumber, e164, body);
+      await persistOutboundSms(workspaceId, conn.phoneNumber, e164, body, messageId);
       await logSms({
         workspaceId,
         direction: "outbound",
@@ -667,21 +731,21 @@ export const sendSms = onCall(
         body,
         segments,
         creditsCharged: charged.creditsCharged,
-        twilioSid,
+        messageId,
         status: "sent",
         broadcastId,
       });
-      return { ok: true, twilioSid, segments, chargedTo: charged.chargedTo };
+      return { ok: true, messageId, segments, chargedTo: charged.chargedTo };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Twilio send failed.";
-      // Compensating refund: the workspace was charged before Twilio sent,
-      // and Twilio never billed for this message, so give the charge back.
+      const message = err instanceof Error ? err.message : "SMS send failed.";
+      // Compensating refund: the workspace was charged before the provider sent,
+      // and the provider never billed for this message, so give the charge back.
       if (charged.chargedTo === "credits" && charged.creditsCharged > 0) {
         await grantCredits(
           workspaceId,
           charged.creditsCharged,
           "admin_adjust",
-          `refund: twilio send failed (${message})`,
+          `refund: sms send failed (${message})`,
         ).catch((refundErr) =>
           logger.error("SMS refund failed", { workspaceId, refundErr }),
         );
@@ -750,7 +814,7 @@ interface BroadcastState {
 }
 
 export const sendSmsBroadcast = onCall(
-  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN], timeoutSeconds: 540 },
+  { region: REGION, secrets: SMS_SECRETS, timeoutSeconds: 540 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
@@ -860,13 +924,13 @@ export const sendSmsBroadcast = onCall(
         }
         try {
           const charged = await chargeForSend(workspaceId, segments, `sms broadcast ${broadcastId}`);
-          const twilioSid = await twilioSendSms(conn.phoneNumber, to, body);
+          const messageId = await sendSmsViaProvider(providerOf(conn), conn.phoneNumber, to, body);
           state.creditsCharged += charged.creditsCharged;
           state.sent += 1;
-          await persistOutboundSms(workspaceId, conn.phoneNumber, to, body, twilioSid);
+          await persistOutboundSms(workspaceId, conn.phoneNumber, to, body, messageId);
           await logSms({
             workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
-            segments, creditsCharged: charged.creditsCharged, twilioSid, status: "sent", broadcastId,
+            segments, creditsCharged: charged.creditsCharged, messageId, status: "sent", broadcastId,
           });
         } catch (err) {
           state.failed += 1;
@@ -938,14 +1002,19 @@ function verifyTwilioSignature(req: {
 }
 
 /**
- * Twilio inbound webhook: replies land in the conversation thread;
+ * Multi-provider inbound SMS webhook: replies land in the conversation thread;
  * STOP/START/HELP keywords are handled for TCPA compliance.
  *
- * Configure as the number's SmsUrl:
+ * Provider detection:
+ * - Twilio: application/x-www-form-urlencoded body with MessageSid
+ * - Telnyx: JSON body with data.event_type (verified via Ed25519 signature)
+ * - Bandwidth: JSON body with type field
+ *
+ * Configure as the number's webhook URL:
  *   https://us-west2-<project>.cloudfunctions.net/smsWebhook?workspace=<workspaceId>
  */
 export const smsWebhook = onRequest(
-  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN] },
+  { region: REGION, secrets: SMS_SECRETS },
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method not allowed");
@@ -956,20 +1025,57 @@ export const smsWebhook = onRequest(
       res.status(400).send("Unknown workspace");
       return;
     }
-    if (!verifyTwilioSignature(req as any)) {
-      logger.warn("SMS webhook: invalid Twilio signature", { workspaceId });
-      res.status(403).send("Forbidden");
+
+    const contentType = String(req.headers["content-type"] ?? "");
+    const isFormEncoded = contentType.includes("application/x-www-form-urlencoded");
+    let parsed: ParsedInboundSms | null = null;
+    let isTwilio = false;
+
+    if (isFormEncoded || req.body?.MessageSid) {
+      // ---- Twilio ----
+      isTwilio = true;
+      if (!verifyTwilioSignature(req as any)) {
+        logger.warn("SMS webhook: invalid Twilio signature", { workspaceId });
+        res.status(403).send("Forbidden");
+        return;
+      }
+      const from = normalizePhone(String(req.body.From ?? ""));
+      const to = String(req.body.To ?? "");
+      const body = String(req.body.Body ?? "");
+      const sid = String(req.body.MessageSid ?? "");
+      if (from) {
+        parsed = { from, to, body, externalId: sid || `in_${Date.now()}` };
+      }
+    } else {
+      // ---- Telnyx / Bandwidth (JSON) ----
+      const rawBody =
+        typeof (req as any).rawBody === "string"
+          ? (req as any).rawBody
+          : JSON.stringify(req.body ?? {});
+      const telnyxSig = req.headers["telnyx-signature-ed25519"];
+      const telnyxTs = req.headers["telnyx-timestamp"];
+      if (typeof telnyxSig === "string" && typeof telnyxTs === "string") {
+        if (!verifyTelnyxSignature(rawBody, telnyxSig, telnyxTs)) {
+          logger.warn("SMS webhook: invalid Telnyx signature", { workspaceId });
+          res.status(403).send("Forbidden");
+          return;
+        }
+        parsed = parseTelnyxWebhook(req.body);
+      } else {
+        // Bandwidth (no signature scheme; workspace-scoped URL + id dedup).
+        // For production hardening, configure HTTP basic auth on the
+        // Bandwidth webhook and check it here.
+        parsed = parseTelnyxWebhook(req.body) ?? parseBandwidthWebhook(req.body);
+      }
+    }
+
+    if (!parsed) {
+      // Not a message event we handle (e.g. delivery receipts) — ack quietly.
+      res.status(200).send(isTwilio ? "<Response/>" : "ok");
       return;
     }
 
-    const from = normalizePhone(String(req.body.From ?? ""));
-    const to = String(req.body.To ?? "");
-    const body = String(req.body.Body ?? "");
-    const twilioSid = String(req.body.MessageSid ?? "");
-    if (!from) {
-      res.status(200).send("<Response/>");
-      return;
-    }
+    const { from, to, body, externalId } = parsed;
 
     try {
       // Throttle before doing any paid work: >20 inbound/hour from one
@@ -978,14 +1084,14 @@ export const smsWebhook = onRequest(
       const keyword = classifyKeyword(body);
       const throttle = await checkInboundThrottle(workspaceId, from, keyword);
       if (!throttle.allowed) {
-        res.status(200).set("Content-Type", "text/xml").send("<Response/>");
+        res.status(200).send(isTwilio ? "<Response/>" : "ok");
         return;
       }
 
-      await persistInboundSms(workspaceId, from, to, body, twilioSid || `in_${Date.now()}`);
+      await persistInboundSms(workspaceId, from, to, body, externalId);
       await logSms({
         workspaceId, direction: "inbound", to: from, from: to, body,
-        segments: calculateSegments(body), creditsCharged: 0, twilioSid, status: "received",
+        segments: calculateSegments(body), creditsCharged: 0, messageId: externalId, status: "received",
       });
 
       if (keyword) {
@@ -997,7 +1103,7 @@ export const smsWebhook = onRequest(
         }
         if (conn && throttle.complianceDue) {
           // Compliance replies are carrier-required and free to the workspace.
-          await twilioSendSms(conn.phoneNumber, from, complianceReply(keyword));
+          await sendSmsViaProvider(providerOf(conn), conn.phoneNumber, from, complianceReply(keyword));
           await markComplianceReplySent(workspaceId, from);
         }
       }
@@ -1007,7 +1113,7 @@ export const smsWebhook = onRequest(
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    res.status(200).set("Content-Type", "text/xml").send("<Response/>");
+    res.status(200).send(isTwilio ? "<Response/>" : "ok");
   },
 );
 

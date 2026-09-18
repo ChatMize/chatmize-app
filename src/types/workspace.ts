@@ -18,6 +18,7 @@ export interface SmsConnection {
 export interface SmsStatus {
   connected: boolean;
   phoneNumber?: string;
+  provider?: 'twilio' | 'telnyx' | 'bandwidth';
   status?: 'provisioning' | 'active' | 'suspended';
   tenDlc?: 'not_required' | 'pending' | 'approved';
   complianceNote?: string;

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Smartphone, Loader2, CheckCircle2, AlertTriangle, Zap } from 'lucide-react';
-import { getSmsStatus, provisionSmsNumber, SMS_CREDITS_PER_SEGMENT } from '../../lib/sms';
+import { getSmsStatus, provisionSmsNumber, SMS_CREDITS_PER_SEGMENT, SMS_PROVIDER_OPTIONS, SmsProviderId } from '../../lib/sms';
 import { SmsStatus } from '../../types/workspace';
 
 interface SmsChannelCardProps {
@@ -8,9 +8,9 @@ interface SmsChannelCardProps {
 }
 
 /**
- * Real SMS channel state. Replaces demo connection data: the number is
- * provisioned on Twilio by the backend, and the card shows live allowance,
- * opt-in audience, and compliance state.
+ * Real SMS channel state. Supports Twilio (auto-provisioned), Telnyx, and
+ * Bandwidth (connect your own number). Shows live allowance, opt-in audience,
+ * and compliance state.
  */
 export const SmsChannelCard: React.FC<SmsChannelCardProps> = ({ workspaceId }) => {
   const [status, setStatus] = useState<SmsStatus | null>(null);
@@ -18,6 +18,9 @@ export const SmsChannelCard: React.FC<SmsChannelCardProps> = ({ workspaceId }) =
   const [provisioning, setProvisioning] = useState(false);
   const [useLocal, setUseLocal] = useState(false);
   const [areaCode, setAreaCode] = useState('');
+  const [provider, setProvider] = useState<SmsProviderId>('twilio');
+  const [ownNumber, setOwnNumber] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
@@ -38,8 +41,15 @@ export const SmsChannelCard: React.FC<SmsChannelCardProps> = ({ workspaceId }) =
   const handleEnable = async () => {
     setProvisioning(true);
     setError(null);
+    setWebhookUrl(null);
     try {
-      await provisionSmsNumber(workspaceId, useLocal ? areaCode.trim() || undefined : undefined);
+      const result = await provisionSmsNumber(
+        workspaceId,
+        provider === 'twilio' && useLocal ? areaCode.trim() || undefined : undefined,
+        provider,
+        provider === 'twilio' ? undefined : ownNumber.trim() || undefined,
+      );
+      if (result.webhookUrl) setWebhookUrl(result.webhookUrl);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Provisioning failed. Try again.');
@@ -62,7 +72,7 @@ export const SmsChannelCard: React.FC<SmsChannelCardProps> = ({ workspaceId }) =
           <div>
             <h3 className="font-bold text-white text-sm">SMS &amp; Mobile</h3>
             <p className="text-xs font-mono text-slate-400">
-              {loading ? 'Checking status...' : status?.connected ? status.phoneNumber : 'No number yet'}
+              {loading ? 'Checking status...' : status?.connected ? `${status.phoneNumber}${status.provider && status.provider !== 'twilio' ? ` via ${status.provider}` : ''}` : 'No number yet'}
             </p>
           </div>
         </div>
@@ -90,33 +100,74 @@ export const SmsChannelCard: React.FC<SmsChannelCardProps> = ({ workspaceId }) =
             <span className="text-white font-bold">{allowance.toLocaleString()} segments/month</span>;
             overage bills at {SMS_CREDITS_PER_SEGMENT} credits per segment.
           </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useLocal}
-                onChange={(e) => setUseLocal(e.target.checked)}
-                className="accent-amber-500"
-              />
-              Local number instead of toll-free
-            </label>
-            {useLocal && (
-              <input
-                value={areaCode}
-                onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
-                placeholder="Area code"
-                className="w-24 bg-slate-800/60 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
-              />
-            )}
+          <div>
+            <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-1.5">Provider</p>
+            <div className="grid grid-cols-3 gap-2">
+              {SMS_PROVIDER_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => setProvider(opt.id)}
+                  className={`rounded-xl border px-3 py-2.5 text-left transition-all cursor-pointer ${
+                    provider === opt.id
+                      ? 'border-amber-500/60 bg-amber-500/10'
+                      : 'border-white/10 bg-slate-900/60 hover:border-white/20'
+                  }`}
+                >
+                  <p className={`text-xs font-bold ${provider === opt.id ? 'text-white' : 'text-slate-300'}`}>{opt.label}</p>
+                  <p className="text-[10px] text-slate-500 leading-tight mt-0.5">{opt.blurb}</p>
+                </button>
+              ))}
+            </div>
           </div>
+          {provider === 'twilio' ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useLocal}
+                  onChange={(e) => setUseLocal(e.target.checked)}
+                  className="accent-amber-500"
+                />
+                Local number instead of toll-free
+              </label>
+              {useLocal && (
+                <input
+                  value={areaCode}
+                  onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                  placeholder="Area code"
+                  className="w-24 bg-slate-800/60 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
+                />
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Your {provider === 'telnyx' ? 'Telnyx' : 'Bandwidth'} number</p>
+              <input
+                value={ownNumber}
+                onChange={(e) => setOwnNumber(e.target.value)}
+                placeholder="+15551234567"
+                className="w-full bg-slate-800/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
+              />
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Enter the number from your {provider === 'telnyx' ? 'Telnyx' : 'Bandwidth'} account.
+                After connecting, point its inbound webhook at the URL shown below.
+              </p>
+            </div>
+          )}
           {error && <p className="text-[11px] text-red-400">{error}</p>}
+          {webhookUrl && (
+            <div className="rounded-xl bg-slate-900/60 border border-emerald-500/30 p-3">
+              <p className="text-[11px] font-bold text-emerald-300 mb-1">Connected. Configure this webhook in your provider dashboard:</p>
+              <p className="text-[11px] font-mono text-slate-300 break-all">{webhookUrl}</p>
+            </div>
+          )}
           <button
             onClick={handleEnable}
             disabled={provisioning}
             className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold cursor-pointer shadow-lg shadow-orange-500/20 flex items-center gap-2"
           >
             {provisioning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-            <span>{provisioning ? 'Provisioning your number...' : 'Enable SMS'}</span>
+            <span>{provisioning ? 'Connecting...' : provider === 'twilio' ? 'Enable SMS' : `Connect ${provider === 'telnyx' ? 'Telnyx' : 'Bandwidth'}`}</span>
           </button>
         </div>
       ) : (
