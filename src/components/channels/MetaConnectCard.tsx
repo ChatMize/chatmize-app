@@ -9,6 +9,7 @@ import {
   MetaOAuthStatus,
   MetaPage,
 } from '../../lib/meta';
+import { useCachedConnectionStatus, timeAgo } from '../../lib/useCachedConnectionStatus';
 
 interface MetaConnectCardProps {
   workspaceId: string;
@@ -25,17 +26,36 @@ interface MetaConnectCardProps {
  * workspace's own Secret Manager secret. Powers Messenger + Instagram.
  */
 export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, onConnected, returnTo }) => {
-  const [status, setStatus] = useState<MetaOAuthStatus | null>(null);
-  const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [pages, setPages] = useState<MetaPage[]>([]);
   const [showPicker, setShowPicker] = useState(false);
   const [selecting, setSelecting] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
   const [pageQuery, setPageQuery] = useState('');
   const [pagesLoading, setPagesLoading] = useState(false);
   const [pagesError, setPagesError] = useState<string | null>(null);
   const [connectedAs, setConnectedAs] = useState<string | null>(null);
+
+  // Last known status renders instantly; a background check refreshes it and
+  // only raises a flag when a working connection actually breaks.
+  const {
+    status,
+    loading,
+    revalidating,
+    lastCheckedAt,
+    connectionLost,
+    error: checkError,
+    refresh,
+  } = useCachedConnectionStatus<MetaOAuthStatus>({
+    cacheKey: `chatmize_conn_meta_${workspaceId}`,
+    fetchStatus: () => getMetaOAuthStatus(workspaceId),
+    isConnected: (s) => s?.connected ?? false,
+    onFresh: (s) => {
+      if (s.pending) {
+        loadPages(true);
+      }
+    },
+  });
   // Close the page picker on Escape.
   useEffect(() => {
     if (!showPicker) return;
@@ -82,22 +102,6 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
     }
   };
 
-  const refresh = async (): Promise<MetaOAuthStatus | null> => {
-    try {
-      const s = await getMetaOAuthStatus(workspaceId);
-      setStatus(s);
-      if (s.pending) {
-        await loadPages(true);
-      }
-      return s;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load Meta status.');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     // Handle the redirect back from Facebook.
     const params = new URLSearchParams(window.location.search);
@@ -108,32 +112,35 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
       clean.searchParams.delete('meta_oauth_error');
       window.history.replaceState({}, '', clean.toString());
       if (outcome === 'error') {
-        setError(
+        setOauthError(
           params.get('meta_oauth_error') || 'Facebook login failed. Please try again.',
         );
-        setLoading(false);
         return;
       }
     }
-    refresh();
+    if (outcome === 'success') {
+      // The hook already revalidates on mount; this ensures the fresh pick
+      // is applied and the parent is notified.
+      refresh();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
   const handleConnect = async () => {
     setStarting(true);
-    setError(null);
+    setOauthError(null);
     try {
       const url = await startMetaOAuth(workspaceId, returnTo);
       window.location.href = url;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not start Facebook login.');
+      setOauthError(e instanceof Error ? e.message : 'Could not start Facebook login.');
       setStarting(false);
     }
   };
 
   const handleSelect = async (pageId: string) => {
     setSelecting(pageId);
-    setError(null);
+    setOauthError(null);
     try {
       await selectMetaOAuthPage(workspaceId, pageId);
       setShowPicker(false);
@@ -143,7 +150,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
         onConnected?.(s.pageName || '', s.pageId);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not connect that Page.');
+      setOauthError(e instanceof Error ? e.message : 'Could not connect that Page.');
     } finally {
       setSelecting(null);
     }
@@ -224,7 +231,15 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
             <div className="flex items-center gap-2 flex-wrap">
               <span className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
                 {status?.pagePictureUrl ? (
-                  <img src={status.pagePictureUrl} alt="" className="w-6 h-6 rounded-full object-cover" />
+                  <span className="relative flex-shrink-0">
+                    <img src={status.pagePictureUrl} alt="" className="w-6 h-6 rounded-full object-cover" />
+                    <span
+                      className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 border border-slate-900 flex items-center justify-center"
+                      title="Facebook"
+                    >
+                      <Facebook className="w-2 h-2 text-white" />
+                    </span>
+                  </span>
                 ) : (
                   <Facebook className="w-4 h-4 text-blue-400 ml-1" />
                 )}
@@ -272,21 +287,41 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
           </div>
         )}
 
-        {error && (
+        {connectionLost && (
+          <div className="mb-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-400" />
+            <div className="flex-1 text-xs">
+              <p className="text-amber-200 font-semibold">Facebook connection lost</p>
+              <p className="text-amber-200/70">Reconnect to keep Messenger working.</p>
+            </div>
+            <button
+              onClick={handleConnect}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 text-white cursor-pointer"
+            >
+              Reconnect
+            </button>
+          </div>
+        )}
+
+        {(oauthError || checkError) && (
           <div className="mb-3 p-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-red-300 text-xs flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <span>{error}</span>
+            <span>{oauthError || checkError}</span>
           </div>
         )}
       </div>
 
       <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs">
-        <span className="text-slate-400">
+        <span className="text-slate-400 flex items-center gap-1.5">
           {connected
             ? status?.instagram
               ? 'Messenger + Instagram ready'
               : 'Messenger ready · Instagram not linked'
             : 'Ready to authenticate'}
+          {connected && lastCheckedAt && (
+            <span className="text-slate-500">· checked {timeAgo(lastCheckedAt)}</span>
+          )}
+          {revalidating && <Loader2 className="w-3 h-3 animate-spin text-slate-500" />}
         </span>
         <button
           onClick={handleConnect}

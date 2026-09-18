@@ -5,6 +5,7 @@ import {
   getInstagramOAuthStatus,
   InstagramOAuthStatus,
 } from '../../lib/instagram';
+import { useCachedConnectionStatus, timeAgo } from '../../lib/useCachedConnectionStatus';
 
 interface InstagramConnectCardProps {
   workspaceId: string;
@@ -28,23 +29,24 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
   returnTo,
   onConnected,
 }) => {
-  const [status, setStatus] = useState<InstagramOAuthStatus | null>(null);
-  const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
 
-  const refresh = async (): Promise<InstagramOAuthStatus | null> => {
-    try {
-      const s = await getInstagramOAuthStatus(workspaceId);
-      setStatus(s);
-      return s;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load Instagram status.');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Last known status renders instantly; a background check refreshes it and
+  // only raises a flag when a working connection actually breaks.
+  const {
+    status,
+    loading,
+    revalidating,
+    lastCheckedAt,
+    connectionLost,
+    error: checkError,
+    refresh,
+  } = useCachedConnectionStatus<InstagramOAuthStatus>({
+    cacheKey: `chatmize_conn_ig_${workspaceId}`,
+    fetchStatus: () => getInstagramOAuthStatus(workspaceId),
+    isConnected: (s) => s?.connected ?? false,
+  });
 
   useEffect(() => {
     // Handle the redirect back from Instagram.
@@ -56,29 +58,30 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
       clean.searchParams.delete('instagram_oauth_error');
       window.history.replaceState({}, '', clean.toString());
       if (outcome === 'error') {
-        setError(
+        setOauthError(
           params.get('instagram_oauth_error') || 'Instagram login failed. Please try again.',
         );
-        setLoading(false);
         return;
       }
     }
-    refresh().then((s) => {
-      if (s?.connected && s.igUserId && outcome === 'success') {
-        onConnected?.(s.username || '', s.igUserId);
-      }
-    });
+    if (outcome === 'success') {
+      refresh().then((s) => {
+        if (s?.connected && s.igUserId) {
+          onConnected?.(s.username || '', s.igUserId);
+        }
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
   const handleConnect = async () => {
     setStarting(true);
-    setError(null);
+    setOauthError(null);
     try {
       const url = await startInstagramOAuth(workspaceId, returnTo);
       window.location.href = url;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not start Instagram login.');
+      setOauthError(e instanceof Error ? e.message : 'Could not start Instagram login.');
       setStarting(false);
     }
   };
@@ -150,7 +153,15 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
                 {status?.pictureUrl ? (
-                  <img src={status.pictureUrl} alt="" className="w-6 h-6 rounded-full object-cover" />
+                  <span className="relative flex-shrink-0">
+                    <img src={status.pictureUrl} alt="" className="w-6 h-6 rounded-full object-cover" />
+                    <span
+                      className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 border border-slate-900 flex items-center justify-center"
+                      title="Instagram"
+                    >
+                      <Instagram className="w-2 h-2 text-white" />
+                    </span>
+                  </span>
                 ) : (
                   <Instagram className="w-4 h-4 text-pink-400 ml-1" />
                 )}
@@ -175,10 +186,26 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
           </div>
         )}
 
-        {error && (
+        {connectionLost && (
+          <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs text-amber-200 font-semibold">Instagram connection lost</p>
+              <p className="text-xs text-amber-200/70">Reconnect to keep DMs and comments working.</p>
+            </div>
+            <button
+              onClick={handleConnect}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-gradient-to-r from-pink-500 to-purple-600 text-white cursor-pointer"
+            >
+              Reconnect
+            </button>
+          </div>
+        )}
+
+        {(oauthError || checkError) && (
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/25 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-red-300">{error}</p>
+            <p className="text-xs text-red-300">{oauthError || checkError}</p>
           </div>
         )}
       </div>
@@ -190,6 +217,10 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
               <Instagram className="w-3.5 h-3.5 text-pink-400" />
               Instagram DMs ready
+              {lastCheckedAt && (
+                <span className="text-slate-500">· checked {timeAgo(lastCheckedAt)}</span>
+              )}
+              {revalidating && <Loader2 className="w-3 h-3 animate-spin text-slate-500" />}
             </>
           ) : (
             'No Facebook Page needed'
