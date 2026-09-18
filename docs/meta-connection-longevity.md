@@ -104,3 +104,6 @@ Ownership check: `isWorkspaceOwner()` in `src/lib/workspaceAccess.ts`.
 `WorkspaceSilo.ownerUid` holds the owner's Firebase Auth UID. Workspaces
 without `ownerUid` predate the team system and default to owner, preserving
 current single-user behavior.
+4. **Push notification to the owner** (pending push system): once ChatMize has
+   push notifications, a dead token also pushes to the owner's devices, same
+   as the email. Push defaults are still an open product decision.
