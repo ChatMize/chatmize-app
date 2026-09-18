@@ -62,6 +62,7 @@ import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
 import { CopilotGuide } from './components/CopilotGuide';
 import { MetaReconnectBanner } from './components/MetaReconnectBanner';
+import { isWorkspaceOwner } from './lib/workspaceAccess';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { SnapshotImportView } from './views/SnapshotImportView';
 import { SnapshotLibraryView } from './views/SnapshotLibraryView';
@@ -372,6 +373,9 @@ export default function App() {
         return (
           <LiveConversationsView
             workspaceId={activeWorkspace?.id}
+            workspaceName={activeWorkspace?.name}
+            ownerName={activeWorkspace?.ownerName}
+            isOwner={isWorkspaceOwner(activeWorkspace, currentUser)}
             onNavigateToAudience={(contactId) => {
               setActiveTab('audience');
             }}

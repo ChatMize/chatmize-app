@@ -87,6 +87,9 @@ export interface Workspace {
   color: string;
   avatarUrl?: string;
   ownerName?: string;
+  /** Firebase Auth UID of the workspace owner. Unset on legacy workspaces,
+   * which are treated as owner-held until the team system lands. */
+  ownerUid?: string;
   connectedPage: MetaPageConnection;
   connectedSms?: SmsConnection;
   connectedStandaloneChat?: StandaloneChatbotConnection;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { MetaReconnectModal, isConnectionExpiredError } from '../components/MetaReconnectModal';
 import { getApp } from 'firebase/app';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
@@ -202,12 +203,19 @@ const PRESET_FOLLOW_UP_TEMPLATES = [
 
 interface LiveConversationsViewProps {
   workspaceId?: string;
+  workspaceName?: string;
+  ownerName?: string;
+  /** False when the signed-in user is not the workspace owner. */
+  isOwner?: boolean;
   onNavigateToAudience?: (contactId?: string) => void;
   onNavigateToFlows?: (flowId?: string) => void;
 }
 
 export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   workspaceId: workspaceIdProp,
+  workspaceName,
+  ownerName,
+  isOwner = true,
   onNavigateToAudience,
   onNavigateToFlows
 }) => {
@@ -244,6 +252,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   const [selectedMetaTag, setSelectedMetaTag] = useState<ConversationMessage['metaTag'] | ''>('');
   const [isSending, setIsSending] = useState<boolean>(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [showReconnectModal, setShowReconnectModal] = useState(false);
 
   // Modals & Panels
   const [showContentModal, setShowContentModal] = useState<boolean>(false);
@@ -756,6 +765,11 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       // instead of a bare "failed" with no explanation.
       const reason = err instanceof Error && err.message ? err.message : 'Send failed.';
       setSendError(reason);
+      // Dead Meta token: pop the reconnect modal on the spot so the owner
+      // can fix it immediately instead of hunting through Settings.
+      if (isConnectionExpiredError(reason)) {
+        setShowReconnectModal(true);
+      }
       // Mark as failed
       setConversationsMap(prev => ({
         ...prev,
@@ -1086,6 +1100,15 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] overflow-hidden bg-slate-950 text-slate-100">
+      {showReconnectModal && (
+        <MetaReconnectModal
+          workspaceId={workspaceId}
+          workspaceName={workspaceName}
+          ownerName={ownerName}
+          isOwner={isOwner}
+          onClose={() => setShowReconnectModal(false)}
+        />
+      )}
       {/* =========================================================================
           TOP BAR: Streamlined Omnichannel Control Header & Sync Telemetry
           ========================================================================= */}
