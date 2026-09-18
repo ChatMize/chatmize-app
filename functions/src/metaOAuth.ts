@@ -241,17 +241,20 @@ export async function getPageSocialProfile(
   pageId: string,
   pageToken: string,
 ): Promise<PageSocialProfile> {
-  let pictureUrl: string | null = null;
+  // Page profile pictures are public. The token-authenticated picture lookup
+  // needs the pages_read_engagement permission, which our OAuth scopes do not
+  // request, so it fails with (#100). Use the public picture endpoint instead:
+  // it 302-redirects to the CDN image, needs no token, and never expires.
+  let pictureUrl: string | null =
+    `https://graph.facebook.com/v21.0/${pageId}/picture?width=200&height=200`;
   let instagram: LinkedInstagram | null = null;
   try {
     const data = (await graphGet(
-      `/${pageId}?fields=picture.width(200).height(200){url},instagram_business_account{id,username}`,
+      `/${pageId}?fields=instagram_business_account{id,username}`,
       pageToken,
     )) as {
-      picture?: { data?: { url?: string } };
       instagram_business_account?: { id?: string; username?: string };
     };
-    pictureUrl = data.picture?.data?.url ?? null;
     const ig = data.instagram_business_account;
     if (ig?.id) {
       let igPic: string | null = null;
