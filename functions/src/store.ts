@@ -63,6 +63,24 @@ export async function persistInboundMessage(
     externalId: msg.externalId,
     createdAt: FieldValue.serverTimestamp(),
   });
+  // Upsert the contact so the inbox UI (which lists contacts) shows the conversation.
+  const contactId = `contact_${msg.channel}_${msg.senderId}`;
+  const contactRef = db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("contacts")
+    .doc(contactId);
+  batch.set(
+    contactRef,
+    {
+      channel: msg.channel,
+      senderId: msg.senderId,
+      lastMessageAt: FieldValue.serverTimestamp(),
+      lastMessageText: msg.text ?? "",
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
   await batch.commit();
 }
 
