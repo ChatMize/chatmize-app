@@ -38,7 +38,10 @@ const REFRESH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const PROJECT_ID = "gen-lang-client-0433776094";
 
 function db() {
-  return getFirestore();
+  // Must match the database used everywhere else (metaOAuth.ts, index.ts).
+  // A bare getFirestore() here silently wrote IG connections to the project's
+  // default database, where the webhook router could never find them.
+  return getFirestore("chatmize-prod");
 }
 
 function sanitizeReturnTo(value: unknown): string | undefined {
