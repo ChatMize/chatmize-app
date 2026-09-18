@@ -212,20 +212,31 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
 
           {/* Connected Silo Channels Pill (Desktop) */}
           <div className="hidden xl:flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px]">
-            <div className="flex items-center gap-1 text-slate-300" title="Connected Facebook Page">
+            <div className="flex items-center gap-1 text-slate-300" title={`Connected Facebook Page: ${activeWorkspace?.connectedPage.pageName || 'Not connected'}`}>
               <Facebook className="w-3.5 h-3.5 text-blue-400" />
               <span className="font-semibold text-white truncate max-w-[90px]">
-                {activeWorkspace?.connectedPage.pageName.split(' ')[0]}
+                {activeWorkspace?.connectedPage.pageName.split(' ')[0] || 'FB'}
               </span>
+              {activeWorkspace?.connectedPage.pageId && activeWorkspace.connectedPage.serviceStatus !== 'deactivated' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              )}
             </div>
             <span className="text-slate-700">|</span>
-            <div className="flex items-center gap-1" title="Connected Instagram">
+            <div className="flex items-center gap-1" title={activeWorkspace?.connectedPage.connectedIg?.connected ? `Connected Instagram: @${activeWorkspace.connectedPage.connectedIg.username}` : 'Instagram not connected'}>
               <Instagram className="w-3 h-3 text-pink-400" />
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              {activeWorkspace?.connectedPage.connectedIg?.connected ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+              )}
             </div>
-            <div className="flex items-center gap-1" title="Connected WhatsApp">
+            <div className="flex items-center gap-1" title={activeWorkspace?.connectedPage.connectedWhatsApp?.connected ? `Connected WhatsApp: ${activeWorkspace.connectedPage.connectedWhatsApp.phoneNumber}` : 'WhatsApp not connected'}>
               <Phone className="w-3 h-3 text-emerald-400" />
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              {activeWorkspace?.connectedPage.connectedWhatsApp?.connected ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+              )}
             </div>
           </div>
 

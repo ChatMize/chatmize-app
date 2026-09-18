@@ -294,6 +294,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   // Initialize and subscribe to Firestore contacts
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let didInitialSelect = false;
 
     const init = async () => {
       setIsLoadingContacts(true);
@@ -303,8 +304,10 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
         (fetchedContacts) => {
           setContacts(fetchedContacts);
           setIsLoadingContacts(false);
-          if (fetchedContacts.length > 0 && !selectedContactId) {
-            setSelectedContactId(fetchedContacts[0].id);
+          // Only auto-select on first load; never steal the user's selection on updates.
+          if (!didInitialSelect && fetchedContacts.length > 0) {
+            didInitialSelect = true;
+            setSelectedContactId((prev) => prev || fetchedContacts[0].id);
           }
         },
         (err) => {
