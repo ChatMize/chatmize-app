@@ -57,7 +57,7 @@ import { NurtureToolType } from './types/nurture';
 import { OverlayType } from './types/growthTools';
 import { RecurringNotificationBroadcastHub } from './components/RecurringNotificationBroadcastHub';
 import { AuthGateModal } from './components/AuthGateModal';
-import { subscribeToAuthChanges, signOutUser, AppUser } from './lib/firebase';
+import { subscribeToAuthChanges, signOutUser, AppUser, db } from './lib/firebase';
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
 import { CopilotGuide } from './components/CopilotGuide';
@@ -184,6 +184,71 @@ export default function App() {
       // storage unavailable; ignore
     }
   }, [activeTab]);
+
+  // Sync real Firestore integration status into the workspace object.
+  // The localStorage workspace data is stale demo data; this pulls the live
+  // connection state (FB Page, Instagram, WhatsApp) from Firestore.
+  useEffect(() => {
+    const syncIntegrations = async () => {
+      try {
+        const { doc, getDoc } = await import('firebase/firestore');
+        // Map UI workspace to Firestore workspace (Dev Sandbox -> ws-chatmize-dev)
+        const ws = workspaces.find(w => w.id === activeWorkspaceId);
+        if (!ws) return;
+        // Only sync for the dev sandbox (the workspace with real Firestore data)
+        if (!ws.name.toLowerCase().includes('dev sandbox')) return;
+
+        const firestoreWsId = 'ws-chatmize-dev';
+        const metaSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'meta'));
+        const igSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'instagram'));
+
+        let updated = { ...ws };
+        let changed = false;
+
+        if (metaSnap.exists()) {
+          const metaData = metaSnap.data();
+          if (metaData.status === 'connected' && metaData.pageId) {
+            updated.connectedPage = {
+              ...updated.connectedPage,
+              pageId: metaData.pageId,
+              pageName: metaData.pageName || updated.connectedPage.pageName,
+              serviceStatus: 'active',
+            };
+            changed = true;
+          }
+        }
+
+        if (igSnap.exists()) {
+          const igData = igSnap.data();
+          if (igData.status === 'connected' && igData.igUserId) {
+            updated.connectedPage = {
+              ...updated.connectedPage,
+              connectedIg: {
+                username: igData.username || '',
+                igId: igData.igUserId,
+                followersCount: 0,
+                connected: true,
+                status: 'active',
+              },
+            };
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          const newWorkspaces = workspaces.map(w => w.id === ws.id ? updated : w);
+          setWorkspaces(newWorkspaces);
+          try {
+            localStorage.setItem('chatmize_workspaces', JSON.stringify(newWorkspaces));
+          } catch { /* ignore */ }
+        }
+      } catch (e) {
+        console.warn('Failed to sync integrations:', e);
+      }
+    };
+
+    syncIntegrations();
+  }, [activeWorkspaceId]);
 
   // Deep link: ?snapshot=<id> opens the snapshot import view.
   const [deepSnapshotId, setDeepSnapshotId] = useState<string | null>(null);
