@@ -61,6 +61,7 @@ import { subscribeToAuthChanges, signOutUser, AppUser, db } from './lib/firebase
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
 import { CopilotGuide } from './components/CopilotGuide';
+import GlobalPersonalizationBuddy from './components/personalization/GlobalPersonalizationBuddy';
 import { MetaReconnectBanner } from './components/MetaReconnectBanner';
 import { isWorkspaceOwner } from './lib/workspaceAccess';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
@@ -1086,6 +1087,7 @@ export default function App() {
           onDismiss={dismissGuide}
         />
       )}
+      <GlobalPersonalizationBuddy />
     </div>
   );
 }

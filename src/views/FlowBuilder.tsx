@@ -68,6 +68,7 @@ import {
   IntegrationApp 
 } from '../data/integrations';
 import { saveContact, setContactVariable, saveRecurringNotificationToken, saveOtnToken } from '../lib/firebase';
+import { PersonalizationPickerButton, usePersonalizationTarget, usePersonalizationTargetMap } from '../components/personalization';
 import { 
   MetaMessageTag, 
   validateMessageTagCompliance, 
@@ -3196,6 +3197,8 @@ function NodeEditor({
   const onAutoUpdate = (updates: Partial<FlowNode>) => {
     onUpdate(updates);
   };
+  const msgPz = usePersonalizationTarget<HTMLTextAreaElement>();
+  const compPz = usePersonalizationTargetMap<HTMLTextAreaElement>();
 
   const handleUpdateTrigger = (triggerId: string, updates: Partial<FlowTrigger>) => {
     const currentTriggers = node.triggers || [];
@@ -4827,28 +4830,24 @@ function NodeEditor({
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="text-xs font-bold uppercase text-slate-400">Message Text</label>
-              <div className="flex gap-1.5">
-                <button 
-                  onClick={() => onAutoUpdate({ content: (node.content || '') + ' {{first_name}}' })}
-                  className="text-[11px] font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20"
-                >
-                  + {'{{first_name}}'}
-                </button>
-                <button 
-                  onClick={() => onAutoUpdate({ content: (node.content || '') + ' {{email}}' })}
-                  className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20"
-                >
-                  + {'{{email}}'}
-                </button>
-              </div>
             </div>
-            <textarea 
-              rows={6}
-              value={node.content || ''} 
-              onChange={(e) => onAutoUpdate({ content: e.target.value })}
-              className="w-full bg-slate-900 border border-white/10 rounded-xl p-3.5 text-sm text-white outline-none focus:border-blue-500 transition-colors resize-none leading-relaxed font-sans"
-              placeholder="Type your bot response here..."
-            />
+            <div className="relative">
+              <textarea 
+                rows={6}
+                ref={msgPz.ref}
+                value={node.content || ''} 
+                onChange={(e) => onAutoUpdate({ content: e.target.value })}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl p-3.5 pr-10 text-sm text-white outline-none focus:border-blue-500 transition-colors resize-none leading-relaxed font-sans"
+                placeholder="Type your bot response here..."
+              />
+              <span className="absolute right-2 bottom-2">
+                <PersonalizationPickerButton
+                  onPick={(t) => msgPz.insert(t, node.content || '', (v) => onAutoUpdate({ content: v }))}
+                  placement="up"
+                  title="Insert personalization"
+                />
+              </span>
+            </div>
           </div>
         )}
 
@@ -5041,30 +5040,24 @@ function NodeEditor({
                         <div className="space-y-2 pt-1">
                           <div className="flex justify-between items-center">
                             <label className="text-[10px] font-bold uppercase text-slate-400">Bubble Text</label>
-                            <div className="flex gap-1">
-                              <button 
-                                type="button"
-                                onClick={() => handleUpdateComponent(comp.id, { text: (comp.text || '') + ' {{first_name}}' })}
-                                className="text-[10px] font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20"
-                              >
-                                + {'{{first_name}}'}
-                              </button>
-                              <button 
-                                type="button"
-                                onClick={() => handleUpdateComponent(comp.id, { text: (comp.text || '') + ' {{email}}' })}
-                                className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20"
-                              >
-                                + {'{{email}}'}
-                              </button>
-                            </div>
                           </div>
-                          <textarea 
-                            rows={3}
-                            value={comp.text || ''}
-                            onChange={(e) => handleUpdateComponent(comp.id, { text: e.target.value })}
-                            placeholder="Add additional message text..."
-                            className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 text-xs text-white outline-none focus:border-blue-500 resize-none font-sans leading-relaxed"
-                          />
+                          <div className="relative">
+                            <textarea 
+                              rows={3}
+                              ref={compPz.setRef(`bubble:${comp.id}`)}
+                              value={comp.text || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { text: e.target.value })}
+                              placeholder="Add additional message text..."
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 pr-9 text-xs text-white outline-none focus:border-blue-500 resize-none font-sans leading-relaxed"
+                            />
+                            <span className="absolute right-1.5 bottom-1.5">
+                              <PersonalizationPickerButton
+                                onPick={(t) => compPz.insert(`bubble:${comp.id}`, t, comp.text || '', (v) => handleUpdateComponent(comp.id, { text: v }))}
+                                placement="up"
+                                title="Insert personalization"
+                              />
+                            </span>
+                          </div>
                         </div>
                       )}
 

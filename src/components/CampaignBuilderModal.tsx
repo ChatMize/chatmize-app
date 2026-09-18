@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { PersonalizationPickerButton, usePersonalizationTarget, usePersonalizationTargetMap } from './personalization';
 import { 
   X, 
   Calendar, 
@@ -74,6 +75,8 @@ export function CampaignBuilderModal({
   });
   const [scheduledTime, setScheduledTime] = useState<string>('10:00');
   const [timezone, setTimezone] = useState<string>('America/New_York');
+  const broadcastPz = usePersonalizationTarget<HTMLTextAreaElement>();
+  const dripPz = usePersonalizationTargetMap<HTMLTextAreaElement>();
 
   // Drip Sequence Configuration
   const [triggerOnTag, setTriggerOnTag] = useState<string>('New Lead');
@@ -258,11 +261,6 @@ export function CampaignBuilderModal({
       stepNumber: idx + 1
     }));
     setDripSteps(updated);
-  };
-
-  // Personalization shortcode insert helper
-  const insertVariable = (variable: string) => {
-    setMessageText(prev => `${prev} {{${variable}}}`);
   };
 
   // Save Campaign to Firestore
@@ -786,14 +784,22 @@ export function CampaignBuilderModal({
                     </div>
 
                     {/* Step Message Content */}
-                    <div>
+                    <div className="relative">
                       <textarea
                         rows={2}
+                        ref={dripPz.setRef(`step:${idx}`)}
                         value={step.messageText}
                         onChange={(e) => handleUpdateDripStep(idx, { messageText: e.target.value })}
                         placeholder="Write step message... Use {{first_name}} for personalization"
-                        className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 text-xs text-white outline-none focus:border-amber-500 resize-none"
+                        className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 pr-9 text-xs text-white outline-none focus:border-amber-500 resize-none"
                       />
+                      <span className="absolute right-1.5 bottom-1.5">
+                        <PersonalizationPickerButton
+                          onPick={(t) => dripPz.insert(`step:${idx}`, t, step.messageText, (v) => handleUpdateDripStep(idx, { messageText: v }))}
+                          placement="up"
+                          title="Insert personalization"
+                        />
+                      </span>
                     </div>
 
                     {/* Step Optional Media & CTA Button */}
@@ -857,28 +863,30 @@ export function CampaignBuilderModal({
                   <span>Broadcast Message Creative</span>
                 </label>
                 <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                  <span>Variables:</span>
-                  {['first_name', 'email', 'company'].map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => insertVariable(v)}
-                      className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/15 text-blue-300 font-mono transition-colors"
-                    >
-                      {`{{${v}}}`}
-                    </button>
-                  ))}
+                  <PersonalizationPickerButton
+                    onPick={(t) => broadcastPz.insert(t, messageText, setMessageText)}
+                    placement="down"
+                    title="Insert personalization"
+                  />
                 </div>
               </div>
 
-              <div>
+              <div className="relative">
                 <textarea
                   rows={4}
+                  ref={broadcastPz.ref}
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
                   placeholder="Type the message copy... Markdown formatting supported."
-                  className="w-full bg-slate-900 border border-white/15 rounded-xl p-3.5 text-xs text-white outline-none focus:border-blue-500 resize-none font-sans leading-relaxed"
+                  className="w-full bg-slate-900 border border-white/15 rounded-xl p-3.5 pr-10 text-xs text-white outline-none focus:border-blue-500 resize-none font-sans leading-relaxed"
                 />
+                <span className="absolute right-2 bottom-2">
+                  <PersonalizationPickerButton
+                    onPick={(t) => broadcastPz.insert(t, messageText, setMessageText)}
+                    placement="up"
+                    title="Insert personalization"
+                  />
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

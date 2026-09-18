@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { PersonalizationPickerButton, usePersonalizationTarget } from './personalization';
 import { 
   BellRing, 
   Send, 
@@ -97,12 +98,12 @@ export function RecurringNotificationBroadcastHub({
 
   // Message Composer State
   const [campaignTitle, setCampaignTitle] = useState<string>('Exclusive VIP Flash Sale (48h Access)');
-  const [messageBody, setMessageBody] = useState<string>(
-    '🔥 Hey {{first_name}}! Here is your exclusive VIP access code for this week:\n\nUse code VIP30 at checkout for 30% OFF our entire automation library!\n\nThis offer is valid for the next 48 hours only. Tap below to claim your spot 👇'
+  const [messageBody, setMessageBody] = useState<string>(    '🔥 Hey {{first_name}}! Here is your exclusive VIP access code for this week:\n\nUse code VIP30 at checkout for 30% OFF our entire automation library!\n\nThis offer is valid for the next 48 hours only. Tap below to claim your spot 👇'
   );
   const [mediaUrl, setMediaUrl] = useState<string>('https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=800&auto=format&fit=crop&q=80');
   const [ctaTitle, setCtaTitle] = useState<string>('Claim 30% Off Now 🚀');
   const [ctaUrl, setCtaUrl] = useState<string>('https://chatmize.io/vip-offer');
+  const rnPz = usePersonalizationTarget<HTMLTextAreaElement>();
 
   // Dispatch state
   const [isBroadcasting, setIsBroadcasting] = useState<boolean>(false);
@@ -218,11 +219,6 @@ export function RecurringNotificationBroadcastHub({
       }
       return next;
     });
-  };
-
-  // Variable insertion
-  const insertVariable = (varName: string) => {
-    setMessageBody(prev => prev + ` {{${varName}}}`);
   };
 
   // Preset templates
@@ -807,30 +803,24 @@ export function RecurringNotificationBroadcastHub({
                     <label className="text-xs font-bold text-slate-300">
                       Message Text (Sent via Meta Marketing Messages API)
                     </label>
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={() => insertVariable('first_name')}
-                        className="text-[10px] bg-cyan-500/10 text-cyan-300 px-2 py-0.5 rounded border border-cyan-500/20 font-mono hover:bg-cyan-500/20"
-                      >
-                        + {'{{first_name}}'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => insertVariable('company')}
-                        className="text-[10px] bg-blue-500/10 text-blue-300 px-2 py-0.5 rounded border border-blue-500/20 font-mono hover:bg-blue-500/20"
-                      >
-                        + {'{{company}}'}
-                      </button>
-                    </div>
                   </div>
-                  <textarea
-                    rows={4}
-                    value={messageBody}
-                    onChange={(e) => setMessageBody(e.target.value)}
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-cyan-500 leading-relaxed font-sans"
-                    placeholder="Write your promotional or digest update..."
-                  />
+                  <div className="relative">
+                    <textarea
+                      rows={4}
+                      ref={rnPz.ref}
+                      value={messageBody}
+                      onChange={(e) => setMessageBody(e.target.value)}
+                      className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-xs text-white outline-none focus:border-cyan-500 leading-relaxed font-sans"
+                      placeholder="Write your promotional or digest update..."
+                    />
+                    <span className="absolute right-2 bottom-2">
+                      <PersonalizationPickerButton
+                        onPick={(t) => rnPz.insert(t, messageBody, setMessageBody)}
+                        placement="up"
+                        title="Insert personalization"
+                      />
+                    </span>
+                  </div>
                 </div>
 
                 {/* Media Image URL */}

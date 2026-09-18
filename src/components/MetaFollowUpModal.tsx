@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PersonalizationPickerButton, usePersonalizationTargetMap } from './personalization';
 import { 
   AlertCircle, 
   AlertTriangle, 
@@ -61,6 +62,7 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
 
   // Fields for Message Tag
   const [selectedTag, setSelectedTag] = useState<MetaMessageTag>('CONFIRMED_EVENT_UPDATE');
+  const pz = usePersonalizationTargetMap<HTMLTextAreaElement>();
   const [messageBody, setMessageBody] = useState<string>(() => {
     if (is24hActive) {
       return `Hey ${contact.firstName || contact.name}! Here is the workshop replay link we promised.`;
@@ -363,12 +365,22 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                     <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                       Promotional Broadcast Copy (Marketing Allowed)
                     </label>
-                    <textarea
-                      rows={3}
-                      value={rnPromoText}
-                      onChange={(e) => setRnPromoText(e.target.value)}
-                      className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-cyan-500 leading-relaxed"
-                    />
+                    <div className="relative">
+                      <textarea
+                        rows={3}
+                        ref={pz.setRef('rnPromoText')}
+                        value={rnPromoText}
+                        onChange={(e) => setRnPromoText(e.target.value)}
+                        className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-cyan-500 leading-relaxed"
+                      />
+                      <span className="absolute right-2 bottom-2">
+                        <PersonalizationPickerButton
+                          onPick={(t) => pz.insert('rnPromoText', t, rnPromoText, setRnPromoText)}
+                          placement="up"
+                          title="Insert personalization"
+                        />
+                      </span>
+                    </div>
                   </div>
 
                   <p className="text-[11px] text-slate-400">
@@ -410,12 +422,22 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                 <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                   Message Content (Non-Promotional Copy Only)
                 </label>
-                <textarea
-                  rows={3}
-                  value={messageBody}
-                  onChange={(e) => setMessageBody(e.target.value)}
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 leading-relaxed"
-                />
+                <div className="relative">
+                  <textarea
+                    rows={3}
+                    ref={pz.setRef('messageBody:tag')}
+                    value={messageBody}
+                    onChange={(e) => setMessageBody(e.target.value)}
+                    className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-blue-500 leading-relaxed"
+                  />
+                  <span className="absolute right-2 bottom-2">
+                    <PersonalizationPickerButton
+                      onPick={(t) => pz.insert('messageBody:tag', t, messageBody, setMessageBody)}
+                      placement="up"
+                      title="Insert personalization"
+                    />
+                  </span>
+                </div>
               </div>
 
               {/* Tag Policy Checker */}
@@ -484,12 +506,22 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                     <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                       Notification Body
                     </label>
+                  <div className="relative">
                     <textarea
                       rows={3}
+                      ref={pz.setRef('otnText')}
                       value={otnText}
                       onChange={(e) => setOtnText(e.target.value)}
-                      className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-purple-500 leading-relaxed"
+                      className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-purple-500 leading-relaxed"
                     />
+                    <span className="absolute right-2 bottom-2">
+                      <PersonalizationPickerButton
+                        onPick={(t) => pz.insert('otnText', t, otnText, setOtnText)}
+                        placement="up"
+                        title="Insert personalization"
+                      />
+                    </span>
+                  </div>
                   </div>
                 </div>
               )}
@@ -536,12 +568,22 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                 <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                   Message with Click-to-Chat Link
                 </label>
+              <div className="relative">
                 <textarea
                   rows={3}
+                  ref={pz.setRef('fallbackText')}
                   value={fallbackText}
                   onChange={(e) => setFallbackText(e.target.value)}
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-amber-500 leading-relaxed font-mono text-[11px]"
+                  className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-amber-500 leading-relaxed font-mono text-[11px]"
                 />
+                <span className="absolute right-2 bottom-2">
+                  <PersonalizationPickerButton
+                    onPick={(t) => pz.insert('fallbackText', t, fallbackText, setFallbackText)}
+                    placement="up"
+                    title="Insert personalization"
+                  />
+                </span>
+              </div>
               </div>
             </div>
           )}
@@ -561,12 +603,22 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                 <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                   Message Copy
                 </label>
+              <div className="relative">
                 <textarea
                   rows={3}
+                  ref={pz.setRef('messageBody:standard')}
                   value={messageBody}
                   onChange={(e) => setMessageBody(e.target.value)}
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-emerald-500 leading-relaxed"
+                  className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-emerald-500 leading-relaxed"
                 />
+                <span className="absolute right-2 bottom-2">
+                  <PersonalizationPickerButton
+                    onPick={(t) => pz.insert('messageBody:standard', t, messageBody, setMessageBody)}
+                    placement="up"
+                    title="Insert personalization"
+                  />
+                </span>
+              </div>
               </div>
             </div>
           )}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MetaReconnectModal, isConnectionExpiredError } from '../components/MetaReconnectModal';
+import { PersonalizationPickerButton, usePersonalizationTarget } from '../components/personalization';
 import { getApp } from 'firebase/app';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
@@ -249,6 +250,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
   // Composer state
   const [messageInput, setMessageInput] = useState<string>('');
+  const composerPz = usePersonalizationTarget<HTMLInputElement>();
   const [selectedMetaTag, setSelectedMetaTag] = useState<ConversationMessage['metaTag'] | ''>('');
   const [isSending, setIsSending] = useState<boolean>(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -1665,19 +1667,28 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
                 {/* Input row */}
                 <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    placeholder={`Reply as ${ (botModeMap[activeContact.id] ?? true) ? 'Chatmize AI Agent' : 'Live Agent' }...`}
-                    className="flex-1 px-3.5 py-2.5 bg-slate-950/80 border border-white/15 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
-                  />
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      ref={composerPz.ref}
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendMessage();
+                        }
+                      }}
+                      placeholder={`Reply as ${ (botModeMap[activeContact.id] ?? true) ? 'Chatmize AI Agent' : 'Live Agent' }...`}
+                      className="w-full px-3.5 py-2.5 pr-10 bg-slate-950/80 border border-white/15 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+                    />
+                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                      <PersonalizationPickerButton
+                        onPick={(t) => composerPz.insert(t, messageInput, setMessageInput)}
+                        placement="up"
+                      />
+                    </span>
+                  </div>
                   <button
                     onClick={handleSendMessage}
                     disabled={!messageInput.trim() || isSending}

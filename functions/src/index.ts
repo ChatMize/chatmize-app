@@ -62,6 +62,11 @@ import {
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
 import {
+  resolvePersonalizationTags,
+  getContactForRecipient,
+  getContactForPhone,
+} from "./personalization";
+import {
   persistInboundMessage,
   parkGlobalDeadLetter,
   recordOutboundMessage,
@@ -439,6 +444,11 @@ export const sendChannelMessage = onCall(
     // Membership check (Super Admin claim bypasses).
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
 
+    // Personalization: resolve {{tags}} against the recipient's contact
+    // record so merge tags never go out as raw text.
+    const contact = await getContactForRecipient(channel, recipientId);
+    const resolvedText = resolvePersonalizationTags(text, contact);
+
     // Token self-heal, per connection:
     // - Messenger always runs on the Page token.
     // - Instagram is answered with the token of the connection that received
@@ -450,7 +460,7 @@ export const sendChannelMessage = onCall(
       result = await CHANNEL_SENDERS[channel](
         WHATSAPP_TOKEN_DEFAULT.value(),
         recipientId,
-        text,
+        resolvedText,
         WHATSAPP_PHONE_NUMBER_ID.value(),
       );
     } else if (channel === "instagram") {
@@ -482,7 +492,7 @@ export const sendChannelMessage = onCall(
             "Could not read the Instagram token. Reconnect Instagram in Settings under Channels, then send again.",
           );
         }
-        result = await sendInstagramDirectMessage(igToken, recipientId, text);
+        result = await sendInstagramDirectMessage(igToken, recipientId, resolvedText);
       } else {
         const health = await ensureFreshPageToken(workspaceId);
         if (health === "invalid") {
@@ -494,7 +504,7 @@ export const sendChannelMessage = onCall(
         result = await sendInstagramMessage(
           await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()),
           recipientId,
-          text,
+          resolvedText,
         );
       }
     } else {
@@ -508,7 +518,7 @@ export const sendChannelMessage = onCall(
       result = await CHANNEL_SENDERS[channel](
         await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()),
         recipientId,
-        text,
+        resolvedText,
       );
     }
 
@@ -516,7 +526,7 @@ export const sendChannelMessage = onCall(
       workspaceId,
       channel,
       recipientId,
-      text,
+      resolvedText,
       result.metaMessageId,
       result.ok,
       result.error,
@@ -900,7 +910,14 @@ export const sendSms = onCall(
       );
     }
 
-    const segments = calculateSegments(body);
+    // Personalization: resolve {{tags}} against the recipient's contact
+    // record so merge tags never go out as raw text.
+    const smsContact = await getContactForPhone(e164);
+    const resolvedBody = resolvePersonalizationTags(body, smsContact);
+    if (resolvedBody.length > 1600) {
+      throw new HttpsError("invalid-argument", "Message is too long (max 1600 characters).");
+    }
+    const segments = calculateSegments(resolvedBody);
     let charged: { chargedTo: "allowance" | "credits"; creditsCharged: number } =
       { chargedTo: "allowance", creditsCharged: 0 };
     try {
@@ -914,14 +931,14 @@ export const sendSms = onCall(
 
     try {
       const provider = providerOf(conn);
-      const messageId = await sendSmsViaProvider(provider, conn.phoneNumber, e164, body);
-      await persistOutboundSms(workspaceId, conn.phoneNumber, e164, body, messageId);
+      const messageId = await sendSmsViaProvider(provider, conn.phoneNumber, e164, resolvedBody);
+      await persistOutboundSms(workspaceId, conn.phoneNumber, e164, resolvedBody, messageId);
       await logSms({
         workspaceId,
         direction: "outbound",
         to: e164,
         from: conn.phoneNumber,
-        body,
+        body: resolvedBody,
         segments,
         creditsCharged: charged.creditsCharged,
         messageId,
@@ -954,7 +971,7 @@ export const sendSms = onCall(
         direction: "outbound",
         to: e164,
         from: conn.phoneNumber,
-        body,
+        body: resolvedBody,
         segments,
         creditsCharged: 0,
         status: "failed",
@@ -1104,7 +1121,6 @@ export const sendSmsBroadcast = onCall(
       }
     }
 
-    const segments = calculateSegments(body);
     let stoppedEarly = state.stoppedEarly;
 
     for (let i = state.processed; i < state.recipients.length; i += BROADCAST_CHUNK_SIZE) {
@@ -1115,23 +1131,33 @@ export const sendSmsBroadcast = onCall(
           state.skipped += 1;
           continue;
         }
+        // Personalization: resolve {{tags}} per recipient against their
+        // contact record so merge tags never go out as raw text. Segments
+        // are recomputed per message because personalization changes length.
+        const bcContact = await getContactForPhone(to);
+        const personalBody = resolvePersonalizationTags(body, bcContact);
+        if (personalBody.length > 1600) {
+          state.skipped += 1;
+          continue;
+        }
+        const personalSegments = calculateSegments(personalBody);
         try {
-          const charged = await chargeForSend(workspaceId, segments, `sms broadcast ${broadcastId}`);
-          const messageId = await sendSmsViaProvider(providerOf(conn), conn.phoneNumber, to, body);
+          const charged = await chargeForSend(workspaceId, personalSegments, `sms broadcast ${broadcastId}`);
+          const messageId = await sendSmsViaProvider(providerOf(conn), conn.phoneNumber, to, personalBody);
           state.creditsCharged += charged.creditsCharged;
           state.sent += 1;
-          await persistOutboundSms(workspaceId, conn.phoneNumber, to, body, messageId);
+          await persistOutboundSms(workspaceId, conn.phoneNumber, to, personalBody, messageId);
           await logSms({
-            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
-            segments, creditsCharged: charged.creditsCharged, messageId, status: "sent", broadcastId,
+            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body: personalBody,
+            segments: personalSegments, creditsCharged: charged.creditsCharged, messageId, status: "sent", broadcastId,
           });
         } catch (err) {
           state.failed += 1;
           const message = err instanceof Error ? err.message : "send failed";
           if (state.errors.length < 5) state.errors.push(`${to}: ${message}`);
           await logSms({
-            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
-            segments, creditsCharged: 0, status: "failed", error: message, broadcastId,
+            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body: personalBody,
+            segments: personalSegments, creditsCharged: 0, status: "failed", error: message, broadcastId,
           });
           if (message.includes("exhausted") || message.includes("insufficient credits")) {
             stoppedEarly = true;
