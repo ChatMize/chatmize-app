@@ -69,6 +69,7 @@ import {
   IntegrationApp 
 } from '../data/integrations';
 import { saveContact, setContactVariable, saveRecurringNotificationToken, saveOtnToken } from '../lib/firebase';
+import { PersonalizationPickerButton, usePersonalizationTarget, usePersonalizationTargetMap } from '../components/personalization';
 import { 
   MetaMessageTag, 
   validateMessageTagCompliance, 
@@ -3203,6 +3204,8 @@ function NodeEditor({
   const onAutoUpdate = (updates: Partial<FlowNode>) => {
     onUpdate(updates);
   };
+  const msgPz = usePersonalizationTarget<HTMLTextAreaElement>();
+  const compPz = usePersonalizationTargetMap<HTMLTextAreaElement>();
 
   const handleUpdateTrigger = (triggerId: string, updates: Partial<FlowTrigger>) => {
     const currentTriggers = node.triggers || [];
@@ -3555,7 +3558,7 @@ function NodeEditor({
         {/* Node Title */}
         <div>
           <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Step Name</label>
-          <input 
+          <input data-no-emoji 
             type="text" 
             value={node.title} 
             onChange={(e) => onAutoUpdate({ title: e.target.value })}
@@ -4044,7 +4047,7 @@ function NodeEditor({
 
                                     {/* Add Keywords Input */}
                                     <div className="flex gap-2">
-                                      <input
+                                      <input data-no-emoji
                                         type="text"
                                         value={newKeywordInputs[trig.id] || ''}
                                         onChange={(e) => setNewKeywordInputs(prev => ({ ...prev, [trig.id]: e.target.value }))}
@@ -4159,7 +4162,7 @@ function NodeEditor({
                                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                                     Connected Meta Ad Campaign Name
                                   </label>
-                                  <input
+                                  <input data-no-emoji
                                     type="text"
                                     value={trig.adCampaignName || ''}
                                     onChange={(e) => handleUpdateTrigger(trig.id, { adCampaignName: e.target.value })}
@@ -4171,7 +4174,7 @@ function NodeEditor({
                                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                                     Meta Ad ID / Ref Payload
                                   </label>
-                                  <input
+                                  <input data-no-emoji
                                     type="text"
                                     value={trig.adCampaignId || ''}
                                     onChange={(e) => handleUpdateTrigger(trig.id, { adCampaignId: e.target.value })}
@@ -4446,7 +4449,7 @@ function NodeEditor({
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
                   Custom Delay Description / Timer Text
                 </label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={node.delayText || node.content || ''}
                   onChange={(e) => onAutoUpdate({ delayText: e.target.value, content: e.target.value })}
@@ -4672,7 +4675,7 @@ function NodeEditor({
                       <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1.5">
                         OTN Token Topic / Purpose
                       </label>
-                      <input
+                      <input data-no-emoji
                         type="text"
                         value={node.otnTopic || ''}
                         onChange={(e) => onAutoUpdate({ otnTopic: e.target.value })}
@@ -4745,7 +4748,7 @@ function NodeEditor({
                         <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1.5">
                           Topic
                         </label>
-                        <input
+                        <input data-no-emoji
                           type="text"
                           value={node.rnTopic || ''}
                           onChange={(e) => onAutoUpdate({ rnTopic: e.target.value })}
@@ -4834,15 +4837,22 @@ function NodeEditor({
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="text-xs font-bold uppercase text-slate-400">Message Text</label>
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-xs font-bold uppercase text-slate-400">Message Text</label>
               <div className="flex gap-1.5">
                 <EmojiPickerButton onPick={(e) => msgTextEmoji.insert(e, node.content || '', (v) => onAutoUpdate({ content: v }))} placement="down" />
-                <button 
+                <PersonalizationPickerButton
+                  onPick={(t) => msgPz.insert(t, node.content || '', (v) => onAutoUpdate({ content: v }))}
+                  placement="down"
+                  title="Insert personalization"
+                />
+                <button
                   onClick={() => onAutoUpdate({ content: (node.content || '') + ' {{first_name}}' })}
                   className="text-[11px] font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20"
                 >
                   + {'{{first_name}}'}
                 </button>
-                <button 
+                <button
                   onClick={() => onAutoUpdate({ content: (node.content || '') + ' {{email}}' })}
                   className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20"
                 >
@@ -4850,10 +4860,10 @@ function NodeEditor({
                 </button>
               </div>
             </div>
-            <textarea 
+            <textarea
               rows={6}
               ref={msgTextEmoji.ref}
-              value={node.content || ''} 
+              value={node.content || ''}
               onChange={(e) => onAutoUpdate({ content: e.target.value })}
               className="w-full bg-slate-900 border border-white/10 rounded-xl p-3.5 text-sm text-white outline-none focus:border-blue-500 transition-colors resize-none leading-relaxed font-sans"
               placeholder="Type your bot response here..."
@@ -5050,16 +5060,23 @@ function NodeEditor({
                         <div className="space-y-2 pt-1">
                           <div className="flex justify-between items-center">
                             <label className="text-[10px] font-bold uppercase text-slate-400">Bubble Text</label>
+                          <div className="flex justify-between items-center">
+                            <label className="text-[10px] font-bold uppercase text-slate-400">Bubble Text</label>
                             <div className="flex gap-1">
                               <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:text`, e, comp.text || '', (v) => handleUpdateComponent(comp.id, { text: v }))} placement="down" />
-                              <button 
+                              <PersonalizationPickerButton
+                                onPick={(t) => compPz.insert(`bubble:${comp.id}`, t, comp.text || '', (v) => handleUpdateComponent(comp.id, { text: v }))}
+                                placement="down"
+                                title="Insert personalization"
+                              />
+                              <button
                                 type="button"
                                 onClick={() => handleUpdateComponent(comp.id, { text: (comp.text || '') + ' {{first_name}}' })}
                                 className="text-[10px] font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20"
                               >
                                 + {'{{first_name}}'}
                               </button>
-                              <button 
+                              <button
                                 type="button"
                                 onClick={() => handleUpdateComponent(comp.id, { text: (comp.text || '') + ' {{email}}' })}
                                 className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20"
@@ -5068,7 +5085,7 @@ function NodeEditor({
                               </button>
                             </div>
                           </div>
-                          <textarea 
+                          <textarea
                             rows={3}
                             ref={compEmoji.setRef(`${comp.id}:text`)}
                             value={comp.text || ''}
@@ -5388,7 +5405,7 @@ function NodeEditor({
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Meta Template Name</label>
-                              <input 
+                              <input data-no-emoji 
                                 type="text" 
                                 value={comp.waTemplateName || ''} 
                                 onChange={(e) => handleUpdateComponent(comp.id, { waTemplateName: e.target.value })}

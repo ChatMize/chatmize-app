@@ -1438,6 +1438,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
                 </span>
                 <div className="flex gap-1.5">
                   <input
+                    data-no-emoji
                     type="text"
                     placeholder="Key (e.g. budget)"
                     value={newVarKey}
@@ -1445,6 +1446,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
                     className="w-1/2 bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-500 font-mono"
                   />
                   <input
+                    data-no-emoji
                     type="text"
                     placeholder="Value (e.g. $10,000)"
                     value={newVarVal}

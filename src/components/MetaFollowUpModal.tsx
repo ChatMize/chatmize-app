@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { EmojiPickerButton, useEmojiTargetMap } from './emoji';
+import { PersonalizationPickerButton, usePersonalizationTargetMap } from './personalization';
 import { 
   AlertCircle, 
   AlertTriangle, 
@@ -62,6 +63,7 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
 
   // Fields for Message Tag
   const [selectedTag, setSelectedTag] = useState<MetaMessageTag>('CONFIRMED_EVENT_UPDATE');
+  const pz = usePersonalizationTargetMap<HTMLTextAreaElement>();
   const [messageBody, setMessageBody] = useState<string>(() => {
     if (is24hActive) {
       return `Hey ${contact.firstName || contact.name}! Here is the workshop replay link we promised.`;
@@ -366,11 +368,18 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                       <label className="text-[11px] font-semibold text-slate-300 block">
                         Promotional Broadcast Copy (Marketing Allowed)
                       </label>
-                      <EmojiPickerButton onPick={(e) => followEmoji.insert('rnPromo', e, rnPromoText, setRnPromoText)} placement="up" />
+                      <div className="flex items-center gap-1">
+                        <EmojiPickerButton onPick={(e) => followEmoji.insert('rnPromo', e, rnPromoText, setRnPromoText)} placement="up" />
+                        <PersonalizationPickerButton
+                          onPick={(t) => pz.insert('rnPromoText', t, rnPromoText, setRnPromoText)}
+                          placement="up"
+                          title="Insert personalization"
+                        />
+                      </div>
                     </div>
                     <textarea
                       rows={3}
-                      ref={followEmoji.setRef('rnPromo')}
+                      ref={(el) => { followEmoji.setRef('rnPromo')(el); pz.setRef('rnPromoText')(el); }}
                       value={rnPromoText}
                       onChange={(e) => setRnPromoText(e.target.value)}
                       className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-cyan-500 leading-relaxed"
@@ -417,11 +426,18 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                   <label className="text-[11px] font-semibold text-slate-300 block">
                     Message Content (Non-Promotional Copy Only)
                   </label>
-                  <EmojiPickerButton onPick={(e) => followEmoji.insert('tagBody', e, messageBody, setMessageBody)} placement="up" />
+                  <div className="flex items-center gap-1">
+                    <EmojiPickerButton onPick={(e) => followEmoji.insert('tagBody', e, messageBody, setMessageBody)} placement="up" />
+                    <PersonalizationPickerButton
+                      onPick={(t) => pz.insert('messageBody:tag', t, messageBody, setMessageBody)}
+                      placement="up"
+                      title="Insert personalization"
+                    />
+                  </div>
                 </div>
                 <textarea
                   rows={3}
-                  ref={followEmoji.setRef('tagBody')}
+                  ref={(el) => { followEmoji.setRef('tagBody')(el); pz.setRef('messageBody:tag')(el); }}
                   value={messageBody}
                   onChange={(e) => setMessageBody(e.target.value)}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 leading-relaxed"
@@ -495,15 +511,34 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                       <label className="text-[11px] font-semibold text-slate-300 block">
                         Notification Body
                       </label>
-                      <EmojiPickerButton onPick={(e) => followEmoji.insert('otn', e, otnText, setOtnText)} placement="up" />
+                      <div className="flex items-center gap-1">
+                        <EmojiPickerButton onPick={(e) => followEmoji.insert('otn', e, otnText, setOtnText)} placement="up" />
+                        <PersonalizationPickerButton
+                          onPick={(t) => pz.insert('otnText', t, otnText, setOtnText)}
+                          placement="up"
+                          title="Insert personalization"
+                        />
+                      </div>
                     </div>
                     <textarea
                       rows={3}
-                      ref={followEmoji.setRef('otn')}
+                      ref={(el) => { followEmoji.setRef('otn')(el); pz.setRef('otnText')(el); }}
                       value={otnText}
                       onChange={(e) => setOtnText(e.target.value)}
                       className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-purple-500 leading-relaxed"
                     />
+                      value={otnText}
+                      onChange={(e) => setOtnText(e.target.value)}
+                      className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-purple-500 leading-relaxed"
+                    />
+                    <span className="absolute right-2 bottom-2">
+                      <PersonalizationPickerButton
+                        onPick={(t) => pz.insert('otnText', t, otnText, setOtnText)}
+                        placement="up"
+                        title="Insert personalization"
+                      />
+                    </span>
+                  </div>
                   </div>
                 </div>
               )}
@@ -551,15 +586,34 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                   <label className="text-[11px] font-semibold text-slate-300 block">
                     Message with Click-to-Chat Link
                   </label>
-                  <EmojiPickerButton onPick={(e) => followEmoji.insert('fallback', e, fallbackText, setFallbackText)} placement="up" />
+                  <div className="flex items-center gap-1">
+                    <EmojiPickerButton onPick={(e) => followEmoji.insert('fallback', e, fallbackText, setFallbackText)} placement="up" />
+                    <PersonalizationPickerButton
+                      onPick={(t) => pz.insert('fallbackText', t, fallbackText, setFallbackText)}
+                      placement="up"
+                      title="Insert personalization"
+                    />
+                  </div>
                 </div>
                 <textarea
                   rows={3}
-                  ref={followEmoji.setRef('fallback')}
+                  ref={(el) => { followEmoji.setRef('fallback')(el); pz.setRef('fallbackText')(el); }}
                   value={fallbackText}
                   onChange={(e) => setFallbackText(e.target.value)}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-amber-500 leading-relaxed font-mono text-[11px]"
                 />
+                  value={fallbackText}
+                  onChange={(e) => setFallbackText(e.target.value)}
+                  className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-amber-500 leading-relaxed font-mono text-[11px]"
+                />
+                <span className="absolute right-2 bottom-2">
+                  <PersonalizationPickerButton
+                    onPick={(t) => pz.insert('fallbackText', t, fallbackText, setFallbackText)}
+                    placement="up"
+                    title="Insert personalization"
+                  />
+                </span>
+              </div>
               </div>
             </div>
           )}
@@ -580,15 +634,34 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                   <label className="text-[11px] font-semibold text-slate-300 block">
                     Message Copy
                   </label>
-                  <EmojiPickerButton onPick={(e) => followEmoji.insert('stdBody', e, messageBody, setMessageBody)} placement="up" />
+                  <div className="flex items-center gap-1">
+                    <EmojiPickerButton onPick={(e) => followEmoji.insert('stdBody', e, messageBody, setMessageBody)} placement="up" />
+                    <PersonalizationPickerButton
+                      onPick={(t) => pz.insert('messageBody:standard', t, messageBody, setMessageBody)}
+                      placement="up"
+                      title="Insert personalization"
+                    />
+                  </div>
                 </div>
                 <textarea
                   rows={3}
-                  ref={followEmoji.setRef('stdBody')}
+                  ref={(el) => { followEmoji.setRef('stdBody')(el); pz.setRef('messageBody:standard')(el); }}
                   value={messageBody}
                   onChange={(e) => setMessageBody(e.target.value)}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-emerald-500 leading-relaxed"
                 />
+                  value={messageBody}
+                  onChange={(e) => setMessageBody(e.target.value)}
+                  className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-emerald-500 leading-relaxed"
+                />
+                <span className="absolute right-2 bottom-2">
+                  <PersonalizationPickerButton
+                    onPick={(t) => pz.insert('messageBody:standard', t, messageBody, setMessageBody)}
+                    placement="up"
+                    title="Insert personalization"
+                  />
+                </span>
+              </div>
               </div>
             </div>
           )}

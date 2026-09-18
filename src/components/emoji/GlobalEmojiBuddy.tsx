@@ -58,6 +58,10 @@ function isEmojiTextField(el: EventTarget | null): el is Field {
   if (el.closest('[data-emoji-panel]')) return false;
   const tagged = el as HTMLElement;
   if (tagged.dataset && tagged.dataset.emojiInline) return false;
+  // Explicit opt-out: data-no-emoji on the field or any ancestor (plumbing fields:
+  // prompts, configs, keywords, topics, ids, admin internals).
+  if (tagged.dataset && 'noEmoji' in tagged.dataset) return false;
+  if (typeof tagged.closest === 'function' && tagged.closest('[data-no-emoji]')) return false;
   if (tagged.isContentEditable) return !looksLikeUrlEmailPhoneField(tagged);
   if (el instanceof HTMLTextAreaElement) {
     if (el.readOnly || el.disabled) return false;

@@ -148,7 +148,7 @@ export const EditKanbanCardModal: React.FC<EditKanbanCardModalProps> = ({
     : 0;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-hidden" data-no-emoji>
       <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl text-xs text-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Sticky Header */}
         <div className="flex-shrink-0 flex items-center justify-between px-5 sm:px-6 py-3.5 border-b border-slate-800 bg-slate-900/95 backdrop-blur-sm z-10">

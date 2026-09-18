@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { EmojiPickerButton, useEmojiTarget, useEmojiTargetMap } from './emoji';
+import { PersonalizationPickerButton, usePersonalizationTarget, usePersonalizationTargetMap } from './personalization';
 import { 
   X, 
   Calendar, 
@@ -78,6 +79,8 @@ export function CampaignBuilderModal({
   const broadcastEmoji = useEmojiTarget<HTMLTextAreaElement>();
   const dripEmoji = useEmojiTargetMap<HTMLTextAreaElement | HTMLInputElement>();
   const [timezone, setTimezone] = useState<string>('America/New_York');
+  const broadcastPz = usePersonalizationTarget<HTMLTextAreaElement>();
+  const dripPz = usePersonalizationTargetMap<HTMLTextAreaElement>();
 
   // Drip Sequence Configuration
   const [triggerOnTag, setTriggerOnTag] = useState<string>('New Lead');
@@ -262,11 +265,6 @@ export function CampaignBuilderModal({
       stepNumber: idx + 1
     }));
     setDripSteps(updated);
-  };
-
-  // Personalization shortcode insert helper
-  const insertVariable = (variable: string) => {
-    setMessageText(prev => `${prev} {{${variable}}}`);
   };
 
   // Save Campaign to Firestore
@@ -793,7 +791,7 @@ export function CampaignBuilderModal({
                     <div className="relative">
                       <textarea
                         rows={2}
-                        ref={dripEmoji.setRef(`step:${idx}`)}
+                        ref={(el) => { dripEmoji.setRef(`step:${idx}`)(el); dripPz.setRef(`step:${idx}`)(el); }}
                         value={step.messageText}
                         onChange={(e) => handleUpdateDripStep(idx, { messageText: e.target.value })}
                         placeholder="Write step message... Use {{first_name}} for personalization"
@@ -801,6 +799,11 @@ export function CampaignBuilderModal({
                       />
                       <span className="absolute right-1.5 bottom-1.5">
                         <EmojiPickerButton onPick={(e) => dripEmoji.insert(`step:${idx}`, e, step.messageText, (v) => handleUpdateDripStep(idx, { messageText: v }))} placement="up" />
+                        <PersonalizationPickerButton
+                          onPick={(t) => dripPz.insert(`step:${idx}`, t, step.messageText, (v) => handleUpdateDripStep(idx, { messageText: v }))}
+                          placement="up"
+                          title="Insert personalization"
+                        />
                       </span>
                     </div>
 
@@ -883,18 +886,30 @@ export function CampaignBuilderModal({
                     </button>
                   ))}
                   <EmojiPickerButton onPick={(e) => broadcastEmoji.insert(e, messageText, setMessageText)} placement="down" />
+                  <PersonalizationPickerButton
+                    onPick={(t) => broadcastPz.insert(t, messageText, setMessageText)}
+                    placement="down"
+                    title="Insert personalization"
+                  />
                 </div>
               </div>
 
-              <div>
+              <div className="relative">
                 <textarea
                   rows={4}
-                  ref={broadcastEmoji.ref}
+                  ref={(el) => { broadcastEmoji.ref(el); broadcastPz.ref(el); }}
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
                   placeholder="Type the message copy... Markdown formatting supported."
-                  className="w-full bg-slate-900 border border-white/15 rounded-xl p-3.5 text-xs text-white outline-none focus:border-blue-500 resize-none font-sans leading-relaxed"
+                  className="w-full bg-slate-900 border border-white/15 rounded-xl p-3.5 pr-10 text-xs text-white outline-none focus:border-blue-500 resize-none font-sans leading-relaxed"
                 />
+                <span className="absolute right-2 bottom-2">
+                  <PersonalizationPickerButton
+                    onPick={(t) => broadcastPz.insert(t, messageText, setMessageText)}
+                    placement="up"
+                    title="Insert personalization"
+                  />
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

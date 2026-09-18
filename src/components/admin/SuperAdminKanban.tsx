@@ -448,7 +448,7 @@ export const SuperAdminKanban: React.FC = () => {
   const isFiltersActive = searchQuery !== '' || selectedCategory !== 'all' || selectedPriority !== 'all' || quickFilter !== 'all';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-no-emoji>
       {/* Top Banner with Architecture Planning Context & Pricing Simulator Trigger */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/20 rounded-2xl p-5 sm:p-6 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />

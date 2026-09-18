@@ -5,6 +5,7 @@ import {
   getInstagramOAuthStatus,
   InstagramOAuthStatus,
 } from '../../lib/instagram';
+import { startMetaOAuth } from '../../lib/meta';
 import { useCachedConnectionStatus, timeAgo } from '../../lib/useCachedConnectionStatus';
 
 interface InstagramConnectCardProps {
@@ -30,6 +31,7 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
   onConnected,
 }) => {
   const [starting, setStarting] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
 
   // Last known status renders instantly; a background check refreshes it and
@@ -88,6 +90,29 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
 
   const connected = status?.connected ?? false;
 
+  /**
+   * One click upgrade to the Facebook Page anchor (ManyChat style "change
+   * connection"): reuses the Meta OAuth flow for the same workspace. The
+   * backend re-anchors this Instagram account to the picked Page without
+   * deleting anything; contacts, conversations, and automations stay put.
+   */
+  const handleUpgrade = async () => {
+    setUpgrading(true);
+    setOauthError(null);
+    try {
+      const url = await startMetaOAuth(workspaceId, returnTo);
+      window.location.href = url;
+    } catch (e) {
+      setOauthError(e instanceof Error ? e.message : 'Could not start Facebook login.');
+      setUpgrading(false);
+    }
+  };
+
+  /** Plain connection type label so the anchor is always obvious. */
+  const connectionLabel = status?.anchoredViaPage
+    ? 'Connected via Facebook Page'
+    : 'Connected via Instagram only';
+
   return (
     <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5 flex flex-col justify-between hover:border-white/20 transition-all md:col-span-2">
       <div>
@@ -142,7 +167,9 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
         </p>
 
         {connected && status?.igUserId && (
-          <p className="text-[11px] text-slate-500 font-mono mb-3">IG ID {status.igUserId}</p>
+          <p className="text-[11px] text-slate-500 font-mono mb-3">
+            IG ID {status.igUserId} · {connectionLabel}
+          </p>
         )}
 
         {connected && (
@@ -177,12 +204,27 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
           </div>
         )}
 
-        {connected && !hasPageAnchor && (
+        {connected && !hasPageAnchor && !status?.anchoredViaPage && (
           <div className="mb-4 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25">
-            <p className="text-xs text-cyan-200 leading-relaxed">
-              Upgrade path: also run a Facebook Page? Connect it as your Meta anchor to add
-              Messenger and merge both channels under one workspace.
+            <p className="text-xs text-cyan-200 leading-relaxed mb-2.5">
+              Also run a Facebook Page? Upgrade to a Facebook connection to add
+              Messenger and send Instagram DMs on your Page token. Your
+              contacts, conversations, and automations stay put.
             </p>
+            <button
+              onClick={handleUpgrade}
+              disabled={upgrading}
+              className="px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-sm disabled:opacity-60"
+            >
+              {upgrading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Redirecting...
+                </>
+              ) : (
+                'Upgrade to Facebook connection'
+              )}
+            </button>
           </div>
         )}
 

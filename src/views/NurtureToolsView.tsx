@@ -508,7 +508,6 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
   // Editor draft state
   const [draftTool, setDraftTool] = useState<NurtureTool>(activeTool);
   const toolEmoji = useEmojiTarget<HTMLTextAreaElement>();
-  const planDescEmoji = useEmojiTarget<HTMLTextAreaElement>();
 
   useEffect(() => {
     if (activeTool) {
@@ -2460,13 +2459,10 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
 
               {/* Row 2: Description */}
               <div className="text-xs">
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-slate-300 font-semibold">Plan Description</label>
-                  <EmojiPickerButton onPick={(e) => planDescEmoji.insert(e, planForm.description || '', (v) => setPlanForm({ ...planForm, description: v }))} placement="up" />
-                </div>
+                <label className="block text-slate-300 font-semibold mb-1">Plan Description</label>
                 <textarea
+                  data-no-emoji
                   rows={2}
-                  ref={planDescEmoji.ref}
                   value={planForm.description || ''}
                   onChange={(e) => setPlanForm({ ...planForm, description: e.target.value })}
                   placeholder="Summary of who this plan is intended for and what value it delivers..."

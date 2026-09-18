@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { EmojiPickerButton, useEmojiTarget } from '../components/emoji';
+import { PersonalizationPickerButton, usePersonalizationTarget } from '../components/personalization';
 import { MessageSquareText, Send, Loader2, CheckCircle2, AlertTriangle, Users } from 'lucide-react';
 import {
   getSmsStatus,
@@ -19,6 +20,7 @@ interface SmsBroadcastViewProps {
 /** SMS blast composer: live segment/credit estimates, backend delivery report. */
 export const SmsBroadcastView: React.FC<SmsBroadcastViewProps> = ({ workspace, onEnableSms }) => {
   const [message, setMessage] = useState('');
+  const smsPz = usePersonalizationTarget<HTMLTextAreaElement>();
   const [optedIn, setOptedIn] = useState(0);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -132,7 +134,7 @@ export const SmsBroadcastView: React.FC<SmsBroadcastViewProps> = ({ workspace, o
 
         <div className="relative">
           <textarea
-            ref={smsEmoji.ref}
+            ref={(el) => { smsEmoji.ref(el); smsPz.ref(el); }}
             value={message}
             onChange={(e) => setMessage(e.target.value.slice(0, 1600))}
             rows={5}
@@ -141,6 +143,11 @@ export const SmsBroadcastView: React.FC<SmsBroadcastViewProps> = ({ workspace, o
           />
           <span className="absolute right-2.5 bottom-2.5">
             <EmojiPickerButton onPick={(e) => smsEmoji.insert(e, message, (v) => setMessage(v.slice(0, 1600)))} placement="up" />
+            <PersonalizationPickerButton
+              onPick={(t) => smsPz.insert(t, message, setMessage)}
+              placement="up"
+              title="Insert personalization"
+            />
           </span>
           <div className="flex items-center justify-between mt-2 text-[11px] text-slate-500">
             <span>{chars}/1600 characters · {segments} segment{segments === 1 ? '' : 's'}</span>

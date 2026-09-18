@@ -44,6 +44,9 @@ import {
   connectInstagramAccount,
   getInstagramConnection,
   instagramAppReturnUrl,
+  getIgToken,
+  ensureFreshIgToken,
+  markIgTokenInvalid,
 } from "./instagramOAuth";
 import {
   buildWhatsAppLoginUrl,
@@ -59,12 +62,21 @@ import {
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
 import {
+  resolvePersonalizationTags,
+  getContactForRecipient,
+  getContactForPhone,
+} from "./personalization";
+import {
   persistInboundMessage,
   parkGlobalDeadLetter,
   recordOutboundMessage,
   Channel,
 } from "./store";
-import { CHANNEL_SENDERS } from "./send";
+import {
+  CHANNEL_SENDERS,
+  sendInstagramMessage,
+  sendInstagramDirectMessage,
+} from "./send";
 import {
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN,
@@ -332,6 +344,83 @@ function isMetaTokenError(error: string | undefined): boolean {
   );
 }
 
+/** Meta rejected the recipient because the IGSID is scoped to a different
+ * app/connection than the token used (Graph error 100 / subcode 2018001). */
+function isWrongScopeRecipientError(error: string | undefined): boolean {
+  if (!error) return false;
+  return /no matching user found/i.test(error);
+}
+
+/**
+ * Decide which token answers an Instagram conversation.
+ *
+ * IGSIDs are scoped to the Meta app that received them, so each conversation
+ * must be answered with the token of the connection that received it:
+ * - "ig": the conversation arrived through the IG-only connection
+ *   (ChatMize-IG app) -> send with the IG user token on graph.instagram.com.
+ * - "page": the conversation arrived through the Facebook-anchored linked
+ *   Instagram account (or the IG-only connection was upgraded to the Page
+ *   anchor) -> send with the Page token on graph.facebook.com as before.
+ * - null: no Instagram connection is live on this workspace.
+ */
+async function resolveInstagramRoute(
+  workspaceId: string,
+  recipientId: string,
+): Promise<"ig" | "page" | null> {
+  const integRef = db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("integrations");
+  const convoRef = db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("conversations")
+    .doc(`instagram_${recipientId}`);
+  const [convoSnap, igSnap, metaSnap] = await Promise.all([
+    convoRef.get(),
+    integRef.doc("instagram").get(),
+    integRef.doc("meta").get(),
+  ]);
+  const accountId =
+    (convoSnap.data() as { recipientId?: string } | undefined)?.recipientId ??
+    null;
+  const ig = igSnap.data() as
+    | {
+        status?: string;
+        igUserId?: string;
+        anchoredViaPage?: boolean;
+        anchoredPageId?: string;
+      }
+    | undefined;
+  const meta = metaSnap.data() as
+    | { status?: string; pageId?: string; instagram?: { id?: string } }
+    | undefined;
+  const igConnected = ig?.status === "connected" && !!ig.igUserId;
+  const pageIgId =
+    meta?.status === "connected" ? (meta.instagram?.id ?? null) : null;
+
+  // Upgraded anchor: the IG-only connection was re-anchored to the Page
+  // anchor, so its conversations now go out on the Page token.
+  if (
+    igConnected &&
+    ig.anchoredViaPage &&
+    pageIgId &&
+    pageIgId === ig.igUserId &&
+    ig.anchoredPageId === meta?.pageId
+  ) {
+    return "page";
+  }
+  if (accountId) {
+    if (igConnected && accountId === ig.igUserId) return "ig";
+    if (pageIgId && accountId === pageIgId) return "page";
+  }
+  // Fallback when the conversation is unknown: prefer the IG-only
+  // connection, otherwise the Page anchor.
+  if (igConnected) return "ig";
+  if (pageIgId || meta?.status === "connected") return "page";
+  return null;
+}
+
 /**
  * Authenticated callable: send a message on Messenger, Instagram, or WhatsApp.
  * The caller must be a member of the workspace (or Super Admin). Tokens come
@@ -355,9 +444,70 @@ export const sendChannelMessage = onCall(
     // Membership check (Super Admin claim bypasses).
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
 
-    // Token self-heal: refresh a near-expiry page token, or fail fast with a
-    // clear reconnect prompt when Meta has killed the session outright.
-    if (channel === "messenger" || channel === "instagram") {
+    // Personalization: resolve {{tags}} against the recipient's contact
+    // record so merge tags never go out as raw text.
+    const contact = await getContactForRecipient(channel, recipientId);
+    const resolvedText = resolvePersonalizationTags(text, contact);
+
+    // Token self-heal, per connection:
+    // - Messenger always runs on the Page token.
+    // - Instagram is answered with the token of the connection that received
+    //   the conversation (IG-only token on graph.instagram.com, or the Page
+    //   token on graph.facebook.com), because IGSIDs are app-scoped.
+    let result;
+    let igRoute: "ig" | "page" | null = null;
+    if (channel === "whatsapp") {
+      result = await CHANNEL_SENDERS[channel](
+        WHATSAPP_TOKEN_DEFAULT.value(),
+        recipientId,
+        resolvedText,
+        WHATSAPP_PHONE_NUMBER_ID.value(),
+      );
+    } else if (channel === "instagram") {
+      igRoute = await resolveInstagramRoute(workspaceId, recipientId);
+      if (igRoute === null) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Instagram is not connected. Connect it in Settings under Channels, then send again.",
+        );
+      }
+      if (igRoute === "ig") {
+        const health = await ensureFreshIgToken(workspaceId);
+        if (health === "invalid") {
+          throw new HttpsError(
+            "failed-precondition",
+            "The Instagram connection expired. Reconnect it in Settings under Channels, then send again.",
+          );
+        }
+        if (health === "unconnected") {
+          throw new HttpsError(
+            "failed-precondition",
+            "Instagram is not connected. Connect it in Settings under Channels, then send again.",
+          );
+        }
+        const igToken = await getIgToken(workspaceId);
+        if (!igToken) {
+          throw new HttpsError(
+            "failed-precondition",
+            "Could not read the Instagram token. Reconnect Instagram in Settings under Channels, then send again.",
+          );
+        }
+        result = await sendInstagramDirectMessage(igToken, recipientId, resolvedText);
+      } else {
+        const health = await ensureFreshPageToken(workspaceId);
+        if (health === "invalid") {
+          throw new HttpsError(
+            "failed-precondition",
+            "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
+          );
+        }
+        result = await sendInstagramMessage(
+          await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()),
+          recipientId,
+          resolvedText,
+        );
+      }
+    } else {
       const health = await ensureFreshPageToken(workspaceId);
       if (health === "invalid") {
         throw new HttpsError(
@@ -365,26 +515,18 @@ export const sendChannelMessage = onCall(
           "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
         );
       }
-    }
-
-    const sender = CHANNEL_SENDERS[channel];
-    let result;
-    if (channel === "whatsapp") {
-      result = await sender(
-        WHATSAPP_TOKEN_DEFAULT.value(),
+      result = await CHANNEL_SENDERS[channel](
+        await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()),
         recipientId,
-        text,
-        WHATSAPP_PHONE_NUMBER_ID.value(),
+        resolvedText,
       );
-    } else {
-      result = await sender(await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()), recipientId, text);
     }
 
     await recordOutboundMessage(
       workspaceId,
       channel,
       recipientId,
-      text,
+      resolvedText,
       result.metaMessageId,
       result.ok,
       result.error,
@@ -392,7 +534,25 @@ export const sendChannelMessage = onCall(
 
     if (!result.ok) {
       logger.error("Outbound send failed", { workspaceId, channel, error: result.error });
+      if (isWrongScopeRecipientError(result.error)) {
+        // The recipient id belongs to a different Meta app/connection than
+        // the token used. Once the contact messages again, the reply will
+        // route through the right connection.
+        throw new HttpsError(
+          "failed-precondition",
+          "This conversation arrived through a different connection, so Meta rejected the reply. When the contact messages you again, the reply will go through.",
+        );
+      }
       if (isMetaTokenError(result.error)) {
+        if (channel === "instagram" && igRoute === "ig") {
+          // Reactive catch for the IG-only path: flag the IG integration so
+          // the UI prompts an Instagram reconnect instead of a bare failure.
+          await markIgTokenInvalid(workspaceId, result.error ?? "Send failed.");
+          throw new HttpsError(
+            "failed-precondition",
+            "The Instagram connection expired. Reconnect it in Settings under Channels, then send again.",
+          );
+        }
         // Reactive catch: the token died between health checks. Flag the
         // integration so the UI prompts a reconnect instead of a bare failure.
         await db()
@@ -750,7 +910,14 @@ export const sendSms = onCall(
       );
     }
 
-    const segments = calculateSegments(body);
+    // Personalization: resolve {{tags}} against the recipient's contact
+    // record so merge tags never go out as raw text.
+    const smsContact = await getContactForPhone(e164);
+    const resolvedBody = resolvePersonalizationTags(body, smsContact);
+    if (resolvedBody.length > 1600) {
+      throw new HttpsError("invalid-argument", "Message is too long (max 1600 characters).");
+    }
+    const segments = calculateSegments(resolvedBody);
     let charged: { chargedTo: "allowance" | "credits"; creditsCharged: number } =
       { chargedTo: "allowance", creditsCharged: 0 };
     try {
@@ -764,14 +931,14 @@ export const sendSms = onCall(
 
     try {
       const provider = providerOf(conn);
-      const messageId = await sendSmsViaProvider(provider, conn.phoneNumber, e164, body);
-      await persistOutboundSms(workspaceId, conn.phoneNumber, e164, body, messageId);
+      const messageId = await sendSmsViaProvider(provider, conn.phoneNumber, e164, resolvedBody);
+      await persistOutboundSms(workspaceId, conn.phoneNumber, e164, resolvedBody, messageId);
       await logSms({
         workspaceId,
         direction: "outbound",
         to: e164,
         from: conn.phoneNumber,
-        body,
+        body: resolvedBody,
         segments,
         creditsCharged: charged.creditsCharged,
         messageId,
@@ -804,7 +971,7 @@ export const sendSms = onCall(
         direction: "outbound",
         to: e164,
         from: conn.phoneNumber,
-        body,
+        body: resolvedBody,
         segments,
         creditsCharged: 0,
         status: "failed",
@@ -954,7 +1121,6 @@ export const sendSmsBroadcast = onCall(
       }
     }
 
-    const segments = calculateSegments(body);
     let stoppedEarly = state.stoppedEarly;
 
     for (let i = state.processed; i < state.recipients.length; i += BROADCAST_CHUNK_SIZE) {
@@ -965,23 +1131,33 @@ export const sendSmsBroadcast = onCall(
           state.skipped += 1;
           continue;
         }
+        // Personalization: resolve {{tags}} per recipient against their
+        // contact record so merge tags never go out as raw text. Segments
+        // are recomputed per message because personalization changes length.
+        const bcContact = await getContactForPhone(to);
+        const personalBody = resolvePersonalizationTags(body, bcContact);
+        if (personalBody.length > 1600) {
+          state.skipped += 1;
+          continue;
+        }
+        const personalSegments = calculateSegments(personalBody);
         try {
-          const charged = await chargeForSend(workspaceId, segments, `sms broadcast ${broadcastId}`);
-          const messageId = await sendSmsViaProvider(providerOf(conn), conn.phoneNumber, to, body);
+          const charged = await chargeForSend(workspaceId, personalSegments, `sms broadcast ${broadcastId}`);
+          const messageId = await sendSmsViaProvider(providerOf(conn), conn.phoneNumber, to, personalBody);
           state.creditsCharged += charged.creditsCharged;
           state.sent += 1;
-          await persistOutboundSms(workspaceId, conn.phoneNumber, to, body, messageId);
+          await persistOutboundSms(workspaceId, conn.phoneNumber, to, personalBody, messageId);
           await logSms({
-            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
-            segments, creditsCharged: charged.creditsCharged, messageId, status: "sent", broadcastId,
+            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body: personalBody,
+            segments: personalSegments, creditsCharged: charged.creditsCharged, messageId, status: "sent", broadcastId,
           });
         } catch (err) {
           state.failed += 1;
           const message = err instanceof Error ? err.message : "send failed";
           if (state.errors.length < 5) state.errors.push(`${to}: ${message}`);
           await logSms({
-            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
-            segments, creditsCharged: 0, status: "failed", error: message, broadcastId,
+            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body: personalBody,
+            segments: personalSegments, creditsCharged: 0, status: "failed", error: message, broadcastId,
           });
           if (message.includes("exhausted") || message.includes("insufficient credits")) {
             stoppedEarly = true;
