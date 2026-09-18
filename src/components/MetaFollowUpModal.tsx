@@ -527,18 +527,6 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                       onChange={(e) => setOtnText(e.target.value)}
                       className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-purple-500 leading-relaxed"
                     />
-                      value={otnText}
-                      onChange={(e) => setOtnText(e.target.value)}
-                      className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-purple-500 leading-relaxed"
-                    />
-                    <span className="absolute right-2 bottom-2">
-                      <PersonalizationPickerButton
-                        onPick={(t) => pz.insert('otnText', t, otnText, setOtnText)}
-                        placement="up"
-                        title="Insert personalization"
-                      />
-                    </span>
-                  </div>
                   </div>
                 </div>
               )}
@@ -602,18 +590,6 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                   onChange={(e) => setFallbackText(e.target.value)}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-amber-500 leading-relaxed font-mono text-[11px]"
                 />
-                  value={fallbackText}
-                  onChange={(e) => setFallbackText(e.target.value)}
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-amber-500 leading-relaxed font-mono text-[11px]"
-                />
-                <span className="absolute right-2 bottom-2">
-                  <PersonalizationPickerButton
-                    onPick={(t) => pz.insert('fallbackText', t, fallbackText, setFallbackText)}
-                    placement="up"
-                    title="Insert personalization"
-                  />
-                </span>
-              </div>
               </div>
             </div>
           )}
@@ -650,18 +626,6 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                   onChange={(e) => setMessageBody(e.target.value)}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-white outline-none focus:border-emerald-500 leading-relaxed"
                 />
-                  value={messageBody}
-                  onChange={(e) => setMessageBody(e.target.value)}
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 pr-10 text-white outline-none focus:border-emerald-500 leading-relaxed"
-                />
-                <span className="absolute right-2 bottom-2">
-                  <PersonalizationPickerButton
-                    onPick={(t) => pz.insert('messageBody:standard', t, messageBody, setMessageBody)}
-                    placement="up"
-                    title="Insert personalization"
-                  />
-                </span>
-              </div>
               </div>
             </div>
           )}

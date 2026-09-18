@@ -815,14 +815,14 @@ export function RecurringNotificationBroadcastHub({
                       />
                       <button
                         type="button"
-                        onClick={() => insertVariable('first_name')}
+                        onClick={() => rnPz.insert('{{first_name}}', messageBody, setMessageBody)}
                         className="text-[10px] bg-cyan-500/10 text-cyan-300 px-2 py-0.5 rounded border border-cyan-500/20 font-mono hover:bg-cyan-500/20"
                       >
                         + {'{{first_name}}'}
                       </button>
                       <button
                         type="button"
-                        onClick={() => insertVariable('company')}
+                        onClick={() => rnPz.insert('{{company}}', messageBody, setMessageBody)}
                         className="text-[10px] bg-blue-500/10 text-blue-300 px-2 py-0.5 rounded border border-blue-500/20 font-mono hover:bg-blue-500/20"
                       >
                         + {'{{company}}'}

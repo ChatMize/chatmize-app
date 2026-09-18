@@ -879,7 +879,7 @@ export function CampaignBuilderModal({
                     <button
                       key={v}
                       type="button"
-                      onClick={() => insertVariable(v)}
+                      onClick={() => broadcastPz.insert(`{{${v}}}`, messageText, setMessageText)}
                       className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/15 text-blue-300 font-mono transition-colors"
                     >
                       {`{{${v}}}`}

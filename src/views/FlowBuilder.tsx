@@ -4837,8 +4837,6 @@ function NodeEditor({
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="text-xs font-bold uppercase text-slate-400">Message Text</label>
-            <div className="flex justify-between items-center mb-2">
-              <label className="text-xs font-bold uppercase text-slate-400">Message Text</label>
               <div className="flex gap-1.5">
                 <EmojiPickerButton onPick={(e) => msgTextEmoji.insert(e, node.content || '', (v) => onAutoUpdate({ content: v }))} placement="down" />
                 <PersonalizationPickerButton
@@ -5058,8 +5056,6 @@ function NodeEditor({
                       {/* TEXT COMPONENT EDITOR */}
                       {comp.type === 'text' && (
                         <div className="space-y-2 pt-1">
-                          <div className="flex justify-between items-center">
-                            <label className="text-[10px] font-bold uppercase text-slate-400">Bubble Text</label>
                           <div className="flex justify-between items-center">
                             <label className="text-[10px] font-bold uppercase text-slate-400">Bubble Text</label>
                             <div className="flex gap-1">
