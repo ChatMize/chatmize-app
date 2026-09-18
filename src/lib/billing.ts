@@ -322,3 +322,82 @@ export async function adminAdjustCredits(
   const res = await fn({ workspaceId, delta, reason, note });
   return res.data;
 }
+
+// --- AI credit purchases (quote -> pay externally -> fulfill) ---
+
+export type CreditPurchaseFormat = "alacarte" | "bundle";
+
+/** Settled OG discount: 40% off either purchase format. Keep in sync with functions/src/creditPricing.ts. */
+export const OG_DISCOUNT_RATE = 0.4;
+
+/** Retail margins. Keep in sync with functions/src/creditPricing.ts. */
+export const CREDIT_FORMAT_MARGINS: Record<CreditPurchaseFormat, number> = {
+  alacarte: 4,
+  bundle: 3,
+};
+
+export interface CreditQuote {
+  credits: number;
+  format: CreditPurchaseFormat;
+  margin: number;
+  listPriceCents: number;
+  ogDiscountCents: number;
+  finalPriceCents: number;
+  isOg: boolean;
+}
+
+export interface CreditOrder extends CreditQuote {
+  orderId: string;
+  workspaceId: string;
+  uid: string;
+  status: "quoted" | "fulfilled" | "cancelled";
+  createdAt: string;
+  fulfilledAt: string | null;
+  note: string | null;
+}
+
+/**
+ * Client-side price preview (no round trip). The server re-computes the
+ * quote from the workspace's actual `og` flag, so this is display-only.
+ */
+export function previewCreditPrice(
+  credits: number,
+  format: CreditPurchaseFormat,
+  isOg: boolean,
+): CreditQuote {
+  const margin = CREDIT_FORMAT_MARGINS[format];
+  const listPriceCents = Math.round(credits * 0.001 * margin * 100);
+  const ogDiscountCents = isOg ? Math.round(listPriceCents * OG_DISCOUNT_RATE) : 0;
+  return {
+    credits,
+    format,
+    margin,
+    listPriceCents,
+    ogDiscountCents,
+    finalPriceCents: listPriceCents - ogDiscountCents,
+    isOg,
+  };
+}
+
+/**
+ * Quote an AI credit purchase for a workspace. Applies the 40% OG discount
+ * server-side when the workspace carries the OG flag, and returns the
+ * persisted `quoted` order. No money moves here — payment happens outside
+ * (Stripe next), then Super Admin fulfills the order.
+ */
+export async function quoteCreditPurchase(
+  workspaceId: string,
+  credits: number,
+  format: CreditPurchaseFormat,
+): Promise<CreditOrder> {
+  const fn = httpsCallable<
+    { workspaceId: string; credits: number; format: CreditPurchaseFormat },
+    CreditOrder
+  >(functions, "quoteCreditPurchase");
+  const res = await fn({ workspaceId, credits, format });
+  return res.data;
+}
+
+export function formatCents(cents: number): string {
+  return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}

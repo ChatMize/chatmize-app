@@ -31,6 +31,17 @@ export async function getBalance(workspaceId: string): Promise<CreditBalance | n
   return { workspaceId, ...(snap.data() as Omit<CreditBalance, "workspaceId">) };
 }
 
+/**
+ * OG check. SegMate migrants carry `og: true` on their workspace doc — the
+ * flag is set once at migration and is immutable. OG workspaces get 40% off
+ * AI credit purchases (both a la carte and bundles), applied at quote time.
+ */
+export async function isOgWorkspace(workspaceId: string): Promise<boolean> {
+  const snap = await db().collection("workspaces").doc(workspaceId).get();
+  if (!snap.exists) return false;
+  return snap.data()?.og === true;
+}
+
 /** Create the credit account if missing. New workspaces start at zero; the
  *  monthly allowance is set when a plan is assigned (Super Admin / Stripe). */
 export async function ensureCreditAccount(

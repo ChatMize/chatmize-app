@@ -108,6 +108,14 @@ export interface Workspace {
   planId?: string;
   /** Fulfillment track of the chosen plan: diy self-service or dfu white-glove. */
   planMode?: 'diy' | 'dfu';
+  /**
+   * OG flag: SegMate migrants. Set once at migration; immutable. OG
+   * workspaces get 40% off AI credit purchases (both a la carte and bundles),
+   * applied at quote time in the credit purchase path.
+   */
+  og?: boolean;
+  /** When the OG flag was granted (set alongside `og`). */
+  ogGrantedAt?: string;
 }
 
 // Backward-compatible alias

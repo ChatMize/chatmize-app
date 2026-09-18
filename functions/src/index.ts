@@ -14,6 +14,11 @@ import {
   resetAllMonthlyCredits,
   CreditReason,
 } from "./credits";
+import {
+  createCreditOrder,
+  fulfillCreditOrder as fulfillCreditOrderTx,
+} from "./creditOrders";
+import { CreditPurchaseFormat } from "./creditPricing";
 import { aiComplete, projectTestCost, AI_SECRETS, ModelTier, ChatMessage } from "./ai/router";
 import {
   META_APP_SECRET,
@@ -499,6 +504,74 @@ export const resetMonthlyCredits = onSchedule(
   },
   async () => {
     await resetAllMonthlyCredits();
+  },
+);
+
+// ---------------------------------------------------------------------------
+// AI credit purchases (quote -> pay externally -> fulfill)
+// ---------------------------------------------------------------------------
+
+interface QuoteCreditPurchaseData {
+  workspaceId?: string;
+  credits?: number;
+  format?: CreditPurchaseFormat;
+}
+
+/**
+ * Authenticated callable: price an AI credit purchase for a workspace.
+ * Applies the 40% OG discount (workspace `og === true`) to both a la carte
+ * and bundle formats, and writes a `quoted` credit_orders doc. No money
+ * moves and no credits are granted here — this is a quote, not a charge.
+ */
+export const quoteCreditPurchase = onCall(
+  { region: REGION },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
+    }
+    const { workspaceId, credits, format } = (request.data ?? {}) as QuoteCreditPurchaseData;
+    if (!workspaceId) {
+      throw new HttpsError("invalid-argument", "workspaceId is required.");
+    }
+    if (!Number.isInteger(credits) || (credits as number) <= 0) {
+      throw new HttpsError("invalid-argument", "credits must be a positive integer.");
+    }
+    if (format !== "alacarte" && format !== "bundle") {
+      throw new HttpsError("invalid-argument", "format must be 'alacarte' or 'bundle'.");
+    }
+    await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+    return createCreditOrder(workspaceId, uid, credits as number, format);
+  },
+);
+
+interface FulfillCreditOrderData {
+  orderId?: string;
+  note?: string;
+}
+
+/**
+ * Super Admin only: fulfill a quoted credit order after payment is verified.
+ * Atomically flips the order to fulfilled and grants the credits through the
+ * ledger (reason: topup_purchase). Idempotent. Today the caller is a human
+ * Super Admin; the Stripe webhook calls this same function once billing is
+ * wired. It never charges anything itself.
+ */
+export const fulfillCreditOrder = onCall(
+  { region: REGION },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
+    }
+    if (request.auth?.token?.superadmin !== true) {
+      throw new HttpsError("permission-denied", "Super Admin only.");
+    }
+    const { orderId, note } = (request.data ?? {}) as FulfillCreditOrderData;
+    if (!orderId) {
+      throw new HttpsError("invalid-argument", "orderId is required.");
+    }
+    return fulfillCreditOrderTx(orderId, note);
   },
 );
 
