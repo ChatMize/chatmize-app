@@ -57,7 +57,7 @@ import { NurtureToolType } from './types/nurture';
 import { OverlayType } from './types/growthTools';
 import { RecurringNotificationBroadcastHub } from './components/RecurringNotificationBroadcastHub';
 import { AuthGateModal } from './components/AuthGateModal';
-import { subscribeToAuthChanges, signOutUser, AppUser, db } from './lib/firebase';
+import { subscribeToAuthChanges, signOutUser, AppUser, prodDb } from './lib/firebase';
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
 import { CopilotGuide } from './components/CopilotGuide';
@@ -74,8 +74,12 @@ import { DEFAULT_WORKSPACES } from './data/workspaceDefaults';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState(() => {
-    // Restore the last viewed tab so refresh keeps you on the same page
+    // Restore the last viewed tab so refresh keeps you on the same page.
+    // A ?conversation= deep link (e.g. from a handoff email) always lands on
+    // the conversations inbox.
     try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('conversation')) return 'conversations';
       return localStorage.getItem('chatmize_activeTab') || 'bot-list';
     } catch {
       return 'bot-list';
@@ -146,7 +150,37 @@ export default function App() {
   });
 
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(() => {
-    return localStorage.getItem('chatmize_active_workspace_id') || 'ws-biz-1';
+    // Refresh (and handoff-email deep links) preserve the workspace:
+    // ?workspace= wins when it names a known workspace, then the stored
+    // selection, then the first workspace. No hardcoded fallback id.
+    const firstStoredWorkspaceId = (): string => {
+      try {
+        const stored = localStorage.getItem('chatmize_workspaces');
+        if (stored) {
+          const list = JSON.parse(stored) as { id?: string }[];
+          if (list[0]?.id) return list[0].id;
+        }
+      } catch {
+        // ignore malformed storage
+      }
+      return '';
+    };
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlWs = params.get('workspace');
+      if (urlWs) {
+        const stored = localStorage.getItem('chatmize_workspaces');
+        const list: { id?: string }[] = stored ? JSON.parse(stored) : [];
+        if (list.some((w) => w.id === urlWs)) {
+          localStorage.setItem('chatmize_active_workspace_id', urlWs);
+          return urlWs;
+        }
+        return firstStoredWorkspaceId();
+      }
+    } catch {
+      // ignore malformed URL/storage
+    }
+    return localStorage.getItem('chatmize_active_workspace_id') || firstStoredWorkspaceId();
   });
 
   const handleUpdateWorkspaces = (newWorkspaces: WorkspaceSilo[]) => {
@@ -200,16 +234,14 @@ export default function App() {
     const syncIntegrations = async () => {
       try {
         const { doc, getDoc } = await import('firebase/firestore');
-        // Map UI workspace to Firestore workspace (Dev Sandbox -> ws-chatmize-dev)
+        // The active workspace id IS the real Firestore workspace id, so the
+        // live integration state is read from that workspace in chatmize-prod.
         const ws = workspaces.find(w => w.id === activeWorkspaceId);
         if (!ws) return;
-        // Sync the active workspace with the real Firestore data (ws-chatmize-dev)
-        // Note: was name-based ('dev sandbox'), now syncs any active workspace since
-        // there's only one real Firestore workspace until multi-workspace is built.
 
-        const firestoreWsId = 'ws-chatmize-dev';
-        const metaSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'meta'));
-        const igSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'instagram'));
+        const firestoreWsId = activeWorkspaceId;
+        const metaSnap = await getDoc(doc(prodDb, 'workspaces', firestoreWsId, 'integrations', 'meta'));
+        const igSnap = await getDoc(doc(prodDb, 'workspaces', firestoreWsId, 'integrations', 'instagram'));
 
         let updated = { ...ws };
         let changed = false;
