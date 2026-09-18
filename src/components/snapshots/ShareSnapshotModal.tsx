@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Share2, Copy, Check, Link2 } from 'lucide-react';
 import {
   ALL_SNAPSHOT_KINDS,
   SNAPSHOT_KIND_LABELS,
   SnapshotAssetKind,
+  SnapshotPayload,
   exportWorkspaceSnapshot,
   createSnapshot,
   snapshotShareUrl,
@@ -11,10 +12,12 @@ import {
 
 interface ShareSnapshotModalProps {
   onClose: () => void;
+  /** Current workspace slug; growth links export from Firestore under it. */
+  workspaceSlug?: string;
 }
 
 /** Create a shareable snapshot link ("Sharbot link") for this workspace's setup. */
-export const ShareSnapshotModal: React.FC<ShareSnapshotModalProps> = ({ onClose }) => {
+export const ShareSnapshotModal: React.FC<ShareSnapshotModalProps> = ({ onClose, workspaceSlug }) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [niche, setNiche] = useState('');
@@ -23,8 +26,25 @@ export const ShareSnapshotModal: React.FC<ShareSnapshotModalProps> = ({ onClose 
   const [error, setError] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [preview, setPreview] = useState<{
+    payload: SnapshotPayload;
+    counts: Record<SnapshotAssetKind, number>;
+  } | null>(null);
 
-  const preview = exportWorkspaceSnapshot(kinds);
+  useEffect(() => {
+    let cancelled = false;
+    exportWorkspaceSnapshot(kinds, { workspaceSlug })
+      .then((p) => {
+        if (!cancelled) setPreview(p);
+      })
+      .catch(() => {
+        if (!cancelled) setPreview(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(kinds), workspaceSlug]);
 
   const toggleKind = (kind: SnapshotAssetKind) => {
     setKinds((prev) => (prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind]));
@@ -42,7 +62,7 @@ export const ShareSnapshotModal: React.FC<ShareSnapshotModalProps> = ({ onClose 
     setSaving(true);
     setError(null);
     try {
-      const { payload, counts } = exportWorkspaceSnapshot(kinds);
+      const { payload, counts } = await exportWorkspaceSnapshot(kinds, { workspaceSlug });
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
       if (total === 0) {
         throw new Error('There is nothing to share yet. Build a bot map first.');
@@ -155,7 +175,7 @@ export const ShareSnapshotModal: React.FC<ShareSnapshotModalProps> = ({ onClose 
                     >
                       <span>{SNAPSHOT_KIND_LABELS[kind]}</span>
                       <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono ${active ? 'bg-cyan-500/20 text-cyan-300' : 'bg-white/5 text-slate-600'}`}>
-                        {preview.counts[kind]}
+                        {preview ? preview.counts[kind] : '…'}
                       </span>
                     </button>
                   );
