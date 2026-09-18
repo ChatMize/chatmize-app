@@ -117,6 +117,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Waitlist signups: written only by the backend (Admin SDK) via the
+    // public waitlist API. Super Admin can read for the admin list/export.
+    match /waitlist_signups/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    // Waitlist rate limits: backend-only bookkeeping, never client readable.
+    match /waitlist_rate_limits/{docId} {
+      allow read, write: if false;
+    }
+
     // Explicit deny-all catch-all. (Firestore denies by default when no rule
     // matches; this makes the posture visible in the file itself.)
     match /{document=**} {
