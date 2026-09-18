@@ -211,7 +211,13 @@ export async function parkGlobalDeadLetter(
   });
 }
 
-/** Record an outbound send attempt and its Meta result. */
+/** Record an outbound send attempt and its Meta result.
+ * This is the single writer for outbound thread persistence: the frontend
+ * must NOT also write the message, or the thread shows duplicates.
+ * timestampMs is required so the inbox orderBy('timestampMs') sorts correctly
+ * (docs missing it sort first and appear at the top of the thread).
+ * clientMessageId lets the frontend reconcile its optimistic message with
+ * this persisted doc instead of flashing a duplicate. */
 export async function recordOutboundMessage(
   workspaceId: string,
   channel: Channel,
@@ -220,6 +226,7 @@ export async function recordOutboundMessage(
   metaMessageId: string | null,
   ok: boolean,
   error?: string,
+  clientMessageId?: string | null,
 ): Promise<void> {
   const convoId = `${channel}_${recipientId}`;
   const convoRef = db()
@@ -247,6 +254,8 @@ export async function recordOutboundMessage(
     ok,
     error: error ?? null,
     externalId: metaMessageId,
+    timestampMs: Date.now(),
+    clientId: clientMessageId ?? null,
     createdAt: FieldValue.serverTimestamp(),
   });
   await batch.commit();
