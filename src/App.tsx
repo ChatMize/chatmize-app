@@ -195,8 +195,9 @@ export default function App() {
         // Map UI workspace to Firestore workspace (Dev Sandbox -> ws-chatmize-dev)
         const ws = workspaces.find(w => w.id === activeWorkspaceId);
         if (!ws) return;
-        // Only sync for the dev sandbox (the workspace with real Firestore data)
-        if (!ws.name.toLowerCase().includes('dev sandbox')) return;
+        // Sync the active workspace with the real Firestore data (ws-chatmize-dev)
+        // Note: was name-based ('dev sandbox'), now syncs any active workspace since
+        // there's only one real Firestore workspace until multi-workspace is built.
 
         const firestoreWsId = 'ws-chatmize-dev';
         const metaSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'meta'));
