@@ -1,43 +1,60 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EmojiPickerButton, useEmojiTarget } from '../emoji';
-import { 
-  MessageSquare, 
-  Plus, 
-  Sparkles, 
-  Code, 
-  Eye, 
-  Copy, 
-  Check, 
-  Trash2, 
-  Bot, 
-  Settings2, 
-  Send, 
-  Headphones, 
-  CheckCircle2, 
-  ArrowLeft, 
-  Palette, 
-  Globe, 
-  Sliders, 
-  Layers,
-  Smartphone,
-  Monitor,
-  ExternalLink,
-  ShieldCheck,
+import {
+  MessageSquare,
+  Plus,
+  Sparkles,
+  Code,
+  Eye,
+  Copy,
+  Check,
+  Trash2,
+  Bot,
+  Settings2,
+  Send,
+  Headphones,
+  CheckCircle2,
+  ArrowLeft,
+  Palette,
+  Globe,
   UserCheck,
   ArrowUp,
   Layout,
   RotateCcw,
   Minimize2,
-  Maximize2
+  Workflow,
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
+import {
+  collection,
+  doc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  orderBy,
+} from 'firebase/firestore';
+import { prodDb } from '../../lib/firebase';
 import { SupportChatWidgetConfig } from '../../types/growthTools';
-import { DEFAULT_SUPPORT_WIDGETS } from '../../data/growthToolsDefaults';
 import { ImageUpload } from '../ImageUpload';
+import { SupportBotSession, createSessionFromBotMap } from '../../utils/supportBotRunner';
+import { loadBotMapData } from '../../utils/botMapStorage';
+
+/** Sentinel doc that gates unauthenticated visitor reads (see firestore.rules). */
+const SENTINEL_DOC_ID = 'widget_support_active_check';
 
 interface SupportChatViewProps {
+  /** Firestore workspace id — widgets persist at workspaces/{workspaceId}/support_widgets. Required. */
+  workspaceId: string;
   availableBots?: Array<{ id: string; name: string }>;
   onNavigateToFlows?: (botId?: string) => void;
 }
+
+const MODE_KEY = 'chatmize_supportchat_mode';
+const SELECTED_KEY = 'chatmize_supportchat_widget';
 
 const COLOR_PRESETS = [
   { name: 'Cyan Blue', hex: '#00d2ff' },
@@ -53,295 +70,566 @@ export const WIDGET_TEMPLATES = [
     name: 'Customer Support FAQ',
     headline: 'Need Help or Have Questions?',
     subheadline: 'Our AI Specialist and team reply within 60 seconds.',
-    welcomeMessage: '👋 Hi there! Welcome to our website. How can I assist you today? Feel free to ask about our pricing, features, or order status!',
+    welcomeMessage: 'Hi there! Welcome to our website. How can I assist you today? Feel free to ask about our pricing, features, or order status!',
     brandColor: '#00d2ff',
     botName: 'Support Concierge',
     quickReplies: [
-      { id: 'qr-1', label: '💬 Talk to Sales', payload: 'TALK_SALES' },
-      { id: 'qr-2', label: '📦 Track Order', payload: 'TRACK_ORDER' },
-      { id: 'qr-3', label: '❓ Pricing Plans', payload: 'PRICING' }
+      { id: 'qr-1', label: 'Talk to Sales', payload: 'TALK_SALES' },
+      { id: 'qr-2', label: 'Track Order', payload: 'TRACK_ORDER' },
+      { id: 'qr-3', label: 'Pricing Plans', payload: 'PRICING' }
     ]
   },
   {
     name: 'E-Commerce Assistant',
     headline: 'Looking for the Perfect Deal?',
     subheadline: 'Instant discounts, sizing help, and order tracking.',
-    welcomeMessage: '🛍️ Welcome to our store! Looking for a specific item, or want to claim today\'s exclusive 15% off coupon?',
+    welcomeMessage: 'Welcome to our store! Looking for a specific item, or want to claim today\'s exclusive 15% off coupon?',
     brandColor: '#10b981',
     botName: 'Shopping Assistant',
     quickReplies: [
-      { id: 'qr-1', label: '🎁 Get 15% Off Code', payload: 'GET_COUPON' },
-      { id: 'qr-2', label: '🚚 Shipping & Delivery', payload: 'SHIPPING_INFO' },
-      { id: 'qr-3', label: '⭐ Best Sellers', payload: 'POPULAR_ITEMS' }
+      { id: 'qr-1', label: 'Get 15% Off Code', payload: 'GET_COUPON' },
+      { id: 'qr-2', label: 'Shipping & Delivery', payload: 'SHIPPING_INFO' },
+      { id: 'qr-3', label: 'Best Sellers', payload: 'POPULAR_ITEMS' }
     ]
   },
   {
     name: 'VIP Demo & Sales Booking',
     headline: 'Scale Your Conversions with AI',
     subheadline: 'Book a 1-on-1 strategy call with our growth specialists.',
-    welcomeMessage: '🚀 Ready to 10x your client messaging? I can answer any questions or lock in a tailored 15-minute live platform walkthrough!',
+    welcomeMessage: 'Ready to 10x your client messaging? I can answer any questions or lock in a tailored 15-minute live platform walkthrough!',
     brandColor: '#3b82f6',
     botName: 'Growth Specialist',
     quickReplies: [
-      { id: 'qr-1', label: '📅 Book 15-Min Demo', payload: 'BOOK_DEMO' },
-      { id: 'qr-2', label: '💰 ROI & Pricing', payload: 'CALCULATE_ROI' },
-      { id: 'qr-3', label: '📊 See Case Studies', payload: 'CASE_STUDIES' }
+      { id: 'qr-1', label: 'Book 15-Min Demo', payload: 'BOOK_DEMO' },
+      { id: 'qr-2', label: 'ROI & Pricing', payload: 'CALCULATE_ROI' },
+      { id: 'qr-3', label: 'See Case Studies', payload: 'CASE_STUDIES' }
     ]
   },
   {
     name: 'Lead Magnet Delivery',
     headline: 'Download Free Growth Blueprint',
     subheadline: 'Get our battle-tested messaging templates instantly.',
-    welcomeMessage: '🎁 Grab your free copy of our 2026 Omnichannel Conversion Playbook! Where should we send your instant download?',
+    welcomeMessage: 'Grab your free copy of our 2026 Omnichannel Conversion Playbook! Where should we send your instant download?',
     brandColor: '#a855f7',
     botName: 'Resource Assistant',
     quickReplies: [
-      { id: 'qr-1', label: '📥 Send to My Email', payload: 'EMAIL_OPTIN' },
-      { id: 'qr-2', label: '👀 Preview Chapters', payload: 'PREVIEW_BOOK' }
+      { id: 'qr-1', label: 'Send to My Email', payload: 'EMAIL_OPTIN' },
+      { id: 'qr-2', label: 'Preview Chapters', payload: 'PREVIEW_BOOK' }
     ]
   }
 ];
 
+/** Real bot maps owned by this browser profile (BotMaps list, not demo placeholders). */
+function loadRealBots(): Array<{ id: string; name: string }> {
+  try {
+    const saved = localStorage.getItem('chatmize_bot_maps_list');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((b: any) => b && b.id)
+          .map((b: any) => ({ id: String(b.id), name: String(b.name || b.id) }));
+      }
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+/** Snapshot the connected bot's current BotMap so the visitor widget can run it. */
+function snapshotBotFlow(botId: string): { nodes: any[]; connections: any[]; publishedAt: string } | null {
+  if (!botId) return null;
+  try {
+    const data = loadBotMapData(botId);
+    if (!data || !Array.isArray(data.nodes) || data.nodes.length === 0) return null;
+    return {
+      nodes: data.nodes,
+      connections: Array.isArray(data.connections) ? data.connections : [],
+      publishedAt: new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function cleanWidgetDoc(w: SupportChatWidgetConfig): Record<string, any> {
+  const { ...rest } = w as any;
+  // Strip undefined (Firestore rejects it).
+  return Object.fromEntries(Object.entries(rest).filter(([_, v]) => v !== undefined));
+}
+
 export const SupportChatView: React.FC<SupportChatViewProps> = ({
-  availableBots = [
-    { id: 'bot-customer-support-faq', name: 'Customer Support FAQ Bot' },
-    { id: 'bot-lead-magnet-optin', name: 'Lead Magnet & Sales Bot' },
-    { id: 'bot-webinar-registration', name: 'Webinar RSVP Assistant' },
-    { id: 'bot-abandoned-cart-recovery', name: 'Cart Recovery & Voucher Bot' }
-  ],
+  workspaceId,
+  availableBots,
   onNavigateToFlows
 }) => {
-  const [widgets, setWidgets] = useState<SupportChatWidgetConfig[]>(() => {
-    const saved = localStorage.getItem('chatmize_support_widgets');
-    return saved ? JSON.parse(saved) : DEFAULT_SUPPORT_WIDGETS;
+  const bots = availableBots && availableBots.length > 0 ? availableBots : loadRealBots();
+
+  // ---- Widget configs: Firestore (chatmize-prod), realtime ----
+  const [widgets, setWidgets] = useState<SupportChatWidgetConfig[]>([]);
+  const [widgetsLoading, setWidgetsLoading] = useState(true);
+  const [widgetsError, setWidgetsError] = useState<string | null>(null);
+
+  const [activeMode, setActiveMode] = useState<'list' | 'editor' | 'preview'>(() => {
+    const s = localStorage.getItem(MODE_KEY);
+    return s === 'editor' || s === 'preview' ? s : 'list';
   });
-
-  const [activeMode, setActiveMode] = useState<'list' | 'editor' | 'preview'>('list');
-  const [selectedWidgetId, setSelectedWidgetId] = useState<string>(widgets[0]?.id || '');
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string>(() => {
+    return localStorage.getItem(SELECTED_KEY) || '';
+  });
   const [editingWidget, setEditingWidget] = useState<SupportChatWidgetConfig | null>(null);
-  
-  // Embed modal
-  const [embedModalWidget, setEmbedModalWidget] = useState<SupportChatWidgetConfig | null>(null);
-  const [copiedEmbed, setCopiedEmbed] = useState(false);
 
-  // Simulator state
-  const [simMessages, setSimMessages] = useState<Array<{ sender: 'bot' | 'user'; text: string; time: string }>>([
-    { sender: 'bot', text: '👋 Hi there! Welcome to our website. How can I assist you today?', time: 'Just now' }
-  ]);
-  const [simInput, setSimInput] = useState('');
-  const [isSimOpen, setIsSimOpen] = useState(true);
-  const [simDevice, setSimDevice] = useState<'desktop' | 'mobile'>('desktop');
-  const [newReplyLabel, setNewReplyLabel] = useState('');
-  const headlineEmoji = useEmojiTarget<HTMLInputElement>();
-  const subheadlineEmoji = useEmojiTarget<HTMLInputElement>();
-  const welcomeEmoji = useEmojiTarget<HTMLTextAreaElement>();
-  const chipEmoji = useEmojiTarget<HTMLInputElement>();
-  const [isSimTyping, setIsSimTyping] = useState(false);
-  const [leadCapturedNotice, setLeadCapturedNotice] = useState<string | null>(null);
-  const [showQuickGuide, setShowQuickGuide] = useState(true);
+  const widgetsRef = collection(prodDb, 'workspaces', workspaceId, 'support_widgets');
 
-  // Live Editor Preview controls
-  const [editorPreviewMode, setEditorPreviewMode] = useState<'elevated' | 'corner'>('elevated');
-  const [editorChatOpen, setEditorChatOpen] = useState(true);
-  const [editorTestInput, setEditorTestInput] = useState('');
-  const [editorTestMessages, setEditorTestMessages] = useState<Array<{ sender: 'bot' | 'user'; text: string; time: string }>>([]);
+  useEffect(() => {
+    if (!workspaceId) {
+      // Workspace id still resolving in App — don't query a placeholder path.
+      setWidgetsLoading(true);
+      return;
+    }
+    setWidgetsLoading(true);
+    setWidgetsError(null);
+    const q = query(widgetsRef, orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q,
+      (snap) => {
+        const list: SupportChatWidgetConfig[] = [];
+        snap.forEach((d) => {
+          // The public-access sentinel is bookkeeping, not a widget.
+          if (d.id === SENTINEL_DOC_ID) return;
+          list.push({ id: d.id, ...(d.data() as Omit<SupportChatWidgetConfig, 'id'>) });
+        });
+        setWidgets(list);
+        setWidgetsLoading(false);
+        if (list.length === 0) {
+          seedDefaultWidget();
+        } else if (!list.some((w) => w.id === selectedWidgetId)) {
+          setSelectedWidgetId(list[0].id);
+        }
+      },
+      (err) => {
+        console.error('Support widgets listener failed:', err);
+        setWidgetsError(err.message || 'Could not load widgets.');
+        setWidgetsLoading(false);
+      }
+    );
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
 
-  const currentWidget = widgets.find(w => w.id === selectedWidgetId) || widgets[0];
+  const seedDefaultWidget = useCallback(async () => {
+    const now = new Date().toISOString();
+    const seed: SupportChatWidgetConfig = {
+      id: 'support-chat-primary',
+      name: 'Website Support Chat',
+      status: 'active',
+      headline: 'Need help or have questions?',
+      subheadline: 'Our team typically replies within a few minutes.',
+      welcomeMessage: 'Hi there! Welcome. How can I help you today?',
+      brandColor: '#00d2ff',
+      theme: 'dark',
+      position: 'bottom_right',
+      launcherIcon: 'chat',
+      launcherText: 'Chat with us',
+      avatarUrl: '',
+      botName: 'Support',
+      connectedBotId: '',
+      quickReplies: [
+        { id: 'qr-1', label: 'Talk to sales', payload: 'TALK_SALES' },
+        { id: 'qr-2', label: 'Pricing', payload: 'PRICING' },
+        { id: 'qr-3', label: 'Get support', payload: 'SUPPORT' }
+      ],
+      requireEmailCapture: false,
+      requireNameCapture: false,
+      requirePhoneCapture: false,
+      removeBranding: false,
+      autoOpenDelaySeconds: 0,
+      whitelistedDomains: [],
+      totalViews: 0,
+      totalConversations: 0,
+      totalLeads: 0,
+      createdAt: now,
+      updatedAt: now
+    };
+    try {
+      await setDoc(doc(widgetsRef, seed.id), cleanWidgetDoc(seed));
+    } catch (e) {
+      console.error('Failed to seed default support widget:', e);
+    }
+  }, [widgetsRef]);
 
-  const persistWidgets = (newWidgets: SupportChatWidgetConfig[]) => {
-    setWidgets(newWidgets);
-    localStorage.setItem('chatmize_support_widgets', JSON.stringify(newWidgets));
+  const persistMode = (m: 'list' | 'editor' | 'preview') => {
+    setActiveMode(m);
+    localStorage.setItem(MODE_KEY, m);
+  };
+  const persistSelected = (id: string) => {
+    setSelectedWidgetId(id);
+    localStorage.setItem(SELECTED_KEY, id);
   };
 
   const handleCreateNew = () => {
     const newWidget: SupportChatWidgetConfig = {
-      id: `support-${Date.now().toString().slice(-6)}`,
+      id: `support-${Date.now().toString(36)}`,
       name: 'New Live Support Chat',
-      status: 'active',
+      status: 'draft',
       headline: 'Need Help or Have Questions?',
-      subheadline: 'Our AI Specialist and team reply within 60 seconds.',
-      welcomeMessage: '👋 Hi there! Welcome to our store. How can I assist you today? Feel free to ask about our pricing, features, or order status!',
+      subheadline: 'Our team replies within a few minutes.',
+      welcomeMessage: 'Hi there! Welcome. How can I help you today?',
       brandColor: '#00d2ff',
       theme: 'dark',
       position: 'bottom_right',
       launcherIcon: 'chat',
       launcherText: 'Chat with Us',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-      botName: 'ChatMize Concierge',
-      connectedBotId: availableBots[0]?.id || 'bot-customer-support-faq',
+      avatarUrl: '',
+      botName: 'Support',
+      connectedBotId: bots[0]?.id || '',
       quickReplies: [
-        { id: 'qr-1', label: '💬 Talk to Sales', payload: 'TALK_SALES' },
-        { id: 'qr-2', label: '📦 Track Order', payload: 'TRACK_ORDER' },
-        { id: 'qr-3', label: '❓ Pricing Plans', payload: 'PRICING' }
+        { id: 'qr-1', label: 'Talk to Sales', payload: 'TALK_SALES' },
+        { id: 'qr-2', label: 'Track Order', payload: 'TRACK_ORDER' },
+        { id: 'qr-3', label: 'Pricing Plans', payload: 'PRICING' }
       ],
-      requireEmailCapture: true,
-      requireNameCapture: true,
+      requireEmailCapture: false,
+      requireNameCapture: false,
       requirePhoneCapture: false,
       removeBranding: false,
-      autoOpenDelaySeconds: 3,
-      whitelistedDomains: ['*.yourdomain.com', 'yourdomain.com', 'localhost:3000'],
+      autoOpenDelaySeconds: 0,
+      whitelistedDomains: [],
       totalViews: 0,
       totalConversations: 0,
       totalLeads: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-
     setEditingWidget(newWidget);
-    setActiveMode('editor');
+    persistMode('editor');
   };
 
   const handleEdit = (widget: SupportChatWidgetConfig) => {
-    setEditingWidget({ ...widget });
-    setSelectedWidgetId(widget.id);
-    setActiveMode('editor');
+    setEditingWidget({ ...widget, quickReplies: [...(widget.quickReplies || [])] });
+    persistSelected(widget.id);
+    persistMode('editor');
   };
 
-  const handleSave = (updated: SupportChatWidgetConfig) => {
-    const exists = widgets.some(w => w.id === updated.id);
-    let newWidgets: SupportChatWidgetConfig[];
-    if (exists) {
-      newWidgets = widgets.map(w => w.id === updated.id ? { ...updated, updatedAt: new Date().toISOString() } : w);
-    } else {
-      newWidgets = [updated, ...widgets];
-    }
-    persistWidgets(newWidgets);
-    setSelectedWidgetId(updated.id);
-    setEditingWidget(null);
-    setActiveMode('list');
-  };
-
-  const handleToggleStatus = (id: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    const updated = widgets.map(w => {
-      if (w.id === id) {
-        return { ...w, status: w.status === 'active' ? 'paused' : 'active' as const };
-      }
-      return w;
+  /** Save the widget to Firestore and publish the connected BotMap snapshot for the live widget. */
+  const handleSave = async (updated: SupportChatWidgetConfig) => {
+    const flow = snapshotBotFlow(updated.connectedBotId || '');
+    const payload = cleanWidgetDoc({
+      ...updated,
+      updatedAt: new Date().toISOString(),
+      publishedFlow: flow,
+      publishedFlowBotId: updated.connectedBotId || null,
     });
-    persistWidgets(updated);
+    try {
+      await setDoc(doc(widgetsRef, updated.id), payload, { merge: true });
+      await refreshWidgetSentinel();
+      persistSelected(updated.id);
+      setEditingWidget(null);
+      persistMode('list');
+    } catch (e: any) {
+      alert(`Could not save widget: ${e?.message || e}`);
+    }
   };
 
-  const handleDuplicate = (widget: SupportChatWidgetConfig, e: React.MouseEvent) => {
+  /**
+   * Maintains the public sentinel doc that gates unauthenticated visitor
+   * access (firestore.rules). Exists iff the workspace has >= 1 active
+   * support widget. Called after every save / status toggle / delete.
+   */
+  async function refreshWidgetSentinel() {
+    try {
+      const snap = await getDocs(collection(prodDb, 'workspaces', workspaceId, 'support_widgets'));
+      const hasActive = snap.docs.some(
+        (d) => d.id !== SENTINEL_DOC_ID && (d.data() as any).status === 'active'
+      );
+      const sentinelRef = doc(prodDb, 'workspaces', workspaceId, 'support_widgets', SENTINEL_DOC_ID);
+      if (hasActive) {
+        await setDoc(sentinelRef, { active: true, updatedAt: new Date().toISOString() }, { merge: true });
+      } else {
+        await deleteDoc(sentinelRef);
+      }
+    } catch (e) {
+      console.warn('Failed to refresh widget public-access sentinel:', e);
+    }
+  }
+
+  const handleToggleStatus = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const w = widgets.find((x) => x.id === id);
+    if (!w) return;
+    const next = w.status === 'active' ? 'paused' : 'active';
+    try {
+      await updateDoc(doc(widgetsRef, id), { status: next, updatedAt: new Date().toISOString() });
+      await refreshWidgetSentinel();
+    } catch (e: any) {
+      alert(`Could not update status: ${e?.message || e}`);
+    }
+  };
+
+  const handleDuplicate = async (widget: SupportChatWidgetConfig, e: React.MouseEvent) => {
     e.stopPropagation();
     const copy: SupportChatWidgetConfig = {
       ...widget,
-      id: `support-${Date.now().toString().slice(-6)}`,
+      id: `support-${Date.now().toString(36)}`,
       name: `${widget.name} (Copy)`,
+      status: 'draft',
       totalViews: 0,
       totalConversations: 0,
       totalLeads: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    persistWidgets([copy, ...widgets]);
+    try {
+      await setDoc(doc(widgetsRef, copy.id), cleanWidgetDoc(copy));
+    } catch (err: any) {
+      alert(`Could not duplicate widget: ${err?.message || err}`);
+    }
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this Support Chat widget?')) {
-      const filtered = widgets.filter(w => w.id !== id);
-      persistWidgets(filtered);
-      if (selectedWidgetId === id && filtered[0]) {
-        setSelectedWidgetId(filtered[0].id);
+    if (!confirm('Are you sure you want to delete this Support Chat widget? It will stop rendering on every site using its embed code.')) return;
+    try {
+      await deleteDoc(doc(widgetsRef, id));
+      await refreshWidgetSentinel();
+      if (selectedWidgetId === id) {
+        const remaining = widgets.filter((w) => w.id !== id);
+        persistSelected(remaining[0]?.id || '');
       }
+    } catch (err: any) {
+      alert(`Could not delete widget: ${err?.message || err}`);
+    }
+  };
+
+  const bumpLeads = async (widgetId: string) => {
+    try {
+      const w = widgets.find((x) => x.id === widgetId);
+      await updateDoc(doc(widgetsRef, widgetId), {
+        totalLeads: (w?.totalLeads || 0) + 1,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch { /* non-fatal */ }
+  };
+
+  const currentWidget = widgets.find(w => w.id === selectedWidgetId) || widgets[0] || null;
+
+  // ---- BotMaps routing for the in-app simulator + editor preview ----
+  // Quick replies and typed messages route through the connected bot's real
+  // BotMap flow via the shared runner — never canned demo replies.
+  const sessionCache = useRef<{ key: string; session: SupportBotSession | null }>({ key: '', session: null });
+
+  const getBotSession = (widget: SupportChatWidgetConfig | null): SupportBotSession | null => {
+    if (!widget) return null;
+    const botId = widget.connectedBotId || '';
+    const key = `${widget.id}:${botId}`;
+    if (sessionCache.current.key !== key) {
+      let session: SupportBotSession | null = null;
+      if (botId) {
+        try {
+          const data = loadBotMapData(botId);
+          session = createSessionFromBotMap(data as any);
+        } catch { session = null; }
+      }
+      sessionCache.current = { key, session };
+    }
+    return sessionCache.current.session;
+  };
+
+  const botDisplayName = (widget: SupportChatWidgetConfig | null) => {
+    const b = bots.find((x) => x.id === (widget?.connectedBotId || ''));
+    return b ? b.name : (widget?.connectedBotId ? widget.connectedBotId : 'No bot connected');
+  };
+
+  // ---- Simulator state (full preview mode) ----
+  interface SimMsg { sender: 'bot' | 'user'; text: string; time: string }
+  const [simMessages, setSimMessages] = useState<SimMsg[]>([]);
+  const [simQuickReplies, setSimQuickReplies] = useState<Array<{ label: string; payload: string }>>([]);
+  const [simInput, setSimInput] = useState('');
+  const [isSimOpen, setIsSimOpen] = useState(true);
+  const [simDevice, setSimDevice] = useState<'desktop' | 'mobile'>('desktop');
+  const [isSimTyping, setIsSimTyping] = useState(false);
+  const [leadCapturedNotice, setLeadCapturedNotice] = useState<string | null>(null);
+  const [showQuickGuide, setShowQuickGuide] = useState(true);
+  const simBootedFor = useRef('');
+
+  const resetSimulator = (widget: SupportChatWidgetConfig | null) => {
+    setSimMessages(widget ? [{ sender: 'bot', text: widget.welcomeMessage, time: 'Just now' }] : []);
+    setSimQuickReplies(widget?.quickReplies?.map((q) => ({ label: q.label, payload: q.payload })) || []);
+    setSimInput('');
+    setIsSimTyping(false);
+    sessionCache.current = { key: '', session: null };
+    if (widget) simBootedFor.current = widget.id;
+  };
+
+  useEffect(() => {
+    if (activeMode === 'preview' && currentWidget && simBootedFor.current !== currentWidget.id) {
+      resetSimulator(currentWidget);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMode, currentWidget?.id]);
+
+  const applyBotTurn = (widget: SupportChatWidgetConfig, turn: ReturnType<SupportBotSession['handleText']>) => {
+    const botTexts: SimMsg[] = turn.texts.map((t) => ({ sender: 'bot' as const, text: t, time: 'Just now' }));
+    setSimMessages((prev) => [...prev, ...botTexts]);
+    // Bot-flow chips replace the widget's static chips; handoff keeps static chips.
+    if (turn.quickReplies.length > 0) {
+      setSimQuickReplies(turn.quickReplies);
+    } else if (!turn.handoffToAgent) {
+      setSimQuickReplies(widget.quickReplies?.map((q) => ({ label: q.label, payload: q.payload })) || []);
+    }
+    if (turn.aiDeferred) {
+      setLeadCapturedNotice('AI step reached — the backend AI worker answers this in the live widget; the preview hands off to an agent.');
+      setTimeout(() => setLeadCapturedNotice(null), 5000);
     }
   };
 
   const handleSimSend = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!simInput.trim()) return;
-
+    if (!simInput.trim() || !currentWidget) return;
     const userText = simInput.trim();
-    setSimMessages(prev => [...prev, { sender: 'user', text: userText, time: 'Just now' }]);
+    setSimMessages((prev) => [...prev, { sender: 'user', text: userText, time: 'Just now' }]);
     setSimInput('');
-    setIsSimTyping(true);
+    setSimQuickReplies([]);
 
+    // Lead-capture test: an email-shaped input counts as a captured lead.
+    if (currentWidget.requireEmailCapture && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(userText)) {
+      setLeadCapturedNotice(`Lead captured: ${userText}`);
+      setTimeout(() => setLeadCapturedNotice(null), 4000);
+      bumpLeads(currentWidget.id);
+    }
+
+    const session = getBotSession(currentWidget);
+    if (!session || !session.hasFlow()) {
+      // No bot connected: the live widget routes this to an agent in
+      // Live Conversations — say so honestly instead of faking a reply.
+      setIsSimTyping(true);
+      setTimeout(() => {
+        setIsSimTyping(false);
+        setSimMessages((prev) => [
+          ...prev,
+          { sender: 'bot', text: 'Thanks for reaching out! No bot is connected to this widget, so in the live widget this message goes straight to your team in Live Conversations. Connect a BotMap to automate replies.', time: 'Just now' },
+        ]);
+        setSimQuickReplies(currentWidget.quickReplies?.map((q) => ({ label: q.label, payload: q.payload })) || []);
+      }, 600);
+      return;
+    }
+
+    setIsSimTyping(true);
     setTimeout(() => {
       setIsSimTyping(false);
-      const lower = userText.toLowerCase();
-      let botResponse = '';
-
-      if (lower.includes('@') && lower.includes('.')) {
-        botResponse = `✅ Perfect! I've linked your email (${userText}) to this conversation. A member of our support team will also follow up with full details if you leave!`;
-        setLeadCapturedNotice(`Lead captured: ${userText}`);
-        setTimeout(() => setLeadCapturedNotice(null), 4000);
-        // Increment lead count in widget
-        const updated = widgets.map(w => w.id === currentWidget.id ? { ...w, totalLeads: (w.totalLeads || 0) + 1 } : w);
-        persistWidgets(updated);
-      } else if (lower.includes('price') || lower.includes('cost') || lower.includes('plan') || lower.includes('pricing')) {
-        botResponse = '💳 Our plans start at $29/mo with unlimited AI responses and 3 connected channels (FB, IG, WhatsApp). Would you like to see a comparison or start a 14-day free trial?';
-      } else if (lower.includes('human') || lower.includes('agent') || lower.includes('specialist') || lower.includes('rep') || lower.includes('support')) {
-        botResponse = '🙋 I am transferring your request to our priority agent queue! Please type your email or phone number above so we can reach you immediately.';
-      } else if (lower.includes('order') || lower.includes('track') || lower.includes('shipping')) {
-        botResponse = '📦 I can look up your delivery status right now! Please provide your Order Number (e.g. #ORD-8492).';
-      } else if (lower.includes('coupon') || lower.includes('discount') || lower.includes('code') || lower.includes('deal')) {
-        botResponse = '🎁 Here is an exclusive 15% discount voucher for you: use code "CHATMIZE15" at checkout!';
-      } else if (lower.includes('demo') || lower.includes('book') || lower.includes('call')) {
-        botResponse = '📅 Awesome! We would love to walk you through the platform. What is your best email or phone number to send the calendar invite?';
-      } else {
-        botResponse = `Thanks for reaching out about "${userText}"! I'm your 24/7 AI assistant. I can answer questions, guide your setup, or connect you with our lead strategist. What else can I assist with?`;
-      }
-
-      setSimMessages(prev => [
-        ...prev, 
-        { 
-          sender: 'bot', 
-          text: botResponse, 
-          time: 'Just now' 
-        }
-      ]);
-    }, 600);
+      applyBotTurn(currentWidget, session.handleText(userText));
+    }, 650);
   };
 
   const handleSimReplyClick = (reply: { label: string; payload: string }) => {
-    setSimMessages(prev => [...prev, { sender: 'user', text: reply.label, time: 'Just now' }]);
+    if (!currentWidget) return;
+    setSimMessages((prev) => [...prev, { sender: 'user', text: reply.label, time: 'Just now' }]);
+    setSimQuickReplies([]);
+    const session = getBotSession(currentWidget);
+    if (!session || !session.hasFlow()) {
+      setIsSimTyping(true);
+      setTimeout(() => {
+        setIsSimTyping(false);
+        setSimMessages((prev) => [
+          ...prev,
+          { sender: 'bot', text: `You selected "${reply.label}". No bot is connected, so the live widget hands this to your team in Live Conversations.`, time: 'Just now' },
+        ]);
+      }, 550);
+      return;
+    }
     setIsSimTyping(true);
-
     setTimeout(() => {
       setIsSimTyping(false);
-      let response = '';
-      if (reply.payload === 'TALK_SALES' || reply.payload === 'BOOK_DEMO') {
-        response = '🚀 Great! Our sales engineers are standing by. What is the best email address or phone number to send your calendar invite?';
-      } else if (reply.payload === 'PRICING' || reply.payload === 'CALCULATE_ROI') {
-        response = '📊 ChatMize starts at $29/mo for up to 5,000 active subscribers. You save over $200/mo compared to ManyChat! Would you like a breakdown of features?';
-      } else if (reply.payload === 'TRACK_ORDER' || reply.payload === 'SHIPPING_INFO') {
-        response = '🚚 Standard delivery takes 2-4 business days. You can also paste your tracking code here to check real-time courier updates!';
-      } else if (reply.payload === 'GET_COUPON') {
-        response = '🎉 You got it! Use code "VIP20" at checkout for 20% off your entire order today!';
-      } else {
-        response = `You selected "${reply.label}". I've initialized that workflow for you! What questions do you have?`;
-      }
-
-      setSimMessages(prev => [
-        ...prev,
-        {
-          sender: 'bot',
-          text: response,
-          time: 'Just now'
-        }
-      ]);
+      applyBotTurn(currentWidget, session.handlePayload(reply.payload, reply.label));
     }, 550);
   };
 
+  // ---- Editor live preview test chat (routes through the same runner) ----
+  const [editorPreviewMode, setEditorPreviewMode] = useState<'elevated' | 'corner'>('elevated');
+  const [editorChatOpen, setEditorChatOpen] = useState(true);
+  const [editorTestInput, setEditorTestInput] = useState('');
+  const [editorTestMessages, setEditorTestMessages] = useState<SimMsg[]>([]);
+  const [editorTestReplies, setEditorTestReplies] = useState<Array<{ label: string; payload: string }>>([]);
+  const [editorTyping, setEditorTyping] = useState(false);
+  const [newReplyLabel, setNewReplyLabel] = useState('');
+  const headlineEmoji = useEmojiTarget<HTMLInputElement>();
+  const subheadlineEmoji = useEmojiTarget<HTMLInputElement>();
+  const welcomeEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const chipEmoji = useEmojiTarget<HTMLInputElement>();
+  const domainEmoji = useEmojiTarget<HTMLInputElement>();
+
+  const editorSessionKey = useRef('');
+  const getEditorSession = (): SupportBotSession | null => {
+    if (!editingWidget) return null;
+    const botId = editingWidget.connectedBotId || '';
+    const key = `editor:${botId}`;
+    if (editorSessionKey.current !== key) {
+      editorSessionKey.current = key;
+      let s: SupportBotSession | null = null;
+      if (botId) {
+        try { s = createSessionFromBotMap(loadBotMapData(botId) as any); } catch { s = null; }
+      }
+      (getEditorSession as any)._s = s;
+    }
+    return (getEditorSession as any)._s || null;
+  };
+
+  const editorApplyTurn = (turn: ReturnType<SupportBotSession['handleText']>) => {
+    setEditorTestMessages((prev) => [...prev, ...turn.texts.map((t) => ({ sender: 'bot' as const, text: t, time: 'Just now' }))]);
+    if (turn.quickReplies.length > 0) setEditorTestReplies(turn.quickReplies);
+  };
+
+  const editorBotRespond = (fn: (s: SupportBotSession) => ReturnType<SupportBotSession['handleText']>) => {
+    const s = getEditorSession();
+    if (!s || !s.hasFlow()) {
+      setEditorTyping(true);
+      setTimeout(() => {
+        setEditorTyping(false);
+        setEditorTestMessages((prev) => [...prev, { sender: 'bot', text: 'No bot connected — the live widget hands this to your team. Connect a BotMap above to automate replies.', time: 'Just now' }]);
+      }, 550);
+      return;
+    }
+    setEditorTyping(true);
+    setTimeout(() => {
+      setEditorTyping(false);
+      editorApplyTurn(fn(s));
+    }, 600);
+  };
+
+  // ---- Embed code (real snippet: dist/widget.js served by the hosting target) ----
+  const [embedModalWidget, setEmbedModalWidget] = useState<SupportChatWidgetConfig | null>(null);
+  const [copiedEmbed, setCopiedEmbed] = useState(false);
+
+  const getWidgetScriptUrl = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://app.chatmize.com';
+    return `${origin.replace(/\/$/, '')}/widget.js`;
+  };
+
   const getEmbedCode = (w: SupportChatWidgetConfig) => {
-    return `<!-- ChatMize Live Support Widget Embed -->
-<script 
-  src="https://cdn.chatmize.com/sdk/support-chat.js" 
-  data-widget-id="${w.id}" 
-  data-color="${w.brandColor}" 
-  data-position="${w.position}"
-  async>
-</script>`;
+    return `<!-- ChatMize Live Support Widget -->\n<script\n  src="${getWidgetScriptUrl()}"\n  data-workspace="${workspaceId}"\n  data-widget="${w.id}"\n  async>\n</script>`;
+  };
+
+  const addQuickReplyChip = () => {
+    if (!editingWidget || !newReplyLabel.trim()) return;
+    const newChip = {
+      id: `qr-${Date.now().toString(36)}`,
+      label: newReplyLabel.trim(),
+      payload: newReplyLabel.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    };
+    setEditingWidget({ ...editingWidget, quickReplies: [...(editingWidget.quickReplies || []), newChip] });
+    setNewReplyLabel('');
+  };
+
+  const publishedFlowInfo = (w: SupportChatWidgetConfig | null) => {
+    const pf = (w as any)?.publishedFlow;
+    if (pf && Array.isArray(pf.nodes)) return `${pf.nodes.length} steps published${pf.publishedAt ? ` · ${new Date(pf.publishedAt).toLocaleDateString()}` : ''}`;
+    return 'No flow published yet';
   };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      
+
       {/* Top Header Banner */}
       <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-950 border border-white/10 relative overflow-hidden shadow-xl">
         <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
-        
+
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1.5">
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 text-xs font-semibold">
@@ -359,7 +647,7 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
               <button
                 onClick={() => {
                   setEditingWidget(null);
-                  setActiveMode('list');
+                  persistMode('list');
                 }}
                 className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-white/10 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
               >
@@ -381,13 +669,30 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
         </div>
       </div>
 
+      {/* Firestore load states */}
+      {widgetsLoading && (
+        <div className="p-10 rounded-2xl bg-slate-900/80 border border-white/10 flex items-center justify-center gap-3 text-slate-400 text-sm">
+          <Loader2 className="w-5 h-5 animate-spin text-cyan-400" />
+          <span>Loading widgets from chatmize-prod…</span>
+        </div>
+      )}
+
+      {widgetsError && !widgetsLoading && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-3 text-sm">
+          <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold text-rose-300">Could not load support widgets</p>
+            <p className="text-slate-400 text-xs mt-1">{widgetsError}</p>
+          </div>
+        </div>
+      )}
+
       {/* =========================================================================
-          MODE 1: LIST VIEW (ALL LIVE SUPPORT WIDGETS)
+          MODE 1: LIST VIEW
           ========================================================================= */}
-      {activeMode === 'list' && (
+      {activeMode === 'list' && !widgetsLoading && (
         <div className="space-y-6">
 
-          {/* Toast Notification when a lead is captured during test */}
           {leadCapturedNotice && (
             <div className="p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center justify-between animate-in slide-in-from-top-2 duration-200">
               <div className="flex items-center gap-2">
@@ -398,7 +703,6 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
             </div>
           )}
 
-          {/* Quick 3-Step Setup Guide */}
           {showQuickGuide && (
             <div className="p-5 rounded-2xl bg-gradient-to-r from-cyan-950/40 via-slate-900 to-blue-950/40 border border-cyan-500/30 shadow-lg relative">
               <button
@@ -408,12 +712,12 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
               >
                 ✕
               </button>
-              
+
               <div className="flex items-center gap-2 pb-3 border-b border-white/10">
                 <Sparkles className="w-4 h-4 text-cyan-400" />
                 <span className="text-xs font-bold text-white uppercase tracking-wider">How 24/7 Support Chat Works in 3 Steps</span>
               </div>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 text-xs">
                 <div className="flex items-start gap-3">
                   <div className="w-6 h-6 rounded-full bg-cyan-500 text-slate-950 font-bold flex items-center justify-center flex-shrink-0 text-xs">1</div>
@@ -425,22 +729,22 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                 <div className="flex items-start gap-3">
                   <div className="w-6 h-6 rounded-full bg-blue-500 text-white font-bold flex items-center justify-center flex-shrink-0 text-xs">2</div>
                   <div>
-                    <h4 className="font-bold text-white">Attach Automated Bot</h4>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Route questions to your AI customer support bot or lead magnet funnel.</p>
+                    <h4 className="font-bold text-white">Attach a BotMap</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Route questions through your BotMap flow or straight to your team.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 font-bold flex items-center justify-center flex-shrink-0 text-xs">3</div>
                   <div>
                     <h4 className="font-bold text-white">Paste 1-Line Embed Code</h4>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Copy snippet onto Shopify, WordPress, Webflow, or any custom website.</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Copy the snippet onto any website — the live widget loads from chatmize-prod.</p>
                   </div>
                 </div>
               </div>
             </div>
           )}
-          
-          {/* Quick Metrics Bar */}
+
+          {/* Quick Metrics Bar (real Firestore counters) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-white/10 space-y-1">
               <span className="text-xs text-slate-400 font-medium">Total Chat Impressions</span>
@@ -462,21 +766,33 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
             </div>
           </div>
 
+          {widgets.length === 0 && (
+            <div className="p-10 rounded-2xl bg-slate-900/80 border border-white/10 text-center space-y-3">
+              <MessageSquare className="w-8 h-8 text-slate-600 mx-auto" />
+              <p className="text-sm text-slate-400">No support widgets yet. Create your first one to get an embed code.</p>
+              <button
+                onClick={handleCreateNew}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-bold text-xs inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New Support Chat Widget</span>
+              </button>
+            </div>
+          )}
+
           {/* Widgets Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {widgets.map((widget) => {
-              const connectedBot = availableBots.find(b => b.id === widget.connectedBotId);
-
+              const connectedBotName = botDisplayName(widget);
               return (
-                <div 
+                <div
                   key={widget.id}
                   className="bg-slate-900/80 border border-white/10 rounded-2xl p-5 hover:border-cyan-500/40 hover:bg-slate-900 transition-all flex flex-col justify-between group shadow-xl"
                 >
                   <div className="space-y-4">
-                    {/* Top Row: Icon + Title + Status */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div 
+                        <div
                           className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm"
                           style={{ backgroundColor: `${widget.brandColor}25`, color: widget.brandColor }}
                         >
@@ -487,9 +803,9 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                             {widget.name}
                           </h3>
                           <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
-                            <span className="capitalize">{widget.position.replace('_', ' ')}</span>
+                            <span className="capitalize">{(widget.position || 'bottom_right').replace('_', ' ')}</span>
                             <span>•</span>
-                            <span>Auto-open: {widget.autoOpenDelaySeconds > 0 ? `${widget.autoOpenDelaySeconds}s` : 'Manual click'}</span>
+                            <span>Auto-open: {(widget.autoOpenDelaySeconds || 0) > 0 ? `${widget.autoOpenDelaySeconds}s` : 'Manual click'}</span>
                           </div>
                         </div>
                       </div>
@@ -508,24 +824,21 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                       </button>
                     </div>
 
-                    {/* Headline preview quote */}
                     <div className="p-3 rounded-xl bg-slate-950/70 border border-white/5 space-y-1">
                       <p className="text-xs text-white font-medium">{widget.headline}</p>
                       <p className="text-[11px] text-slate-400 line-clamp-2">{widget.welcomeMessage}</p>
                     </div>
 
-                    {/* Bot & Feature Badges */}
                     <div className="flex items-center justify-between text-xs py-2 px-3 rounded-xl bg-white/5 border border-white/5">
-                      <div className="flex items-center gap-2 text-slate-300">
-                        <Bot className="w-3.5 h-3.5 text-cyan-400" />
-                        <span className="truncate">{connectedBot?.name || widget.botName}</span>
+                      <div className="flex items-center gap-2 text-slate-300 min-w-0">
+                        <Bot className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                        <span className="truncate">{connectedBotName}</span>
                       </div>
-                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                        <span>{widget.quickReplies.length} Quick Replies</span>
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 flex-shrink-0">
+                        <span>{(widget.quickReplies || []).length} Quick Replies</span>
                       </div>
                     </div>
 
-                    {/* Performance mini stats */}
                     <div className="grid grid-cols-3 gap-2 text-center">
                       <div className="p-2 rounded-xl bg-slate-950/60 border border-white/5">
                         <span className="text-[10px] text-slate-500 block">Views</span>
@@ -542,12 +855,12 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Actions Bar */}
                   <div className="mt-4 pt-3 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
                     <button
                       onClick={() => {
-                        setSelectedWidgetId(widget.id);
-                        setActiveMode('preview');
+                        persistSelected(widget.id);
+                        resetSimulator(widget);
+                        persistMode('preview');
                       }}
                       className="py-2 px-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-cyan-500/20"
                     >
@@ -602,58 +915,40 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
           ========================================================================= */}
       {activeMode === 'editor' && editingWidget && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          
-          {/* Left Column: Comprehensive Settings Form (7 cols) */}
+
+          {/* Left Column: Settings Form (7 cols) */}
           <div className="lg:col-span-7 bg-slate-900/90 border border-white/10 rounded-2xl p-6 space-y-6 shadow-xl">
-            
+
             <div className="flex items-center justify-between pb-4 border-b border-white/10">
               <div>
                 <h2 className="text-lg font-bold text-white">Edit Support Chat Widget</h2>
-                <p className="text-xs text-slate-400">Configure appearance, chat behavior, and bot connection.</p>
+                <p className="text-xs text-slate-400">Configure appearance, chat behavior, and BotMap connection. Saving publishes the bot flow to the live widget.</p>
               </div>
               <span className="text-xs px-2.5 py-1 rounded-full bg-cyan-500/10 text-cyan-300 font-mono">
                 {editingWidget.id}
               </span>
             </div>
 
-            {/* Quick-Jump Section Navigation Bar */}
+            {/* Quick-Jump Section Navigation */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs" style={{ scrollbarWidth: 'none' }}>
               <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mr-1">Scroll to:</span>
-              <button
-                type="button"
-                onClick={() => document.getElementById('section-branding')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 border border-white/10 text-[11px] whitespace-nowrap transition-colors cursor-pointer"
-              >
-                🎨 Branding
-              </button>
-              <button
-                type="button"
-                onClick={() => document.getElementById('section-avatar')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 border border-white/10 text-[11px] whitespace-nowrap transition-colors cursor-pointer"
-              >
-                🤖 Bot &amp; Avatar
-              </button>
-              <button
-                type="button"
-                onClick={() => document.getElementById('section-messages')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 border border-white/10 text-[11px] whitespace-nowrap transition-colors cursor-pointer"
-              >
-                💬 Welcome Message
-              </button>
-              <button
-                type="button"
-                onClick={() => document.getElementById('section-replies')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 border border-white/10 text-[11px] whitespace-nowrap transition-colors cursor-pointer"
-              >
-                ⚡ Quick Replies
-              </button>
-              <button
-                type="button"
-                onClick={() => document.getElementById('section-leadcapture')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 border border-white/10 text-[11px] whitespace-nowrap transition-colors cursor-pointer"
-              >
-                📋 Lead Form
-              </button>
+              {[
+                ['section-branding', 'Branding'],
+                ['section-avatar', 'Bot & Avatar'],
+                ['section-messages', 'Welcome Message'],
+                ['section-replies', 'Quick Replies'],
+                ['section-leadcapture', 'Lead Form'],
+                ['section-domains', 'Domains'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 border border-white/10 text-[11px] whitespace-nowrap transition-colors cursor-pointer"
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             {/* 1-Click Preset Templates */}
@@ -740,8 +1035,8 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                       type="button"
                       onClick={() => setEditingWidget({ ...editingWidget, brandColor: color.hex })}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 border transition-all cursor-pointer ${
-                        editingWidget.brandColor === color.hex 
-                          ? 'border-white text-white font-bold bg-white/10' 
+                        editingWidget.brandColor === color.hex
+                          ? 'border-white text-white font-bold bg-white/10'
                           : 'border-white/10 text-slate-400 hover:border-white/20'
                       }`}
                     >
@@ -759,7 +1054,6 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                 </div>
               </div>
 
-              {/* Position & Launcher Bubble Icon */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <div className="space-y-1.5">
                   <label className="text-[11px] text-slate-400">Screen Position</label>
@@ -787,24 +1081,63 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                   </select>
                 </div>
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] text-slate-400">Launcher Button Text</label>
+                <input
+                  type="text"
+                  value={editingWidget.launcherText || ''}
+                  onChange={(e) => setEditingWidget({ ...editingWidget, launcherText: e.target.value })}
+                  placeholder="Chat with Us"
+                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] text-slate-400">Auto-Open After (seconds, 0 = manual click only)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={editingWidget.autoOpenDelaySeconds || 0}
+                  onChange={(e) => setEditingWidget({ ...editingWidget, autoOpenDelaySeconds: Math.max(0, Number(e.target.value) || 0) })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
             </div>
 
             {/* Connected Bot & Assistant Profile */}
             <div id="section-avatar" className="space-y-3 p-4 rounded-xl bg-slate-950/60 border border-white/5">
-              <div className="flex items-center gap-2 text-xs font-bold text-white">
-                <Bot className="w-4 h-4 text-cyan-400" />
-                <span>AI Bot Engine &amp; Representative</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-white">
+                  <Bot className="w-4 h-4 text-cyan-400" />
+                  <span>BotMap Engine &amp; Representative</span>
+                </div>
+                {editingWidget.connectedBotId && onNavigateToFlows && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigateToFlows(editingWidget.connectedBotId)}
+                    className="text-[11px] text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Workflow className="w-3.5 h-3.5" />
+                    <span>Open in BotMaps</span>
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-[11px] text-slate-400">Connected Chat Bot</label>
+                  <label className="text-[11px] text-slate-400">Connected BotMap</label>
                   <select
-                    value={editingWidget.connectedBotId}
-                    onChange={(e) => setEditingWidget({ ...editingWidget, connectedBotId: e.target.value })}
+                    value={editingWidget.connectedBotId || ''}
+                    onChange={(e) => {
+                      setEditingWidget({ ...editingWidget, connectedBotId: e.target.value });
+                      editorSessionKey.current = '';
+                    }}
                     className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
                   >
-                    {availableBots.map((b) => (
+                    <option value="">None — hand every chat to the team</option>
+                    {bots.map((b) => (
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
                   </select>
@@ -819,6 +1152,12 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                     className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
                   />
                 </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-cyan-500/5 border border-cyan-500/20 text-[11px] text-slate-400">
+                <span className="text-cyan-300 font-semibold">Published flow: </span>
+                {publishedFlowInfo(editingWidget as SupportChatWidgetConfig)}
+                <span className="block mt-1 text-slate-500">Saving this widget snapshots the connected BotMap into the live widget, so visitors get the current flow. AI steps are answered by the backend AI worker; everything else runs instantly.</span>
               </div>
 
               <div className="space-y-1.5">
@@ -891,20 +1230,22 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
             <div id="section-replies" className="space-y-3 p-4 rounded-xl bg-slate-950/60 border border-white/5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-white">Quick Reply Starter Options</label>
-                <span className="text-[10px] text-slate-400">{editingWidget.quickReplies.length} chips configured</span>
+                <span className="text-[10px] text-slate-400">{(editingWidget.quickReplies || []).length} chips configured</span>
               </div>
+              <p className="text-[11px] text-slate-500">Chips route into the connected BotMap by payload — tapping one follows the matching flow step. Without a bot, the tap hands the chat to your team.</p>
 
               <div className="flex items-center gap-2 flex-wrap">
-                {editingWidget.quickReplies.map((reply, idx) => (
-                  <div 
-                    key={reply.id} 
+                {(editingWidget.quickReplies || []).map((reply, idx) => (
+                  <div
+                    key={reply.id}
                     className="px-2.5 py-1 rounded-lg bg-slate-900 border border-white/10 text-xs text-slate-200 flex items-center gap-1.5"
+                    title={`Payload: ${reply.payload}`}
                   >
                     <span>{reply.label}</span>
                     <button
                       type="button"
                       onClick={() => {
-                        const updatedReplies = editingWidget.quickReplies.filter((_, i) => i !== idx);
+                        const updatedReplies = (editingWidget.quickReplies || []).filter((_, i) => i !== idx);
                         setEditingWidget({ ...editingWidget, quickReplies: updatedReplies });
                       }}
                       className="text-slate-500 hover:text-rose-400 transition-colors ml-1"
@@ -919,22 +1260,14 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                 <div className="relative flex-1">
                   <input
                     type="text"
-                    placeholder="e.g. 🚀 Schedule VIP Demo"
+                    placeholder="e.g. Schedule a Demo"
                     ref={chipEmoji.ref}
                     value={newReplyLabel}
                     onChange={(e) => setNewReplyLabel(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        if (newReplyLabel.trim()) {
-                          const newChip = {
-                            id: `qr-${Date.now().toString().slice(-4)}`,
-                            label: newReplyLabel.trim(),
-                            payload: newReplyLabel.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_')
-                          };
-                          setEditingWidget({ ...editingWidget, quickReplies: [...editingWidget.quickReplies, newChip] });
-                          setNewReplyLabel('');
-                        }
+                        addQuickReplyChip();
                       }
                     }}
                     className="w-full pl-3 pr-9 py-1.5 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
@@ -945,17 +1278,7 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (newReplyLabel.trim()) {
-                      const newChip = {
-                        id: `qr-${Date.now().toString().slice(-4)}`,
-                        label: newReplyLabel.trim(),
-                        payload: newReplyLabel.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_')
-                      };
-                      setEditingWidget({ ...editingWidget, quickReplies: [...editingWidget.quickReplies, newChip] });
-                      setNewReplyLabel('');
-                    }
-                  }}
+                  onClick={addQuickReplyChip}
                   className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
                   Add Chip
@@ -971,35 +1294,62 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
               </div>
 
               <div className="grid grid-cols-3 gap-3">
-                <label className="p-2.5 rounded-xl bg-slate-900 border border-white/10 flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingWidget.requireEmailCapture}
-                    onChange={(e) => setEditingWidget({ ...editingWidget, requireEmailCapture: e.target.checked })}
-                    className="rounded border-slate-700 text-cyan-500 focus:ring-0"
-                  />
-                  <span className="text-xs text-slate-300">Require Email</span>
-                </label>
+                {([
+                  ['requireEmailCapture', 'Require Email'],
+                  ['requireNameCapture', 'Require Name'],
+                  ['requirePhoneCapture', 'Phone Number'],
+                ] as const).map(([key, label]) => (
+                  <label key={key} className="p-2.5 rounded-xl bg-slate-900 border border-white/10 flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!editingWidget[key]}
+                      onChange={(e) => setEditingWidget({ ...editingWidget, [key]: e.target.checked })}
+                      className="rounded border-slate-700 text-cyan-500 focus:ring-0"
+                    />
+                    <span className="text-xs text-slate-300">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
 
-                <label className="p-2.5 rounded-xl bg-slate-900 border border-white/10 flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingWidget.requireNameCapture}
-                    onChange={(e) => setEditingWidget({ ...editingWidget, requireNameCapture: e.target.checked })}
-                    className="rounded border-slate-700 text-cyan-500 focus:ring-0"
-                  />
-                  <span className="text-xs text-slate-300">Require Name</span>
-                </label>
-
-                <label className="p-2.5 rounded-xl bg-slate-900 border border-white/10 flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editingWidget.requirePhoneCapture}
-                    onChange={(e) => setEditingWidget({ ...editingWidget, requirePhoneCapture: e.target.checked })}
-                    className="rounded border-slate-700 text-cyan-500 focus:ring-0"
-                  />
-                  <span className="text-xs text-slate-300">Phone Number</span>
-                </label>
+            {/* Domain Allowlist */}
+            <div id="section-domains" className="space-y-3 p-4 rounded-xl bg-slate-950/60 border border-white/5">
+              <div className="flex items-center gap-2 text-xs font-bold text-white">
+                <Globe className="w-4 h-4 text-cyan-400" />
+                <span>Allowed Domains</span>
+              </div>
+              <p className="text-[11px] text-slate-500">The widget only renders on these domains. Use <span className="font-mono text-slate-300">*.example.com</span> for subdomains. Leave empty to allow everywhere.</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                {(editingWidget.whitelistedDomains || []).map((d, idx) => (
+                  <div key={idx} className="px-2.5 py-1 rounded-lg bg-slate-900 border border-white/10 text-xs text-slate-200 flex items-center gap-1.5 font-mono">
+                    <span>{d}</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditingWidget({ ...editingWidget, whitelistedDomains: (editingWidget.whitelistedDomains || []).filter((_, i) => i !== idx) })}
+                      className="text-slate-500 hover:text-rose-400 transition-colors ml-1"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="e.g. *.myshop.com — press Enter to add"
+                  ref={domainEmoji.ref}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const v = (e.target as HTMLInputElement).value.trim().toLowerCase();
+                      if (v && !(editingWidget.whitelistedDomains || []).includes(v)) {
+                        setEditingWidget({ ...editingWidget, whitelistedDomains: [...(editingWidget.whitelistedDomains || []), v] });
+                      }
+                      (e.target as HTMLInputElement).value = '';
+                    }
+                  }}
+                  className="w-full px-3 py-1.5 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none font-mono"
+                />
               </div>
             </div>
 
@@ -1009,7 +1359,7 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                 type="button"
                 onClick={() => {
                   setEditingWidget(null);
-                  setActiveMode('list');
+                  persistMode('list');
                 }}
                 className="px-4 py-2 text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
               >
@@ -1022,7 +1372,7 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                 className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-cyan-500/20"
               >
                 <Check className="w-4 h-4" />
-                <span>Save Widget Changes</span>
+                <span>Save &amp; Publish Widget</span>
               </button>
             </div>
 
@@ -1030,14 +1380,12 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
 
           {/* Right Column: Live Chat Visual Preview (5 cols) */}
           <div className="lg:col-span-5 sticky top-4 space-y-3">
-            {/* Header Controls */}
             <div className="flex items-center justify-between text-xs text-slate-400 px-1">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-white">Live Widget Preview</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 font-mono">Real-time</span>
               </div>
 
-              {/* Elevated vs Corner toggle */}
               <div className="flex items-center gap-1 bg-slate-900 border border-white/10 p-0.5 rounded-xl">
                 <button
                   type="button"
@@ -1070,15 +1418,14 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
 
             {/* Mock Browser Container */}
             <div className="rounded-2xl border border-white/10 bg-slate-950 overflow-hidden shadow-2xl relative flex flex-col max-h-[calc(100vh-100px)]">
-              
-              {/* Browser Window Bar */}
+
               <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-white/10 text-[11px] text-slate-400">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-rose-500/70" />
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-500/70" />
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/70" />
                 </div>
-                
+
                 <div className="flex items-center gap-1 px-3 py-0.5 rounded-full bg-slate-950 text-[10px] font-mono text-slate-300 border border-white/5">
                   <span className="text-emerald-400">🔒</span>
                   <span>https://yourwebsite.com</span>
@@ -1090,6 +1437,8 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                     onClick={() => {
                       setEditorTestMessages([]);
                       setEditorTestInput('');
+                      setEditorTestReplies([]);
+                      editorSessionKey.current = '';
                     }}
                     className="text-[10px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
                     title="Reset test conversation"
@@ -1100,31 +1449,33 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                 </div>
               </div>
 
-              {/* Scrollable Preview Canvas */}
               <div className="overflow-y-auto p-4 flex-1 space-y-4" style={{ minHeight: '480px' }}>
-                
+
                 {editorPreviewMode === 'elevated' ? (
-                  /* ================= ELEVATED VIEW: WIDGET IS SET UP HIGH IN SCREEN ================= */
                   <div className="space-y-4">
                     {editorChatOpen ? (
-                      /* Expanded Live Chat Window placed prominently high */
                       <div className="w-full max-w-sm mx-auto rounded-2xl border border-white/15 bg-slate-900 shadow-2xl overflow-hidden flex flex-col transition-all">
-                        {/* Header */}
-                        <div 
+                        <div
                           className="p-3.5 flex items-center justify-between text-white transition-colors"
                           style={{ backgroundColor: editingWidget.brandColor }}
                         >
                           <div className="flex items-center gap-2.5">
-                            <img
-                              src={editingWidget.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop'}
-                              alt={editingWidget.botName}
-                              className="w-9 h-9 rounded-full object-cover border-2 border-white/30 shadow-sm"
-                            />
+                            {editingWidget.avatarUrl ? (
+                              <img
+                                src={editingWidget.avatarUrl}
+                                alt={editingWidget.botName}
+                                className="w-9 h-9 rounded-full object-cover border-2 border-white/30 shadow-sm"
+                              />
+                            ) : (
+                              <div className="w-9 h-9 rounded-full bg-black/25 border-2 border-white/30 flex items-center justify-center">
+                                <Bot className="w-4 h-4 text-white" />
+                              </div>
+                            )}
                             <div>
                               <h4 className="text-xs font-bold leading-tight drop-shadow-sm">{editingWidget.headline || 'How can we help?'}</h4>
                               <p className="text-[10px] opacity-90 mt-0.5 flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
-                                <span>{editingWidget.botName || 'AI Support'}</span>
+                                <span>{editingWidget.botName || 'Support'}</span>
                                 <span>• Active</span>
                               </p>
                             </div>
@@ -1140,26 +1491,19 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                           </button>
                         </div>
 
-                        {/* Subheadline banner if present */}
                         {editingWidget.subheadline && (
                           <div className="px-3 py-1.5 bg-slate-950/80 border-b border-white/5 text-[10px] text-slate-400">
                             {editingWidget.subheadline}
                           </div>
                         )}
 
-                        {/* Chat Messages Body */}
                         <div className="p-3.5 space-y-3 bg-slate-950/60 max-h-[220px] overflow-y-auto">
-                          {/* Welcome Bot Bubble */}
                           <div className="p-3 rounded-2xl bg-slate-900 border border-white/10 text-xs text-slate-200 max-w-[90%] rounded-tl-none leading-relaxed shadow-sm">
-                            {editingWidget.welcomeMessage || '👋 Hi there! How can we assist you today?'}
+                            {editingWidget.welcomeMessage || 'Hi there! How can we help you today?'}
                           </div>
 
-                          {/* Test interactions */}
                           {editorTestMessages.map((msg, idx) => (
-                            <div
-                              key={idx}
-                              className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                            >
+                            <div key={idx} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                               <div
                                 className={`p-2.5 rounded-2xl text-xs max-w-[85%] leading-relaxed ${
                                   msg.sender === 'user'
@@ -1172,26 +1516,29 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                             </div>
                           ))}
 
-                          {/* Quick Reply Chips (Interactive in preview!) */}
-                          {editingWidget.quickReplies && editingWidget.quickReplies.length > 0 && (
+                          {editorTyping && (
+                            <div className="flex items-center gap-1.5 p-3 rounded-2xl bg-slate-900 border border-white/10 w-20">
+                              <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" />
+                              <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                            </div>
+                          )}
+
+                          {(editorTestReplies.length > 0 ? editorTestReplies : (editingWidget.quickReplies || []).map((q) => ({ label: q.label, payload: q.payload }))).length > 0 && (
                             <div className="pt-1">
                               <p className="text-[10px] text-slate-400 mb-1.5 font-medium">Quick options:</p>
                               <div className="flex flex-wrap gap-1.5">
-                                {editingWidget.quickReplies.map((qr) => (
+                                {(editorTestReplies.length > 0 ? editorTestReplies : (editingWidget.quickReplies || []).map((q) => ({ label: q.label, payload: q.payload }))).map((qr, i) => (
                                   <button
-                                    key={qr.id}
+                                    key={`${qr.payload}-${i}`}
                                     type="button"
                                     onClick={() => {
-                                      const userMsg = { sender: 'user' as const, text: qr.label, time: 'Just now' };
-                                      const botReply = { 
-                                        sender: 'bot' as const, 
-                                        text: `You selected "${qr.label}". Connecting you to our agent...`, 
-                                        time: 'Just now' 
-                                      };
-                                      setEditorTestMessages(prev => [...prev, userMsg, botReply]);
+                                      setEditorTestMessages((prev) => [...prev, { sender: 'user', text: qr.label, time: 'Just now' }]);
+                                      setEditorTestReplies([]);
+                                      editorBotRespond((s) => s.handlePayload(qr.payload, qr.label));
                                     }}
                                     className="py-1.5 px-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-cyan-500/30 text-[11px] font-medium text-cyan-300 text-left transition-all cursor-pointer shadow-sm active:scale-95"
-                                    title="Click to test this quick reply in the preview"
+                                    title={`Routes into the BotMap via payload ${qr.payload}`}
                                   >
                                     {qr.label}
                                   </button>
@@ -1201,19 +1548,15 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                           )}
                         </div>
 
-                        {/* Interactive Input Footer */}
                         <form
                           onSubmit={(e) => {
                             e.preventDefault();
                             if (editorTestInput.trim()) {
-                              const userMsg = { sender: 'user' as const, text: editorTestInput.trim(), time: 'Just now' };
-                              const botReply = { 
-                                sender: 'bot' as const, 
-                                text: `Thanks for writing! We received: "${editorTestInput.trim()}".`, 
-                                time: 'Just now' 
-                              };
-                              setEditorTestMessages(prev => [...prev, userMsg, botReply]);
+                              const text = editorTestInput.trim();
+                              setEditorTestMessages((prev) => [...prev, { sender: 'user', text, time: 'Just now' }]);
                               setEditorTestInput('');
+                              setEditorTestReplies([]);
+                              editorBotRespond((s) => s.handleText(text));
                             }
                           }}
                           className="p-2.5 bg-slate-900 border-t border-white/10 flex items-center gap-2"
@@ -1235,7 +1578,6 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                         </form>
                       </div>
                     ) : (
-                      /* Collapsed Banner state */
                       <div className="p-4 rounded-xl bg-slate-900 border border-white/10 text-center space-y-2">
                         <p className="text-xs text-slate-300">Widget window is currently minimized.</p>
                         <button
@@ -1248,7 +1590,6 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                       </div>
                     )}
 
-                    {/* Floating Launcher Preview (Below elevated window) */}
                     <div className="pt-2 border-t border-white/5 flex flex-col items-center gap-2">
                       <div className="flex items-center justify-between w-full px-2 text-[11px] text-slate-400">
                         <span>Launcher Button Preview:</span>
@@ -1274,16 +1615,10 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                         )}
                         <span>{editingWidget.launcherText || 'Chat with Us'}</span>
                       </button>
-
-                      <p className="text-[10px] text-slate-500 text-center px-4">
-                        Widget sits elevated high so you can scroll up and down the form on the left while editing.
-                      </p>
                     </div>
                   </div>
                 ) : (
-                  /* ================= CORNER VIEW: PINNED TO BOTTOM ================= */
                   <div className="relative min-h-[460px] flex flex-col justify-between">
-                    {/* Simulated website wireframe */}
                     <div className="space-y-3 opacity-20 select-none pointer-events-none">
                       <div className="h-4 w-32 bg-slate-700 rounded-full" />
                       <div className="h-8 w-64 bg-slate-800 rounded-lg" />
@@ -1294,20 +1629,25 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Corner Chat Widget */}
                     <div className={`space-y-3 ${editingWidget.position === 'bottom_left' ? 'mr-auto' : 'ml-auto'} max-w-xs w-full`}>
                       {editorChatOpen && (
                         <div className="rounded-2xl border border-white/10 bg-slate-900 shadow-2xl overflow-hidden flex flex-col">
-                          <div 
+                          <div
                             className="p-3 flex items-center justify-between text-white"
                             style={{ backgroundColor: editingWidget.brandColor }}
                           >
-                            <div className="flex items-center gap-2">
-                              <img
-                                src={editingWidget.avatarUrl}
-                                alt={editingWidget.botName}
-                                className="w-7 h-7 rounded-full object-cover border border-white/30"
-                              />
+                            <div className="flex items-center gap-2 min-w-0">
+                              {editingWidget.avatarUrl ? (
+                                <img
+                                  src={editingWidget.avatarUrl}
+                                  alt={editingWidget.botName}
+                                  className="w-7 h-7 rounded-full object-cover border border-white/30"
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-black/25 border border-white/30 flex items-center justify-center">
+                                  <Bot className="w-3.5 h-3.5 text-white" />
+                                </div>
+                              )}
                               <span className="text-xs font-bold leading-tight truncate">{editingWidget.headline}</span>
                             </div>
                             <button
@@ -1318,8 +1658,26 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                               <Minimize2 className="w-3 h-3" />
                             </button>
                           </div>
-                          <div className="p-3 bg-slate-950/70 text-xs text-slate-200">
-                            {editingWidget.welcomeMessage}
+                          <div className="p-3 bg-slate-950/70 text-xs text-slate-200 space-y-2">
+                            <p>{editingWidget.welcomeMessage}</p>
+                            {(editingWidget.quickReplies || []).length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {(editingWidget.quickReplies || []).map((qr) => (
+                                  <button
+                                    key={qr.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setEditorTestMessages((prev) => [...prev, { sender: 'user', text: qr.label, time: 'Just now' }]);
+                                      editorBotRespond((s) => s.handlePayload(qr.payload, qr.label));
+                                    }}
+                                    className="py-1 px-2.5 rounded-lg bg-slate-900 border border-cyan-500/30 text-[10px] font-medium text-cyan-300 cursor-pointer hover:bg-slate-800"
+                                    title={`Routes into the BotMap via payload ${qr.payload}`}
+                                  >
+                                    {qr.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
@@ -1341,16 +1699,21 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
 
               </div>
 
-              {/* Bottom Quick Switch to Full Simulator */}
               <div className="p-2.5 bg-slate-900/90 border-t border-white/10 flex items-center justify-between px-3 text-[11px]">
                 <span className="text-slate-400">Want full mobile &amp; desktop testing?</span>
                 <button
                   type="button"
-                  onClick={() => setActiveMode('preview')}
+                  onClick={() => {
+                    if (editingWidget) {
+                      persistSelected(editingWidget.id);
+                      resetSimulator(editingWidget);
+                    }
+                    persistMode('preview');
+                  }}
                   className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 cursor-pointer"
                 >
                   <span>Open Full Simulator</span>
-                  <ExternalLink className="w-3 h-3" />
+                  <Eye className="w-3 h-3" />
                 </button>
               </div>
 
@@ -1365,34 +1728,46 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
           ========================================================================= */}
       {activeMode === 'preview' && currentWidget && (
         <div className="space-y-4">
-          
+
           <div className="flex items-center justify-between p-4 bg-slate-900 border border-white/10 rounded-2xl">
             <div className="flex items-center gap-3">
               <span className="text-xs text-slate-400">Simulating Widget:</span>
               <span className="text-xs font-bold text-white">{currentWidget.name}</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 font-mono">
+                {currentWidget.connectedBotId ? `BotMap: ${botDisplayName(currentWidget)}` : 'No bot — agent handoff'}
+              </span>
             </div>
 
             <div className="flex items-center gap-3">
               <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-white/10">
                 <button
                   onClick={() => setSimDevice('desktop')}
-                  className={`p-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                  className={`p-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
                     simDevice === 'desktop' ? 'bg-cyan-500/20 text-cyan-300 font-bold' : 'text-slate-400'
                   }`}
                 >
-                  <Monitor className="w-3.5 h-3.5" />
+                  <Layout className="w-3.5 h-3.5" />
                   <span>Desktop</span>
                 </button>
                 <button
                   onClick={() => setSimDevice('mobile')}
-                  className={`p-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                  className={`p-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
                     simDevice === 'mobile' ? 'bg-cyan-500/20 text-cyan-300 font-bold' : 'text-slate-400'
                   }`}
                 >
-                  <Smartphone className="w-3.5 h-3.5" />
+                  <MessageSquare className="w-3.5 h-3.5" />
                   <span>Mobile</span>
                 </button>
               </div>
+
+              <button
+                onClick={() => resetSimulator(currentWidget)}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Restart the test conversation"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restart</span>
+              </button>
 
               <button
                 onClick={() => setEmbedModalWidget(currentWidget)}
@@ -1407,29 +1782,32 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
           {/* Interactive Simulation Frame */}
           <div className={`mx-auto transition-all ${simDevice === 'mobile' ? 'max-w-sm' : 'max-w-4xl'}`}>
             <div className="rounded-2xl border border-white/10 bg-slate-950 overflow-hidden shadow-2xl min-h-[580px] flex flex-col justify-between p-6 relative">
-              
-              {/* Mock Website Background */}
+
               <div className="space-y-4 opacity-20 pointer-events-none select-none">
                 <div className="h-6 w-48 bg-slate-600 rounded-full" />
                 <div className="h-10 w-96 bg-slate-700 rounded-lg" />
                 <div className="h-32 w-full bg-slate-800 rounded-2xl" />
               </div>
 
-              {/* Live Chat Modal in Frame */}
               {isSimOpen && (
                 <div className="w-full max-w-sm ml-auto rounded-2xl border border-white/10 bg-slate-900 shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
-                  
-                  {/* Chat Header */}
-                  <div 
+
+                  <div
                     className="p-4 flex items-center justify-between text-white"
                     style={{ backgroundColor: currentWidget.brandColor }}
                   >
                     <div className="flex items-center gap-2.5">
-                      <img
-                        src={currentWidget.avatarUrl}
-                        alt={currentWidget.botName}
-                        className="w-8 h-8 rounded-full object-cover border border-white/30"
-                      />
+                      {currentWidget.avatarUrl ? (
+                        <img
+                          src={currentWidget.avatarUrl}
+                          alt={currentWidget.botName}
+                          className="w-8 h-8 rounded-full object-cover border border-white/30"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-black/25 border border-white/30 flex items-center justify-center">
+                          <Bot className="w-4 h-4 text-white" />
+                        </div>
+                      )}
                       <div>
                         <h4 className="text-xs font-bold leading-tight">{currentWidget.headline}</h4>
                         <span className="text-[10px] opacity-80">{currentWidget.botName}</span>
@@ -1444,7 +1822,6 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                     </button>
                   </div>
 
-                  {/* Messages Feed */}
                   <div className="p-4 space-y-3 h-72 overflow-y-auto bg-slate-950/70 text-xs">
                     {simMessages.map((msg, i) => (
                       <div
@@ -1464,7 +1841,6 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                       </div>
                     ))}
 
-                    {/* Bot Typing indicator */}
                     {isSimTyping && (
                       <div className="flex items-center gap-1.5 p-3 rounded-2xl bg-slate-900 border border-white/10 text-slate-400 w-20">
                         <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -1473,30 +1849,29 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                       </div>
                     )}
 
-                    {/* Quick reply chips */}
-                    <div className="flex flex-col gap-1.5 pt-2">
-                      {currentWidget.quickReplies.map((qr) => (
-                        <button
-                          key={qr.id}
-                          onClick={() => handleSimReplyClick(qr)}
-                          className="py-1.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 text-[11px] font-medium text-cyan-300 text-left transition-all cursor-pointer"
-                        >
-                          {qr.label}
-                        </button>
-                      ))}
-                    </div>
+                    {simQuickReplies.length > 0 && !isSimTyping && (
+                      <div className="flex flex-col gap-1.5 pt-2">
+                        {simQuickReplies.map((qr, i) => (
+                          <button
+                            key={`${qr.payload}-${i}`}
+                            onClick={() => handleSimReplyClick(qr)}
+                            className="py-1.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 text-[11px] font-medium text-cyan-300 text-left transition-all cursor-pointer"
+                            title={`Routes into the BotMap via payload ${qr.payload}`}
+                          >
+                            {qr.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Suggestion prompts */}
                   <div className="px-3 pt-2 pb-1 bg-slate-900/80 border-t border-white/5 flex items-center gap-1.5 overflow-x-auto">
                     <span className="text-[10px] text-slate-500 whitespace-nowrap">Try asking:</span>
-                    {['What are your prices?', 'Talk to an agent', 'Give me a coupon', 'test@example.com'].map((prompt) => (
+                    {['What are your prices?', 'Talk to an agent', 'Do you offer a discount?'].map((prompt) => (
                       <button
                         key={prompt}
                         type="button"
-                        onClick={() => {
-                          setSimInput(prompt);
-                        }}
+                        onClick={() => setSimInput(prompt)}
                         className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 whitespace-nowrap cursor-pointer hover:text-cyan-300"
                       >
                         {prompt}
@@ -1504,13 +1879,12 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                     ))}
                   </div>
 
-                  {/* Input bar */}
                   <form onSubmit={handleSimSend} className="p-3 bg-slate-900 border-t border-white/10 flex items-center gap-2">
                     <input
                       type="text"
                       value={simInput}
                       onChange={(e) => setSimInput(e.target.value)}
-                      placeholder="Type a message (or enter email to test capture)..."
+                      placeholder="Type a message to test the BotMap routing..."
                       className="flex-1 px-3 py-1.5 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
                     />
                     <button
@@ -1526,7 +1900,6 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
                 </div>
               )}
 
-              {/* Launcher toggle button */}
               <div className={`flex ${currentWidget.position === 'bottom_left' ? 'justify-start' : 'justify-end'}`}>
                 <button
                   onClick={() => setIsSimOpen(!isSimOpen)}
@@ -1550,7 +1923,7 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
       {embedModalWidget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
           <div className="w-full max-w-xl bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl space-y-5">
-            
+
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
@@ -1589,8 +1962,8 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
             </div>
 
             <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-slate-300 space-y-1">
-              <span className="font-bold text-cyan-300 block">Compatible with any CMS or stack:</span>
-              <p className="text-slate-400">Works seamlessly on Shopify, WordPress, Webflow, Squarespace, Wix, Next.js, and custom HTML.</p>
+              <span className="font-bold text-cyan-300 block">What the snippet does:</span>
+              <p className="text-slate-400">Loads <span className="font-mono text-slate-300">widget.js</span> from this deployment, fetches the widget config live from chatmize-prod, and renders the chat on your visitor's page. Quick replies run the BotMap flow you published; anything unhandled lands in Live Conversations for your team.</p>
             </div>
 
             <div className="flex justify-end pt-2">

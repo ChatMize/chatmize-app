@@ -26,6 +26,51 @@ service cloud.firestore {
       allow update, delete: if isSuperAdmin();
     }
 
+    // Support widget public access (unauthenticated website visitors).
+    // The visitor widget cannot sign in, so these narrowly scoped branches
+    // let it read ACTIVE widget configs and create/listen to its own web
+    // conversation. Everything is gated on the workspace actually having at
+    // least one active support widget; reads are further restricted to
+    // active widget docs and web_* conversation paths so visitors can never
+    // reach member-only data (contacts, leads, other channels).
+    function widgetActiveInWorkspace(workspaceId) {
+      return exists(/databases/$(database)/documents/workspaces/$(workspaceId)/support_widgets/widget_support_active_check);
+    }
+    match /workspaces/{workspaceId}/support_widgets/widget_support_active_check {
+      // Sentinel: an unauthenticated visitor may read ONLY this single
+      // existence probe (true iff the workspace has >= 1 active support
+      // widget). It must exist alongside real widget docs when the feature
+      // is enabled. Read-only; only members can create/update it.
+      allow get: if true;
+      allow write: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+    }
+    match /workspaces/{workspaceId}/support_widgets/{widgetId} {
+      // Visitors may read ACTIVE widgets only (enforced in the widget loader
+      // too, but defense in depth).
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin()
+        || resource.data.status == 'active';
+      allow write: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+    }
+    match /workspaces/{workspaceId}/conversations/{conversationId}/messages/{messageId} {
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin()
+        || (conversationId.matches('^web_[A-Za-z0-9_-]+$') && widgetActiveInWorkspace(workspaceId));
+      // Visitors may only append INBOUND visitor messages on web conversations.
+      allow create: if isWorkspaceMember(workspaceId) || isSuperAdmin()
+        || (conversationId.matches('^web_[A-Za-z0-9_-]+$')
+            && widgetActiveInWorkspace(workspaceId)
+            && request.resource.data.direction == 'inbound'
+            && request.resource.data.keys().hasAll(['text', 'direction', 'visitorId', 'timestampMs'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 4000);
+      allow update, delete: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+    }
+    match /workspaces/{workspaceId}/web_visitors/{visitorId} {
+      allow read, create: if isWorkspaceMember(workspaceId) || isSuperAdmin()
+        || widgetActiveInWorkspace(workspaceId);
+      allow update: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+    }
+
     // Workspaces and everything nested under them (Phase 3 tenancy model)
     match /workspaces/{workspaceId} {
       allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();

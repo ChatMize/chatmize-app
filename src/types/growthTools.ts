@@ -107,6 +107,11 @@ export interface SupportChatWidgetConfig {
   totalLeads: number;
   createdAt: string;
   updatedAt: string;
+  // Published BotMap snapshot consumed by the live visitor widget. Written on
+  // save; the unauthenticated widget reads the widget doc directly, so this
+  // travels with it rather than in a separate collection.
+  publishedFlow?: unknown;
+  publishedFlowBotId?: string | null;
 }
 
 export type CloakedDestinationType = 'takeover' | 'messenger' | 'instagram' | 'url';

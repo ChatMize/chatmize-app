@@ -52,15 +52,15 @@ import {
   ChevronDown,
   Copy
 } from 'lucide-react';
-import { 
-  subscribeToContacts, 
+import {
+  subscribeToContacts,
   subscribeToConversationMessages,
-  saveContact, 
-  updateContactField, 
-  seedInitialMetaContacts,
+  saveContact,
+  updateContactField,
   prodDb,
-  ContactRecord 
+  ContactRecord
 } from '../lib/firebase';
+import { ChannelBrandIcon } from '../components/ChannelBrandIcon';
 
 // Message interface
 export interface ConversationMessage {
@@ -81,7 +81,7 @@ export interface ConversationMessage {
     buttonUrl?: string;
     flowId?: string;
   };
-  deliveryStatus?: 'sent' | 'delivered' | 'read';
+  deliveryStatus?: 'sending' | 'sent' | 'delivered' | 'read';
 }
 
 // Follow-Up Rule interface
@@ -222,21 +222,29 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   onNavigateToAudience,
   onNavigateToFlows
 }) => {
-  // Conversation data lives in the real Firestore workspace where the
-  // webhook handler persists it (ws-chatmize-dev). The localStorage workspace
-  // id is a UI silo label, not a Firestore path, so it must not be used here.
-  // (Proper multi-workspace mapping lands with the support widget rebuild.)
-  const workspaceId = 'ws-chatmize-dev';
+  // Workspace id is resolved live from chatmize-prod (prop from App) — never a
+  // hardcoded id. Empty string until it resolves; all Firestore paths wait.
+  const workspaceId = (workspaceIdProp || '').trim();
   // Inbox contacts and conversations live in the backend database
   // (chatmize-prod), where the webhook handler persists them. The applet
   // database only holds stale demo/seed records, so every inbox read and
-  // write must target prodDb until the workspace rebuild unifies this.
+  // write must target prodDb.
   const updateInboxContact = (contactId: string, updates: Partial<ContactRecord>) =>
     updateContactField(contactId, updates, prodDb);
   // State for contacts from Firestore
   const [contacts, setContacts] = useState<ContactRecord[]>([]);
+  const [webConvos, setWebConvos] = useState<ContactRecord[]>([]);
   const [isLoadingContacts, setIsLoadingContacts] = useState<boolean>(true);
-  const [selectedContactId, setSelectedContactId] = useState<string>('');
+
+  // Selected conversation persists per workspace across refreshes. On load the
+  // stored selection is restored only when the contact/conversation still
+  // exists — never a stale id.
+  const selectedKey = (wsId: string) => `chatmize_inbox_selected_contact_${wsId || 'none'}`;
+  const [selectedContactId, setSelectedContactId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(selectedKey(workspaceId)) || '';
+    } catch { return ''; }
+  });
 
   // Filters & search
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -246,14 +254,9 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   // Messages state (keyed by contactId)
   const [conversationsMap, setConversationsMap] = useState<Record<string, ConversationMessage[]>>({});
 
-  // Bot mode per contact (bot vs human agent takeover)
-  const [botModeMap, setBotModeMap] = useState<Record<string, boolean>>({
-    'meta_fb_91827491823': true, // Sarah Jenkins: Bot active
-    'meta_ig_28471928471': false, // Marcus Reed: Human agent takeover
-    'meta_wa_84920194829': true, // Elena Rostova: Bot active
-    'meta_fb_38291048291': false, // David Kim: Human agent takeover
-    'meta_web_74829104820': true  // Maya Lin: Bot active
-  });
+  // Bot mode per contact (bot vs human agent takeover). Empty by default —
+  // persisted in Firestore per contact below, never seeded with demo ids.
+  const [botModeMap, setBotModeMap] = useState<Record<string, boolean>>({});
 
   // Follow-up rules (keyed by contactId)
   const [followUpRulesMap, setFollowUpRulesMap] = useState<Record<string, FollowUpRule[]>>({});
@@ -324,22 +327,44 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   };
 
   // Initialize and subscribe to Firestore contacts
+  // Initialize and subscribe to Firestore contacts. No demo seeding — only
+  // real contacts (and real web widget conversations, subscribed separately)
+  // ever appear. Re-subscribes when the workspace changes.
+  const allContacts = useMemo(() => {
+    const seen = new Set<string>();
+    const merged: ContactRecord[] = [];
+    for (const c of [...webConvos, ...contacts]) {
+      if (!c || seen.has(c.id)) continue;
+      seen.add(c.id);
+      merged.push(c);
+    }
+    return merged;
+  }, [contacts, webConvos]);
+
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     let didInitialSelect = false;
+    const key = selectedKey(workspaceId);
 
     const init = async () => {
       setIsLoadingContacts(true);
-      await seedInitialMetaContacts();
+      // Restore the persisted selection for this workspace; it only survives
+      // when the contact still exists (validated below on first load).
+      let persisted = '';
+      try { persisted = localStorage.getItem(key) || ''; } catch { /* ignore */ }
+      if (persisted) setSelectedContactId(persisted);
 
       unsubscribe = subscribeToContacts(
         (fetchedContacts) => {
           setContacts(fetchedContacts);
           setIsLoadingContacts(false);
           // Only auto-select on first load; never steal the user's selection on updates.
-          if (!didInitialSelect && fetchedContacts.length > 0) {
+          if (!didInitialSelect) {
             didInitialSelect = true;
-            setSelectedContactId((prev) => prev || fetchedContacts[0].id);
+            setSelectedContactId((prev) => {
+              if (prev && (fetchedContacts.some((c) => c.id === prev) || webConvos.some((c) => c.id === prev))) return prev;
+              return prev || fetchedContacts[0]?.id || '';
+            });
           }
         },
         (err) => {
@@ -355,21 +380,94 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  // Web widget conversations live under workspaces/{ws}/conversations/web_*.
+  // They appear in the inbox alongside Meta contacts so agents can answer the
+  // support widget live.
+  useEffect(() => {
+    if (!workspaceId) return;
+    let unsub: (() => void) | undefined;
+    (async () => {
+      const { collection, query, orderBy, startAt, endAt, onSnapshot, doc: fsDoc, getDoc } = await import('firebase/firestore');
+      const convosRef = collection(prodDb, 'workspaces', workspaceId, 'conversations');
+      const q = query(convosRef, orderBy('__name__'), startAt('web_'), endAt('web_\uf8ff'));
+      unsub = onSnapshot(q, async (snap) => {
+        const entries: ContactRecord[] = [];
+        for (const d of snap.docs) {
+          const data = d.data() as any;
+          const visitorId = d.id.slice(4);
+          let name: string | undefined = data.name;
+          let email = '';
+          try {
+            const prof = await getDoc(fsDoc(prodDb, 'workspaces', workspaceId, 'web_visitors', visitorId));
+            if (prof.exists()) {
+              const pv = prof.data() as any;
+              name = pv.name || pv.email || name;
+              email = pv.email || '';
+            }
+          } catch { /* profile optional */ }
+          entries.push({
+            id: `conv_${d.id}`,
+            name: name || 'Website Visitor',
+            firstName: '',
+            lastName: '',
+            avatarUrl: '',
+            channel: 'web',
+            senderId: visitorId,
+            email,
+            phone: '',
+            company: '',
+            jobTitle: '',
+            city: '',
+            state: '',
+            country: '',
+            zipCode: '',
+            status: 'lead',
+            optInStatus: 'opted_in',
+            smsConsent: false,
+            emailConsent: true,
+            messagingWindowExpiresAt: '',
+            tags: ['web-chat'],
+            variables: {},
+            customFields: {},
+            meta: { convoId: d.id, widgetId: data.widgetId || '' },
+            notes: '',
+            createdAt: data.lastUpdated || new Date().toISOString(),
+            lastInteractionAt: data.lastUpdated || new Date().toISOString(),
+          } as ContactRecord);
+        }
+        entries.sort((a, b) => String(b.lastInteractionAt).localeCompare(String(a.lastInteractionAt)));
+        setWebConvos(entries);
+      });
+    })().catch((err) => console.error('Failed to subscribe to web conversations:', err));
+    return () => { if (unsub) unsub(); };
+  }, [workspaceId]);
+
+  // Persist the selected conversation per workspace.
+  useEffect(() => {
+    if (!selectedContactId) return;
+    try {
+      localStorage.setItem(selectedKey(workspaceId), selectedContactId);
+    } catch { /* ignore */ }
+  }, [selectedContactId, workspaceId]);
 
   // Selected contact object
   const activeContact = useMemo(() => {
-    return contacts.find(c => c.id === selectedContactId) || contacts[0] || null;
-  }, [contacts, selectedContactId]);
+    if (!selectedContactId) return allContacts[0] || null;
+    return allContacts.find((c) => c.id === selectedContactId) || allContacts[0] || null;
+  }, [allContacts, selectedContactId]);
 
-  // Subscribe to real webhook messages for Meta contacts (replaces seed demo data)
+  // Subscribe to real webhook/widget messages. Web widget conversations
+  // (channel 'web') live at workspaces/{ws}/conversations/web_<visitorId>,
+  // same as Meta channel conversations, so they subscribe identically.
   useEffect(() => {
     if (!activeContact?.senderId || !activeContact?.channel) return;
-    if (!['instagram', 'messenger', 'whatsapp'].includes(activeContact.channel)) return;
+    if (!['instagram', 'messenger', 'whatsapp', 'web'].includes(activeContact.channel)) return;
+    if (!workspaceId) return;
 
     const convoId = `${activeContact.channel}_${activeContact.senderId}`;
-    // Uses the active workspace id so sends, reads, and writes all target
-    // the workspace the user is actually looking at.
 
     const unsubscribe = subscribeToConversationMessages(
       workspaceId,
@@ -416,208 +514,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     }
   }, [activeContact?.id]);
 
-  // Initialize seed messages for demo contacts if empty
-  useEffect(() => {
-    if (contacts.length === 0) return;
-
-    setConversationsMap(prev => {
-      if (Object.keys(prev).length > 0) return prev; // Already initialized
-
-      const initialMap: Record<string, ConversationMessage[]> = {};
-      const now = new Date();
-
-      contacts.forEach(c => {
-        const history: ConversationMessage[] = [];
-
-        if (c.id.includes('91827491823')) { // Sarah Jenkins
-          history.push(
-            {
-              id: 'm1',
-              contactId: c.id,
-              sender: 'system',
-              text: '⚡ Triggered by Meta Ad: "(Ad) Build-A-Bot VIP Workshop Invite" via Messenger',
-              timestamp: new Date(now.getTime() - 4 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              type: 'event_log'
-            },
-            {
-              id: 'm2',
-              contactId: c.id,
-              sender: 'customer',
-              text: 'Hi there! I saw your ad about the Build-A-Bot Live Workshop. Does this include the new Meta 2026 Recurring Notifications blueprint?',
-              timestamp: new Date(now.getTime() - 3 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            },
-            {
-              id: 'm3',
-              contactId: c.id,
-              sender: 'bot',
-              senderName: 'Chatmize AI Agent',
-              text: 'Hi Sarah! Yes, absolutely! The workshop covers the full Meta Recurring Notifications architecture, 24-hour compliance rules, and automated re-engagement workflows.',
-              timestamp: new Date(now.getTime() - 2.8 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              deliveryStatus: 'read'
-            },
-            {
-              id: 'm4',
-              contactId: c.id,
-              sender: 'bot',
-              senderName: 'Chatmize AI Agent',
-              text: 'Here is your official pass to claim your seat:',
-              timestamp: new Date(now.getTime() - 2.7 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              type: 'content_card',
-              contentCard: {
-                title: 'Build-A-Bot Live Workshop Pass',
-                description: 'Thursday 2:00 PM EST • Live Studio with AI bot architecture team.',
-                badge: 'Live Event RSVP',
-                buttonText: 'Confirm Studio Seat 🎟️',
-                flowId: 'bm-webinar-01'
-              },
-              deliveryStatus: 'read'
-            },
-            {
-              id: 'm5',
-              contactId: c.id,
-              sender: 'customer',
-              text: 'Awesome, just confirmed! Can I also get the VIP discount code for our agency account?',
-              timestamp: new Date(now.getTime() - 25 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }
-          );
-        } else if (c.id.includes('28471928471')) { // Marcus Reed
-          history.push(
-            {
-              id: 'mr-1',
-              contactId: c.id,
-              sender: 'system',
-              text: '⚡ Triggered by Instagram Story Reply: "Send me the shopify bot template"',
-              timestamp: new Date(now.getTime() - 6 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              type: 'event_log'
-            },
-            {
-              id: 'mr-2',
-              contactId: c.id,
-              sender: 'customer',
-              text: 'Hey! Saw your IG Story demo. Does Chatmize support abandoned cart recovery and tracking link sends directly inside Instagram DMs?',
-              timestamp: new Date(now.getTime() - 5 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            },
-            {
-              id: 'mr-3',
-              contactId: c.id,
-              sender: 'agent',
-              senderName: 'Alex (Support Specialist)',
-              text: 'Hey Marcus! Yes, our Instagram DM node integrates directly with Shopify Webhooks to fire automated recovery sequences within 15 minutes of an abandoned checkout.',
-              timestamp: new Date(now.getTime() - 4 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              deliveryStatus: 'read'
-            },
-            {
-              id: 'mr-4',
-              contactId: c.id,
-              sender: 'customer',
-              text: 'That\'s huge. What is the pricing for 15,000 monthly active subscribers?',
-              timestamp: new Date(now.getTime() - 15 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }
-          );
-        } else if (c.id.includes('84920194829')) { // Elena Rostova
-          history.push(
-            {
-              id: 'er-1',
-              contactId: c.id,
-              sender: 'customer',
-              text: 'Hello, our team is testing WhatsApp Business Cloud API with Chatmize. Where do we add our Meta Business Verification ID?',
-              timestamp: new Date(now.getTime() - 8 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            },
-            {
-              id: 'er-2',
-              contactId: c.id,
-              sender: 'bot',
-              senderName: 'Chatmize AI Agent',
-              text: 'Greetings Elena! You can enter your WhatsApp WABA ID directly in Settings > Channels > WhatsApp Cloud API. I\'ve also flagged this for our enterprise operations team.',
-              timestamp: new Date(now.getTime() - 7.5 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              deliveryStatus: 'read'
-            }
-          );
-        } else {
-          history.push(
-            {
-              id: `${c.id}-1`,
-              contactId: c.id,
-              sender: 'customer',
-              text: `Hello! I would like to learn more about Chatmize automations for ${c.company || 'our brand'}.`,
-              timestamp: new Date(now.getTime() - 2 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            },
-            {
-              id: `${c.id}-2`,
-              contactId: c.id,
-              sender: 'bot',
-              senderName: 'Chatmize AI Agent',
-              text: `Welcome ${c.name}! We're thrilled to connect with you. How can our bot and automation platform assist your workflow today?`,
-              timestamp: new Date(now.getTime() - 1.8 * 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              deliveryStatus: 'read'
-            }
-          );
-        }
-
-        initialMap[c.id] = history;
-      });
-
-      return initialMap;
-    });
-
-    // Initialize sample Follow-Up Rules
-    setFollowUpRulesMap(prev => {
-      if (Object.keys(prev).length > 0) return prev;
-
-      const initialRules: Record<string, FollowUpRule[]> = {};
-      const now = new Date();
-
-      contacts.forEach((c, idx) => {
-        if (idx === 0) { // Sarah Jenkins
-          initialRules[c.id] = [
-            {
-              id: 'rule-sj-1',
-              contactId: c.id,
-              title: '24h Window Nudge: Send VIP Code',
-              triggerType: 'scheduled',
-              delayDescription: 'In 3 hours (Before 24-hr window expires)',
-              targetAction: 'send_message',
-              contentSnippet: 'Hey Sarah! Here is the VIP30 code for 30% off your agency tier.',
-              status: 'active',
-              scheduledFor: new Date(now.getTime() + 3 * 3600 * 1000).toISOString(),
-              createdAt: new Date().toISOString()
-            }
-          ];
-        } else if (idx === 1) { // Marcus Reed
-          initialRules[c.id] = [
-            {
-              id: 'rule-mr-1',
-              contactId: c.id,
-              title: 'Tomorrow 9AM: Sales Demo Call Follow-Up',
-              triggerType: 'scheduled',
-              delayDescription: 'Tomorrow at 9:00 AM',
-              targetAction: 'notify_agent',
-              contentSnippet: 'Marcus asked for pricing on 15k active subscribers. Send customized agency quotation.',
-              status: 'active',
-              scheduledFor: new Date(now.getTime() + 14 * 3600 * 1000).toISOString(),
-              createdAt: new Date().toISOString()
-            }
-          ];
-        } else {
-          initialRules[c.id] = [
-            {
-              id: `rule-${c.id}-default`,
-              contactId: c.id,
-              title: '2-Hour Silence Check-in',
-              triggerType: 'inactivity',
-              delayDescription: '2 hours after last customer response',
-              targetAction: 'send_message',
-              contentSnippet: 'Checking in to see if you have any questions on setting up your automations.',
-              status: 'active',
-              createdAt: new Date().toISOString()
-            }
-          ];
-        }
-      });
-
-      return initialRules;
-    });
-  }, [contacts]);
+  // No demo seed messages: every thread is real data from chatmize-prod.
 
   // Helper to calculate Meta 24-hr messaging window
   const getMessagingWindowStatus = (contact: ContactRecord) => {
@@ -661,7 +558,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
   // Filtered contacts list
   const filteredContacts = useMemo(() => {
-    return contacts.filter(c => {
+    return allContacts.filter(c => {
       // Search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -735,25 +632,34 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     setSelectedMetaTag('');
 
     try {
-      // Call backend to send via the real channel API
-      const functions = getFunctions(getApp(), 'us-west2');
-      const sendFn = httpsCallable(functions, 'sendChannelMessage');
-
       // Map UI channel to backend channel
       const channelMap: Record<string, string> = {
         'instagram': 'instagram',
         'messenger': 'messenger',
         'whatsapp': 'whatsapp',
         'facebook': 'messenger',
+        'web': 'web',
       };
       const backendChannel = channelMap[activeContact.channel?.toLowerCase()] || 'instagram';
 
-      await sendFn({
-        workspaceId,
-        channel: backendChannel,
-        recipientId: activeContact.senderId || activeContact.id,
-        text: textToSend,
-      });
+      // Webchat channel: no Meta API — agent replies are written straight to
+      // the workspace conversation. The visitor's live widget is listening on
+      // this exact path, so the message appears in their chat instantly.
+      // Meta channels go through the real channel API first (below).
+      const isWeb = activeContact.channel === 'web';
+
+      if (!isWeb) {
+        // Call backend to send via the real channel API
+        const functions = getFunctions(getApp(), 'us-west2');
+        const sendFn = httpsCallable(functions, 'sendChannelMessage');
+
+        await sendFn({
+          workspaceId,
+          channel: backendChannel,
+          recipientId: activeContact.senderId || activeContact.id,
+          text: textToSend,
+        });
+      }
 
       // Mark as delivered
       setConversationsMap(prev => ({
@@ -772,6 +678,8 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       await setDoc(msgRef, {
         text: textToSend,
         direction: 'outbound',
+        sender: 'agent',
+        senderName: 'Live Agent',
         channel: backendChannel,
         senderId: activeContact.senderId,
         timestampMs: Date.now(),
@@ -1103,17 +1011,18 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     setNewVarVal('');
   };
 
-  // Channel badge helper
-  const renderChannelIcon = (channel: string) => {
+  // Channel badge helper — real branded icons (Messenger / Instagram /
+  // WhatsApp / ChatMize webchat), not generic lucide glyphs.
+  const renderChannelIcon = (channel: string, className = 'w-3.5 h-3.5') => {
     switch (channel) {
       case 'messenger':
-        return <MessageSquare className="w-3.5 h-3.5 text-blue-400" />;
+        return <ChannelBrandIcon channel="messenger" className={className} />;
       case 'instagram':
-        return <Instagram className="w-3.5 h-3.5 text-pink-400" />;
+        return <ChannelBrandIcon channel="instagram" className={className} />;
       case 'whatsapp':
-        return <Smartphone className="w-3.5 h-3.5 text-emerald-400" />;
+        return <ChannelBrandIcon channel="whatsapp" className={className} />;
       default:
-        return <Globe className="w-3.5 h-3.5 text-cyan-400" />;
+        return <ChannelBrandIcon channel="webchat" className={className} />;
     }
   };
 
@@ -1144,7 +1053,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
                 Omnichannel Connected
               </span>
               <span className="hidden md:inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono bg-white/5 text-slate-400 border border-white/10">
-                {contacts.length} Contacts
+                {allContacts.length} Conversations
               </span>
             </div>
           </div>
@@ -1218,10 +1127,10 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
             <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none text-[11px]">
               {[
                 { id: 'all', label: 'All', icon: null },
-                { id: 'messenger', label: 'Messenger', icon: <MessageSquare className="w-3 h-3 text-blue-400" /> },
-                { id: 'instagram', label: 'Instagram', icon: <Instagram className="w-3 h-3 text-pink-400" /> },
-                { id: 'whatsapp', label: 'WhatsApp', icon: <Smartphone className="w-3 h-3 text-emerald-400" /> },
-                { id: 'web', label: 'Web', icon: <Globe className="w-3 h-3 text-cyan-400" /> }
+                { id: 'messenger', label: 'Messenger', icon: <ChannelBrandIcon channel="messenger" className="w-3 h-3" /> },
+                { id: 'instagram', label: 'Instagram', icon: <ChannelBrandIcon channel="instagram" className="w-3 h-3" /> },
+                { id: 'whatsapp', label: 'WhatsApp', icon: <ChannelBrandIcon channel="whatsapp" className="w-3 h-3" /> },
+                { id: 'web', label: 'Web', icon: <ChannelBrandIcon channel="webchat" className="w-3 h-3" /> }
               ].map(tab => (
                 <button
                   key={tab.id}
