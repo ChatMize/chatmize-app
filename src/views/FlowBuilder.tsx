@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight, 
   ChevronUp,
+  DollarSign,
   Clock, 
   Copy, 
   ExternalLink, 
@@ -5560,6 +5561,49 @@ function NodeEditor({
               >
                 <Plus className="w-3.5 h-3.5" /> Add
               </button>
+            </div>
+
+            {/* Log Revenue action: tags a booking/sale with a dollar value for money-track badges */}
+            <div className="mb-3 p-3 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/20">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5 mb-2">
+                <DollarSign className="w-3 h-3" />
+                <span>Log Revenue</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Amount ($)"
+                  id={`rev-amount-${node.id}`}
+                  className="w-28 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors"
+                />
+                <input
+                  type="text"
+                  placeholder="Note (optional)"
+                  id={`rev-note-${node.id}`}
+                  maxLength={120}
+                  className="flex-1 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const amountEl = document.getElementById(`rev-amount-${node.id}`) as HTMLInputElement | null;
+                    const noteEl = document.getElementById(`rev-note-${node.id}`) as HTMLInputElement | null;
+                    const amount = parseFloat((amountEl?.value || '').replace(/[^0-9.]/g, ''));
+                    if (!Number.isFinite(amount) || amount <= 0) return;
+                    const note = (noteEl?.value || '').trim();
+                    const tag = note ? `LogRevenue: ${amount.toFixed(2)} | ${note}` : `LogRevenue: ${amount.toFixed(2)}`;
+                    const currentTags = node.actionTags || [];
+                    onAutoUpdate({ actionTags: [...currentTags, tag] });
+                    if (amountEl) amountEl.value = '';
+                    if (noteEl) noteEl.value = '';
+                  }}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1.5">Adds up in your Rewards tab and counts toward money badges.</p>
             </div>
 
             {/* SMS action: sent via the workspace's Twilio number; requires opt-in */}

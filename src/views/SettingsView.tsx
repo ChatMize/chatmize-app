@@ -1,5 +1,6 @@
 import { 
   ArrowLeft,
+  Award,
   BookOpen, 
   Check, 
   Copy, 
@@ -27,6 +28,7 @@ import {
   X, 
   Zap
 } from 'lucide-react';
+import { RewardsTab } from '../components/RewardsTab';
 import React, { useState, useEffect } from 'react';
 import { KNOWLEDGE_BASE_GUIDES, IntegrationGuide } from '../data/integrationGuides';
 import { 
@@ -141,13 +143,13 @@ export function SettingsView({
   workspace,
   onUpdateWorkspace,
 }: { 
-  initialTab?: 'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan';
+  initialTab?: 'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan' | 'rewards';
   initialDocId?: string;
   onNavigateToFlows?: () => void;
   workspace?: WorkspaceSilo;
   onUpdateWorkspace?: (ws: WorkspaceSilo) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan' | 'rewards'>(initialTab);
 
   useEffect(() => {
     if (initialTab) {
@@ -470,6 +472,17 @@ export function SettingsView({
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>Plan</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('rewards')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+              activeTab === 'rewards'
+                ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Award className="w-3.5 h-3.5" />
+            <span>Rewards</span>
           </button>
         </div>
       </div>
@@ -1302,6 +1315,11 @@ export function SettingsView({
         <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6">
           <PlanTabContent workspace={workspace} onUpdateWorkspace={onUpdateWorkspace} />
         </div>
+      )}
+
+      {/* Tab 7: Rewards (gamification: badges, progress, referrals, revenue) */}
+      {activeTab === 'rewards' && (
+        <RewardsTab workspace={workspace} />
       )}
     </div>
   );
