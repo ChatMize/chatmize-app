@@ -61,8 +61,18 @@ is not optional:
 ## What Karl owns (console steps)
 
 1. Create the scoped IAM user and hand over the key via the Secure Vault.
-2. Pick the Phase 1 sending domain (suggestion: mail.chatmize.com) and add
-   the DKIM records.
+2. ~~Pick the Phase 1 sending domain (suggestion: mail.chatmize.com) and add
+   the DKIM records.~~ Done 2026-09-18: Karl chose chatmize.com. Domain
+   identity created in SES us-west-2; DKIM CNAME records below must be added
+   in Cloudflare (DNS-only, NOT proxied):
+
+   | Name | Target |
+   | ---- | ------ |
+   | de2bg4csa5sjyzivmpbi6t2735jgz7zf._domainkey.chatmize.com | de2bg4csa5sjyzivmpbi6t2735jgz7zf.dkim.amazonses.com |
+   | gy4m5gzjuo42gfiiti4sxuqcuj3uyata._domainkey.chatmize.com | gy4m5gzjuo42gfiiti4sxuqcuj3uyata.dkim.amazonses.com |
+   | x6ltzpmn4or3xd7oohsx7pxgt45fnp3t._domainkey.chatmize.com | x6ltzpmn4or3xd7oohsx7pxgt45fnp3t.dkim.amazonses.com |
+
+   SES will mark the domain verified once DNS propagates (usually minutes).
 
 ## Not building yet
 
