@@ -3,15 +3,17 @@
  *
  * Per workspace data lives at workspaces/{wsId}/kb_articles/{articleId}.
  * Drafts are written straight from the client (workspace member rules cover
- * nested docs); publish, unpublish, and feedback counting run through
- * Cloud Functions so revisions and counters stay consistent. Step images go
- * to Cloud Storage at workspaces/{wsId}/kb_media/{articleId}/ and are
- * compressed in the browser before upload. Docs store the storage path, never
- * a public URL, so media can be revoked or reprocessed later.
+ * nested docs). Publish, unpublish, and feedback counting run as client side
+ * Firestore transactions (deploy 4 note: the Cloud Functions API create path
+ * is blocked by the egress proxy, so the three KB callables ship as
+ * transactions instead; same validation, same revision snapshots, same
+ * counter logic). Step images go to Cloud Storage at
+ * workspaces/{wsId}/kb_media/{articleId}/ and are compressed in the browser
+ * before upload. Docs store the storage path, never a public URL, so media
+ * can be revoked or reprocessed later.
  */
 
-import { getApp } from 'firebase/app';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getAuth } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
   collection,
@@ -24,6 +26,8 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  runTransaction,
+  increment,
 } from 'firebase/firestore';
 import { db, storage } from './firebase';
 
@@ -60,10 +64,12 @@ export interface KbArticle {
 
 export const KB_CATEGORIES = ['Start here', 'Channels', 'Build', 'Grow', 'Reference'];
 
-const functions = getFunctions(getApp(), 'us-west2');
-
 function articlesCol(workspaceId: string) {
   return collection(db, 'workspaces', workspaceId, 'kb_articles');
+}
+
+function revisionsCol(workspaceId: string) {
+  return collection(db, 'workspaces', workspaceId, 'kb_revisions');
 }
 
 export function kbDocToArticle(id: string, data: Record<string, unknown>): KbArticle {
@@ -229,22 +235,63 @@ export async function kbImageUrl(path: string): Promise<string> {
   return getDownloadURL(ref(storage, path));
 }
 
+/** Flag articles with real traffic but poor helpful ratings for a rewrite. */
+function computeNeedsReview(viewCount: number, helpfulYes: number, helpfulNo: number): boolean {
+  const votes = helpfulYes + helpfulNo;
+  if (viewCount < 50 || votes < 5) return false;
+  return helpfulYes / votes < 0.4;
+}
+
 export async function publishKbArticleFn(
   workspaceId: string,
   articleId: string,
   note?: string,
 ): Promise<{ revisionId: string }> {
-  const fn = httpsCallable<{ workspaceId: string; articleId: string; note?: string }, { revisionId: string }>(
-    functions,
-    'publishKbArticle',
-  );
-  const res = await fn({ workspaceId, articleId, note });
-  return res.data;
+  const uid = getAuth().currentUser?.uid;
+  if (!uid) throw new Error('Sign in required.');
+  const articleRef = doc(articlesCol(workspaceId), articleId);
+  const snap = await getDoc(articleRef);
+  if (!snap.exists()) throw new Error('That article does not exist.');
+  const data = snap.data() as Record<string, unknown>;
+  const title = typeof data.title === 'string' ? data.title.trim() : '';
+  const steps = Array.isArray(data.steps) ? data.steps : [];
+  if (!title) throw new Error('Give the article a title before publishing.');
+  if (steps.length === 0) throw new Error('Add at least one step before publishing.');
+
+  const viewCount = typeof data.viewCount === 'number' ? data.viewCount : 0;
+  const helpfulYes = typeof data.helpfulYes === 'number' ? data.helpfulYes : 0;
+  const helpfulNo = typeof data.helpfulNo === 'number' ? data.helpfulNo : 0;
+  const revisionRef = doc(revisionsCol(workspaceId));
+
+  await runTransaction(db, async (tx) => {
+    tx.set(revisionRef, {
+      articleId,
+      snapshot: { ...data, id: articleId },
+      publishedBy: uid,
+      publishedAt: serverTimestamp(),
+      note: typeof note === 'string' ? note.slice(0, 500) : '',
+    });
+    tx.update(articleRef, {
+      status: 'published',
+      publishedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      needsReview: computeNeedsReview(viewCount, helpfulYes, helpfulNo),
+      lastReviewedAt: serverTimestamp(),
+    });
+  });
+  return { revisionId: revisionRef.id };
 }
 
 export async function unpublishKbArticleFn(workspaceId: string, articleId: string): Promise<void> {
-  const fn = httpsCallable<{ workspaceId: string; articleId: string }, unknown>(functions, 'unpublishKbArticle');
-  await fn({ workspaceId, articleId });
+  const uid = getAuth().currentUser?.uid;
+  if (!uid) throw new Error('Sign in required.');
+  const articleRef = doc(articlesCol(workspaceId), articleId);
+  const snap = await getDoc(articleRef);
+  if (!snap.exists()) throw new Error('That article does not exist.');
+  await updateDoc(articleRef, {
+    status: 'draft',
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function kbFeedbackFn(
@@ -252,9 +299,22 @@ export async function kbFeedbackFn(
   articleId: string,
   kind: 'view' | 'yes' | 'no',
 ): Promise<void> {
-  const fn = httpsCallable<{ workspaceId: string; articleId: string; kind: string }, unknown>(
-    functions,
-    'kbFeedback',
-  );
-  await fn({ workspaceId, articleId, kind });
+  if (kind !== 'view' && kind !== 'yes' && kind !== 'no') {
+    throw new Error('Feedback must be view, yes, or no.');
+  }
+  const articleRef = doc(articlesCol(workspaceId), articleId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(articleRef);
+    if (!snap.exists()) throw new Error('That article does not exist.');
+    const data = snap.data() as Record<string, unknown>;
+    const updates: Record<string, unknown> = {};
+    if (kind === 'view') updates.viewCount = increment(1);
+    if (kind === 'yes') updates.helpfulYes = increment(1);
+    if (kind === 'no') updates.helpfulNo = increment(1);
+    const viewCount = (typeof data.viewCount === 'number' ? data.viewCount : 0) + (kind === 'view' ? 1 : 0);
+    const helpfulYes = (typeof data.helpfulYes === 'number' ? data.helpfulYes : 0) + (kind === 'yes' ? 1 : 0);
+    const helpfulNo = (typeof data.helpfulNo === 'number' ? data.helpfulNo : 0) + (kind === 'no' ? 1 : 0);
+    updates.needsReview = computeNeedsReview(viewCount, helpfulYes, helpfulNo);
+    tx.update(articleRef, updates);
+  });
 }
