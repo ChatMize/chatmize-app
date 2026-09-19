@@ -303,10 +303,12 @@ function whatsAppPhoneNumberId(entry: Record<string, unknown>): string | null {
 /**
  * Throw unless the caller may act on the workspace (member or Super Admin).
  *
- * First-use provisioning: no code path ever created member docs, so the
- * first signed-in caller to touch an existing workspace is granted
- * membership automatically (the very first member becomes owner).
- * A workspace id with no workspace doc is still rejected.
+ * First-use provisioning: the app's workspaces live in the client's
+ * localStorage until the backend first sees them, so the workspace doc itself
+ * may not exist yet. The first signed-in caller to touch a workspace id
+ * provisions it (creates the workspace doc and grants themselves owner).
+ * A caller touching an existing workspace that already has members is added
+ * as a member (the very first member becomes owner).
  */
 async function requireWorkspaceAccess(
   uid: string,
@@ -314,21 +316,22 @@ async function requireWorkspaceAccess(
   token: Record<string, unknown> | undefined,
 ): Promise<void> {
   if (token?.superadmin === true) return;
-  const membersCol = db()
-    .collection("workspaces")
-    .doc(workspaceId)
-    .collection("members");
+  const wsRef = db().collection("workspaces").doc(workspaceId);
+  const membersCol = wsRef.collection("members");
   const member = await membersCol.doc(uid).get();
   if (member.exists) return;
-  const ws = await db().collection("workspaces").doc(workspaceId).get();
+  const ws = await wsRef.get();
+  const now = new Date().toISOString();
   if (!ws.exists) {
-    throw new HttpsError("permission-denied", "Not a member of this workspace.");
+    await wsRef.set({ provisioned: true, createdBy: uid, createdAt: now });
+    await membersCol.doc(uid).set({ uid, role: "owner", createdAt: now });
+    return;
   }
   const first = await membersCol.limit(1).get();
   await membersCol.doc(uid).set({
     uid,
     role: first.empty ? "owner" : "member",
-    createdAt: new Date().toISOString(),
+    createdAt: now,
   });
 }
 
