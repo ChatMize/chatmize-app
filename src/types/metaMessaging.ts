@@ -48,7 +48,13 @@ export type TriggerType =
   | 'shopify_order_delivered'
   | 'shopify_product_purchased'
   | 'lead_form'
-  | 'survey_completed';
+  | 'survey_completed'
+  // Bookings (native ChatMize bookings app)
+  | 'booking_created'
+  | 'booking_reminder_due'
+  | 'booking_completed'
+  | 'booking_no_show'
+  | 'booking_cancelled';
 
 export interface FlowTrigger {
   id: string;
@@ -615,6 +621,89 @@ export const TRIGGER_CATALOG: TriggerTemplate[] = [
     defaultConfig: {
       title: 'Survey Completed',
       keywords: ['SURVEY_COMPLETED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+
+  // Bookings (native ChatMize bookings app)
+  {
+    type: 'booking_created',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Booking Created',
+    description: 'Trigger flow when someone books through your ChatMize booking page, embed, or a BotMaps booking action.',
+    badge: 'Bookings',
+    icon: 'Calendar',
+    popular: true,
+    defaultConfig: {
+      title: 'New Booking',
+      description: 'Fires when a booking is created',
+      keywords: ['BOOKING_CREATED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'booking_reminder_due',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Booking Reminder Due',
+    description: 'Trigger flow when a booking reminder goes out. Add your own follow up steps around the automatic reminder.',
+    badge: 'Bookings',
+    icon: 'BellRing',
+    defaultConfig: {
+      title: 'Booking Reminder',
+      description: 'Fires when a reminder is sent for a booking',
+      keywords: ['BOOKING_REMINDER'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'booking_completed',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Booking Completed',
+    description: 'Trigger flow when a booking is marked completed. Great for review requests and upsells.',
+    badge: 'Bookings',
+    icon: 'CheckCircle2',
+    defaultConfig: {
+      title: 'Booking Completed',
+      description: 'Fires when a booking is marked completed',
+      keywords: ['BOOKING_COMPLETED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'booking_no_show',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Booking Missed',
+    description: 'Trigger flow when a booking is marked as missed. Win them back automatically.',
+    badge: 'Bookings',
+    icon: 'CalendarX',
+    defaultConfig: {
+      title: 'Booking Missed',
+      description: 'Fires when a booking is marked as missed',
+      keywords: ['BOOKING_NO_SHOW'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'booking_cancelled',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Booking Cancelled',
+    description: 'Trigger flow when a booking is cancelled. Offer a new time automatically.',
+    badge: 'Bookings',
+    icon: 'XCircle',
+    defaultConfig: {
+      title: 'Booking Cancelled',
+      description: 'Fires when a booking is cancelled',
+      keywords: ['BOOKING_CANCELLED'],
       matchRule: 'contains',
       keywordMode: 'keywords'
     }

@@ -207,7 +207,7 @@ async function logEmailSend(entry: {
 
 export interface NotifyOptions {
   workspaceId: string;
-  type: "reconnect" | "handoff";
+  type: "reconnect" | "handoff" | "booking_reminder" | "booking_confirmation";
   to: string;
   subject: string;
   html: string;

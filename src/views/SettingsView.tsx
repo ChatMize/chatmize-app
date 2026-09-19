@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   Award,
   BookOpen, 
+  Calendar,
   Check, 
   Copy, 
   ExternalLink, 
@@ -29,6 +30,7 @@ import {
   Zap
 } from 'lucide-react';
 import { RewardsTab } from '../components/RewardsTab';
+import { BookingSettingsCard } from '../components/bookings/BookingSettingsCard';
 import React, { useState, useEffect } from 'react';
 import { KbHelpCenter } from '../components/kb/KbHelpCenter';
 import { GoogleSheetsConnect } from '../components/integrations/GoogleSheetsConnect';
@@ -152,7 +154,7 @@ export function SettingsView({
   workspace?: WorkspaceSilo;
   onUpdateWorkspace?: (ws: WorkspaceSilo) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan' | 'rewards'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan' | 'rewards' | 'bookings'>(initialTab);
 
   useEffect(() => {
     if (initialTab) {
@@ -500,6 +502,17 @@ export function SettingsView({
           >
             <Award className="w-3.5 h-3.5" />
             <span>Rewards</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('bookings')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+              activeTab === 'bookings'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-blue-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Bookings</span>
           </button>
         </div>
       </div>
@@ -1041,6 +1054,11 @@ export function SettingsView({
       {/* Tab 7: Rewards (gamification: badges, progress, referrals, revenue) */}
       {activeTab === 'rewards' && (
         <RewardsTab workspace={workspace} />
+      )}
+
+      {/* Tab 8: Bookings (native bookings app: availability, reminders, booking list) */}
+      {activeTab === 'bookings' && workspace?.id && (
+        <BookingSettingsCard workspaceId={workspace.id} />
       )}
     </div>
   );

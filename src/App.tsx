@@ -58,6 +58,9 @@ import { ContestsView } from './components/growth/ContestsView';
 import { KnowledgeBaseView } from './views/KnowledgeBaseView';
 import { ContestEntryPage } from './components/growth/ContestEntryPage';
 import { SurveyTakePage } from './components/growth/SurveyTakePage';
+import { BookingWidgetPage } from './components/bookings/BookingWidgetPage';
+import { ManageBookingPage } from './components/bookings/ManageBookingPage';
+import { ManageLinkAuth, parseManageLinkAuth } from './lib/bookings';
 import { NurtureToolType } from './types/nurture';
 import { OverlayType } from './types/growthTools';
 import { RecurringNotificationBroadcastHub } from './components/RecurringNotificationBroadcastHub';
@@ -606,6 +609,26 @@ export default function App() {
     }
   });
 
+  // Public booking widget: ?book=<workspaceId> renders without auth.
+  // ?booking=<workspaceId>.<bookingId>&sig=...&exp=... renders the manage
+  // (reschedule/cancel) page with a server-signed link.
+  const [publicBook] = useState<{ workspaceId: string; embed: boolean } | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ws = params.get('book');
+      return ws ? { workspaceId: ws, embed: params.get('embed') === '1' } : null;
+    } catch {
+      return null;
+    }
+  });
+  const [publicManage] = useState<ManageLinkAuth | null>(() => {
+    try {
+      return parseManageLinkAuth(new URLSearchParams(window.location.search));
+    } catch {
+      return null;
+    }
+  });
+
   // Onboarding gate: a signed-in user whose workspace hasn't finished onboarding
   // goes through the wizard (connect accounts -> choose DIY/DFU route -> tier).
   if (!authLoading && currentUser && activeWorkspace && !activeWorkspace.onboardingComplete) {
@@ -625,6 +648,14 @@ export default function App() {
 
   if (publicSurveyId) {
     return <SurveyTakePage surveyId={publicSurveyId} />;
+  }
+
+  if (publicBook) {
+    return <BookingWidgetPage workspaceId={publicBook.workspaceId} embed={publicBook.embed} />;
+  }
+
+  if (publicManage) {
+    return <ManageBookingPage auth={publicManage} />;
   }
 
   const showGuide = Boolean(

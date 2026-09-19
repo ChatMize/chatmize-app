@@ -65,7 +65,8 @@ import {
   BookOpen,
   Hash,
   ShoppingBag,
-  HelpCircle
+  HelpCircle,
+  Calendar,
 } from 'lucide-react';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { getApp } from 'firebase/app';
@@ -192,6 +193,7 @@ export type MessageComponentType =
   | 'contact_capture'
   | 'question'
   | 'bigmarker_register'
+  | 'booking'
   | 'card' 
   | 'gallery' 
   | 'typing'
@@ -235,6 +237,11 @@ export interface MessageComponent {
   // Attendance syncs back onto the contact record for flow branching.
   bigmarkerConferenceId?: string;
   bigmarkerConferenceTitle?: string;
+  // Booking block: offer the workspace booking page as a button inside the
+  // flow. The button URL resolves to the workspace booking page at send
+  // time; booking data lands on the contact automatically.
+  bookingIntroText?: string;
+  bookingButtonText?: string;
   cardTitle?: string;
   cardSubtitle?: string;
   cardImageUrl?: string;
@@ -3149,6 +3156,31 @@ const NodeCard = React.memo(function NodeCard({
                   </div>
                 );
               }
+              if (comp.type === 'booking') {
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-emerald-500/30 bg-slate-950/60 relative p-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="p-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30">
+                        <Calendar className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <span className="text-[11px] font-semibold text-emerald-200">
+                        Booking block
+                      </span>
+                    </div>
+                    {comp.bookingIntroText && (
+                      <div className="text-[11px] text-slate-300 truncate mb-1.5">
+                        {comp.bookingIntroText}
+                      </div>
+                    )}
+                    <div className="py-1.5 px-3 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 rounded-lg text-center text-[11px] font-bold">
+                      {comp.bookingButtonText || 'Book now'}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1.5">
+                      Opens your booking page. Booking data lands on the contact.
+                    </div>
+                  </div>
+                );
+              }
 
               if (comp.type === 'card') {
                 return (
@@ -3809,6 +3841,13 @@ function NodeEditor({
         type: 'bigmarker_register',
         bigmarkerConferenceId: '',
         bigmarkerConferenceTitle: '',
+      };
+    } else if (type === 'booking') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'booking',
+        bookingIntroText: 'Pick a time that works for you:',
+        bookingButtonText: 'Book now',
       };
     } else if (type === 'card') {
       newComp = {
@@ -5782,6 +5821,34 @@ function NodeEditor({
                         </div>
                       )}
 
+                      {comp.type === 'booking' && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Intro text</label>
+                            <input
+                              type="text"
+                              value={comp.bookingIntroText || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { bookingIntroText: e.target.value })}
+                              placeholder="Pick a time that works for you:"
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Button text</label>
+                            <input
+                              type="text"
+                              value={comp.bookingButtonText || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { bookingButtonText: e.target.value })}
+                              placeholder="Book now"
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-snug">
+                            The button opens this workspace's booking page from Settings &gt; Bookings. When the contact books, the booking date, time, and status are saved on their contact automatically.
+                          </p>
+                        </div>
+                      )}
+
                       {/* CARD COMPONENT EDITOR */}
                       {comp.type === 'card' && (
                         <div className="space-y-3 pt-1">
@@ -6886,6 +6953,15 @@ function NodeEditor({
               <VideoIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-400 group-hover:scale-110 transition-transform mb-0.5" />
               <span className="text-[9px] sm:text-[10px] font-bold text-sky-300">Webinar</span>
             </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('booking')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-500/15 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm shadow-emerald-500/10"
+              title="Add booking block (offer your booking page as a button)"
+            >
+              <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-bold text-emerald-300">Book</span>
+            </button>
           </div>
 
           {/* Meta Post-24h Compliance Opt-in Components */}
@@ -7430,6 +7506,26 @@ function PhoneSimulator({
             setActiveCapture({ compId: comp.id, fields, mode });
             setCaptureInput('');
             setCaptureError(null);
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
+        } else if (comp.type === 'booking') {
+          queue.push(() => {
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'text',
+                text: `${replaceVars(comp.bookingIntroText || 'Pick a time that works for you:')}\n\n[ ${replaceVars(comp.bookingButtonText || 'Book now')} ] (opens your booking page)`,
+              }
+            ]);
+            // Booking blocks don't block the flow in the simulator: the
+            // contact books on the public page and booking_created triggers
+            // continue the conversation. Variables are not set here because
+            // no real booking exists in the simulator.
             if (stepQueueRef.current.length > 0) {
               const next = stepQueueRef.current.shift();
               next?.();
