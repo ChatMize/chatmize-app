@@ -479,7 +479,7 @@ export const SuperAdminKanban: React.FC = () => {
                   </span>
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                  Plan &amp; track core ChatMize systems: 1 FB Page = 1 IG = 1 WhatsApp asset binding, Agency Flat Unlimited vs. Tiered billing, and White-label client portals.
+                  Plan &amp; track core ChatMize systems: 1 FB Page = 1 IG = 1 WhatsApp asset binding, Agency Flat Unlimited vs. Tiered billing, and White label client portals.
                 </p>
               </div>
             </div>
@@ -581,7 +581,7 @@ export const SuperAdminKanban: React.FC = () => {
                 <option value="Workspaces & Accounts">Workspaces &amp; Accounts</option>
                 <option value="Billing & Pricing">Billing &amp; Pricing</option>
                 <option value="Channels & Meta">Channels &amp; Meta</option>
-                <option value="White-label & Agency">White-label &amp; Agency</option>
+                <option value="White-label & Agency">White label &amp; Agency</option>
                 <option value="Nurture Tools">Nurture Tools</option>
               </select>
             </div>
@@ -1232,7 +1232,7 @@ export const SuperAdminKanban: React.FC = () => {
                     <option value="Workspaces & Accounts">Workspaces &amp; Accounts</option>
                     <option value="Billing & Pricing">Billing &amp; Pricing</option>
                     <option value="Channels & Meta">Channels &amp; Meta</option>
-                    <option value="White-label & Agency">White-label &amp; Agency</option>
+                    <option value="White-label & Agency">White label &amp; Agency</option>
                     <option value="Nurture Tools">Nurture Tools</option>
                   </select>
                 </div>

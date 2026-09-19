@@ -658,8 +658,8 @@ export const INITIAL_KANBAN_CARDS: KanbanCard[] = [
   },
   {
     id: 'card-4',
-    title: 'White-Label Portal & Custom CNAME Subdomains',
-    description: 'Allow agencies to provide their clients with white-label access to their specific workspace silo with custom domain, custom logo, hidden ChatMize watermarks, and restricted permissions.',
+    title: 'White Label Portal & Custom CNAME Subdomains',
+    description: 'Allow agencies to provide their clients with white label access to their specific workspace silo with custom domain, custom logo, hidden ChatMize watermarks, and restricted permissions.',
     columnId: 'spec',
     category: 'White-label & Agency',
     priority: 'high',

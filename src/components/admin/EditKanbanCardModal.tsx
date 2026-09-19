@@ -233,7 +233,7 @@ export const EditKanbanCardModal: React.FC<EditKanbanCardModalProps> = ({
                 <option value="Workspaces & Accounts">Workspaces &amp; Accounts</option>
                 <option value="Billing & Pricing">Billing &amp; Pricing</option>
                 <option value="Channels & Meta">Channels &amp; Meta</option>
-                <option value="White-label & Agency">White-label &amp; Agency</option>
+                <option value="White-label & Agency">White label &amp; Agency</option>
                 <option value="Nurture Tools">Nurture Tools</option>
               </select>
             </div>

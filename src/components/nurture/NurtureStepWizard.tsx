@@ -995,10 +995,10 @@ export const NurtureStepWizard: React.FC<NurtureStepWizardProps> = ({
                 </div>
               </div>
 
-              {/* White-Label Toggle */}
+              {/* White Label Toggle */}
               <label className="p-3 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-between cursor-pointer text-xs">
                 <div>
-                  <span className="font-semibold text-white block">White-Label / Remove Branding</span>
+                  <span className="font-semibold text-white block">White Label / Remove Branding</span>
                   <span className="text-[11px] text-slate-500 block">Hide "Powered by ChatMize" badge for client websites</span>
                 </div>
                 <input
@@ -1041,7 +1041,7 @@ export const NurtureStepWizard: React.FC<NurtureStepWizardProps> = ({
                   <div><span className="text-slate-500">Connected Bot:</span> <span className="font-semibold text-purple-300">{availableBots.find(b => b.id === form.connectedBotId)?.name || form.connectedBotId}</span></div>
                   <div><span className="text-slate-500">Accent:</span> <span className="font-mono" style={{ color: form.brandColor }}>{form.brandColor}</span></div>
                   <div><span className="text-slate-500">Capture:</span> <span className="font-semibold">{form.requireEmailCapture ? 'Email Required' : 'Open'}</span></div>
-                  <div><span className="text-slate-500">White-Label:</span> <span className="font-semibold">{form.removeBranding ? 'Enabled' : 'Standard'}</span></div>
+                  <div><span className="text-slate-500">White Label:</span> <span className="font-semibold">{form.removeBranding ? 'Enabled' : 'Standard'}</span></div>
                 </div>
               </div>
 

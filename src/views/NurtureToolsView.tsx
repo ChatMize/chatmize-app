@@ -2661,7 +2661,7 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                   {[
                     { key: 'exitIntent', label: 'Exit-Intent Triggering', desc: 'Detect cursor leaving window' },
-                    { key: 'removeBranding', label: 'Remove Branding / Watermark', desc: 'White-label embeds for client sites' },
+                    { key: 'removeBranding', label: 'Remove Branding / Watermark', desc: 'White label embeds for client sites' },
                     { key: 'metaPixelEvents', label: 'Meta Pixel Conversion Sync', desc: 'Dispatch Lead/Contact events to Pixel' },
                     { key: 'aiAutonomousAgent', label: 'Autonomous AI Voice Bot', desc: 'Conversational LLM response engine' },
                     { key: 'customCSS', label: 'Custom CSS & Font Overrides', desc: 'Allow custom style injections' },

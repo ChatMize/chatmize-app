@@ -301,7 +301,7 @@ const PRESET_FOLLOW_UP_TEMPLATES = [
     triggerType: 'scheduled' as const,
     delayDescription: 'Tomorrow at 9:00 AM',
     targetAction: 'notify_agent' as const,
-    contentSnippet: 'Follow up regarding agency white-label pricing tier and custom API limits.',
+    contentSnippet: 'Follow up regarding agency white label pricing tier and custom API limits.',
   },
   {
     title: '24-Hour Meta Window Expiry Re-engagement',
