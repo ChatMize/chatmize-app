@@ -20,6 +20,9 @@ import {
   updateContact,
   sendWebhook,
   createBroadcast,
+  sheetsAppendRow,
+  sheetsReadRows,
+  sheetsListTabs,
   type ToolContext,
 } from "./tools";
 
@@ -203,6 +206,63 @@ export function buildMcpServer(key: VerifiedKey): McpServer {
     async (args) => {
       try {
         return textResult(await createBroadcast(ctx, args));
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "sheets_append_row",
+    "Append one row to a tab of the workspace's connected Google Sheet. Values map column header to cell value; cells land under the matching header. The tab needs a header row (row 1).",
+    {
+      tab: z.string().describe("Tab name, e.g. Leads."),
+      values: z.record(z.string(), z.string()).describe("Column header to cell value, e.g. { Name: 'Jo', Email: 'jo@x.com' }."),
+      spreadsheetId: z.string().optional()
+        .describe("Override the workspace's chosen spreadsheet. Omit to use it."),
+    },
+    async (args) => {
+      try {
+        return textResult(await sheetsAppendRow(ctx, args));
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "sheets_read_rows",
+    "Read rows from a tab of the workspace's connected Google Sheet. The first row is treated as headers; rows come back keyed by header.",
+    {
+      tab: z.string().describe("Tab name, e.g. Leads."),
+      matchHeader: z.string().optional()
+        .describe("Only return rows where this column equals matchValue."),
+      matchValue: z.string().optional()
+        .describe("Value to match in matchHeader."),
+      limit: z.number().int().min(1).max(500).optional()
+        .describe("Max rows (default 100)."),
+      spreadsheetId: z.string().optional()
+        .describe("Override the workspace's chosen spreadsheet. Omit to use it."),
+    },
+    async (args) => {
+      try {
+        return textResult(await sheetsReadRows(ctx, args));
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "sheets_list_tabs",
+    "List the tabs of the workspace's connected Google Sheet with their header rows, so you can see where to append or read.",
+    {
+      spreadsheetId: z.string().optional()
+        .describe("Override the workspace's chosen spreadsheet. Omit to use it."),
+    },
+    async (args) => {
+      try {
+        return textResult(await sheetsListTabs(ctx, args));
       } catch (err) {
         return toolError(err);
       }

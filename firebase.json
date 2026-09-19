@@ -57,6 +57,13 @@
           }
         },
         {
+          "source": "/googleOAuthCallback",
+          "function": {
+            "functionId": "googleOAuthCallback",
+            "region": "us-west2"
+          }
+        },
+        {
           "source": "/__overlay/track",
           "function": {
             "functionId": "metaWebhook",
