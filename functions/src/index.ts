@@ -81,6 +81,7 @@ import {
   OverlayTrackRes,
 } from "./overlays";
 import { handleContestAdminAction, handleContestPublicRequest } from "./contest.js";
+import { handleMigrationAction } from "./migration";
 import {
   resolvePersonalizationTags,
   getContactForRecipient,
@@ -1623,6 +1624,12 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     action?: string;
     phoneNumberId?: string;
   };
+  // SegMate migration importer (folded in: proxy blocks new function
+  // creation). Super Admin only, not workspace-scoped — routed before the
+  // workspaceId requirement. Logic lives in ./migration so it can split out.
+  if (typeof action === "string" && action.startsWith("migration")) {
+    return handleMigrationAction(action, (request.data ?? {}) as Record<string, unknown>, uid, request.auth?.token);
+  }
   if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
   await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
   // Contest engine admin actions (folded in: proxy blocks new function
