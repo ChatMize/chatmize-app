@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { RewardsTab } from '../components/RewardsTab';
 import React, { useState, useEffect } from 'react';
-import { KNOWLEDGE_BASE_GUIDES, IntegrationGuide } from '../data/integrationGuides';
+import { KbHelpCenter } from '../components/kb/KbHelpCenter';
 import { 
   IntegrationApp, 
   CHATMIZE_INTEGRATIONS, 
@@ -273,18 +273,9 @@ export function SettingsView({
     }
   }, [savedCredentials]);
 
-  // Knowledge Base State
-  const [selectedDocAppId, setSelectedDocAppId] = useState<string>(initialDocId || 'guide_ig_keyword');
-  const [docCategory, setDocCategory] = useState<string>('all');
-  const [docSearchQuery, setDocSearchQuery] = useState<string>('');
-  const [copiedPayload, setCopiedPayload] = useState<boolean>(false);
-
-  useEffect(() => {
-    if (initialDocId) {
-      setSelectedDocAppId(initialDocId);
-      setActiveTab('docs');
-    }
-  }, [initialDocId]);
+  // Knowledge Base search seed: opening a guide from an integration modal
+  // jumps to the help center with the integration name as the search query.
+  const [kbHelpSearch, setKbHelpSearch] = useState<string>('');
 
   // Copied Key Indicator
   const [copiedKey, setCopiedKey] = useState(false);
@@ -296,9 +287,9 @@ export function SettingsView({
     setTestStatus(null);
   };
 
-  const handleOpenGuideFromModal = (appId: string) => {
+  const handleOpenGuideFromModal = (appName: string) => {
     setActiveModalApp(null);
-    setSelectedDocAppId(appId);
+    setKbHelpSearch(appName);
     setActiveTab('docs');
   };
 
@@ -389,7 +380,6 @@ export function SettingsView({
   });
 
   const connectedCount = integrationsList.filter(i => i.connected).length;
-  const currentGuide = KNOWLEDGE_BASE_GUIDES[selectedDocAppId] || KNOWLEDGE_BASE_GUIDES['guide_ig_keyword'] || KNOWLEDGE_BASE_GUIDES['activecampaign'];
 
   return (
     <div className="flex-1 flex flex-col gap-6 max-w-6xl mx-auto w-full pb-12">
@@ -600,7 +590,7 @@ export function SettingsView({
               </div>
               <h3 className="text-base font-bold text-white">Third-Party Integrations Directory</h3>
               <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                Connect your chatbot flows with email autoresponders, webinar platforms, CRM suites, and checkout tools. Each integration has complete step-by-step setup guides in our built-in Knowledge Base.
+                Connect your chatbot flows with email autoresponders, webinar platforms, CRM suites, and checkout tools. Each integration has complete step by step setup guides in our built-in Knowledge Base.
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -727,360 +717,11 @@ export function SettingsView({
 
       {/* Tab 3: Built-in Knowledge Base & Docs */}
       {activeTab === 'docs' && (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-          {/* Left Column: Guides Navigation & Filtering */}
-          <div className="md:col-span-4 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex flex-col gap-3">
-            <div className="pb-3 border-b border-white/10 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-cyan-400" />
-                  <h3 className="text-sm font-bold text-white">Knowledge Base</h3>
-                </div>
-                <span className="text-[10px] font-mono text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-full font-bold">
-                  {Object.keys(KNOWLEDGE_BASE_GUIDES).length} Guides
-                </span>
-              </div>
-
-              {/* Search Bar */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={docSearchQuery}
-                  onChange={e => setDocSearchQuery(e.target.value)}
-                  placeholder="Search triggers, webhooks, CRMs..."
-                  className="w-full pl-8 pr-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              {/* Category Filter Chips */}
-              <div className="flex flex-wrap gap-1 pt-1">
-                {[
-                  { id: 'all', label: 'All Guides' },
-                  { id: 'triggers', label: '⚡ Triggers (24)' },
-                  { id: 'instagram', label: 'Instagram' },
-                  { id: 'messenger', label: 'Messenger' },
-                  { id: 'whatsapp', label: 'WhatsApp' },
-                  { id: 'growth_tools', label: 'Growth Tools' },
-                  { id: 'webhooks', label: 'Webhooks' },
-                  { id: 'integrations', label: 'CRMs' },
-                ].map(chip => (
-                  <button
-                    key={chip.id}
-                    onClick={() => setDocCategory(chip.id)}
-                    className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                      docCategory === chip.id
-                        ? 'bg-cyan-500 text-slate-950 shadow-sm font-extrabold'
-                        : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/5'
-                    }`}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Guides List */}
-            <div className="space-y-1 max-h-[620px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'none' }}>
-              {Object.values(KNOWLEDGE_BASE_GUIDES)
-                .filter(guide => {
-                  // Category match
-                  let matchesCategory = true;
-                  if (docCategory === 'triggers') {
-                    matchesCategory = guide.section === 'triggers' || guide.category.toLowerCase().includes('trigger') || guide.category.toLowerCase().includes('growth tools');
-                  } else if (docCategory === 'instagram') {
-                    matchesCategory = guide.channel === 'instagram' || guide.category.toLowerCase().includes('instagram');
-                  } else if (docCategory === 'messenger') {
-                    matchesCategory = guide.channel === 'messenger' || guide.category.toLowerCase().includes('messenger');
-                  } else if (docCategory === 'whatsapp') {
-                    matchesCategory = guide.channel === 'whatsapp' || guide.category.toLowerCase().includes('whatsapp');
-                  } else if (docCategory === 'growth_tools') {
-                    matchesCategory = guide.channel === 'web' || guide.category.toLowerCase().includes('growth tools') || guide.category.toLowerCase().includes('web');
-                  } else if (docCategory === 'webhooks') {
-                    matchesCategory = guide.channel === 'integrations' || guide.category.toLowerCase().includes('webhook') || guide.category.toLowerCase().includes('event');
-                  } else if (docCategory === 'integrations') {
-                    matchesCategory = guide.section !== 'triggers' && (guide.category.toLowerCase().includes('crm') || guide.category.toLowerCase().includes('autoresponder'));
-                  }
-
-                  // Search match
-                  const q = docSearchQuery.toLowerCase().trim();
-                  const matchesSearch = !q || 
-                    guide.appName.toLowerCase().includes(q) ||
-                    guide.category.toLowerCase().includes(q) ||
-                    guide.summary.toLowerCase().includes(q) ||
-                    (guide.badge && guide.badge.toLowerCase().includes(q));
-
-                  return matchesCategory && matchesSearch;
-                })
-                .map(guide => {
-                  const isSelected = selectedDocAppId === guide.appId;
-                  const targetApp = integrationsList.find(i => i.id === guide.appId);
-                  const isTrigger = guide.section === 'triggers';
-
-                  // Dynamic icon based on channel or integration
-                  let iconNode = (
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0 ${targetApp?.logoBg || 'bg-slate-800'} ${targetApp?.logoTextColor || 'text-white'}`}>
-                      {targetApp?.initials || guide.appName.substring(0, 2).toUpperCase()}
-                    </div>
-                  );
-
-                  if (guide.channel === 'instagram') {
-                    iconNode = (
-                      <div className="w-7 h-7 rounded-lg bg-pink-500/20 text-pink-400 border border-pink-500/30 flex items-center justify-center flex-shrink-0">
-                        <Instagram className="w-4 h-4" />
-                      </div>
-                    );
-                  } else if (guide.channel === 'messenger') {
-                    iconNode = (
-                      <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center flex-shrink-0">
-                        <MessageCircle className="w-4 h-4" />
-                      </div>
-                    );
-                  } else if (guide.channel === 'whatsapp') {
-                    iconNode = (
-                      <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center flex-shrink-0">
-                        <Smartphone className="w-4 h-4" />
-                      </div>
-                    );
-                  } else if (guide.channel === 'web') {
-                    iconNode = (
-                      <div className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center flex-shrink-0">
-                        <Globe className="w-4 h-4" />
-                      </div>
-                    );
-                  } else if (guide.channel === 'integrations' && isTrigger) {
-                    iconNode = (
-                      <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
-                        <Webhook className="w-4 h-4" />
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <button
-                      key={guide.appId}
-                      onClick={() => setSelectedDocAppId(guide.appId)}
-                      className={`w-full text-left p-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                        isSelected
-                          ? 'bg-gradient-to-r from-cyan-500/20 to-blue-600/20 border border-cyan-500/30 text-white shadow-sm'
-                          : 'hover:bg-white/5 text-slate-300 border border-transparent'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {iconNode}
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold truncate">{guide.appName}</p>
-                          <p className="text-[10px] text-slate-400 truncate">{guide.category}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        {isTrigger ? (
-                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-bold">
-                            Trigger
-                          </span>
-                        ) : targetApp?.connected ? (
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" title="Connected" />
-                        ) : null}
-                      </div>
-                    </button>
-                  );
-                })}
-            </div>
-          </div>
-
-          {/* Right Column: Active Guide Content */}
-          <div className="md:col-span-8 bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6 sm:p-8 space-y-6">
-            {/* Guide Header */}
-            <div className="pb-4 border-b border-white/10 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[10px] font-bold uppercase tracking-wider">
-                    {currentGuide.category}
-                  </span>
-                  {currentGuide.badge && (
-                    <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] font-bold">
-                      {currentGuide.badge}
-                    </span>
-                  )}
-                  <span className="text-xs text-slate-400">Auth: {currentGuide.authMethod}</span>
-                </div>
-                <h2 className="text-xl sm:text-2xl font-bold text-white">
-                  {currentGuide.section === 'triggers' 
-                    ? currentGuide.appName 
-                    : `How to connect ${currentGuide.appName}`}
-                </h2>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 flex-shrink-0 self-start sm:self-auto">
-                {currentGuide.section === 'triggers' ? (
-                  <button
-                    onClick={() => {
-                      if (onNavigateToFlows) {
-                        onNavigateToFlows();
-                      }
-                    }}
-                    className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
-                  >
-                    <Zap className="w-3.5 h-3.5" />
-                    <span>Build in Bot Maps</span>
-                  </button>
-                ) : (
-                  (() => {
-                    const targetApp = integrationsList.find(i => i.id === currentGuide.appId);
-                    return (
-                      <button
-                        onClick={() => {
-                          if (targetApp) handleOpenModal(targetApp);
-                        }}
-                        className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
-                      >
-                        <Key className="w-3.5 h-3.5" />
-                        <span>{targetApp?.connected ? 'Configure Connection' : 'Connect Account Now'}</span>
-                      </button>
-                    );
-                  })()
-                )}
-              </div>
-            </div>
-
-            {/* Meta 24-Hour Policy Compliance Card */}
-            {currentGuide.metaPolicyRules && (
-              <div className="p-4 bg-emerald-950/40 border border-emerald-500/30 rounded-xl space-y-1 text-xs">
-                <div className="flex items-center gap-2 text-emerald-400 font-bold">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>Meta Platform Policy & 24-Hour Standard Messaging Window</span>
-                </div>
-                <p className="text-slate-300 leading-relaxed pl-6">
-                  {currentGuide.metaPolicyRules}
-                </p>
-              </div>
-            )}
-
-            {/* Summary */}
-            <div className="p-4 bg-slate-900/60 border border-white/10 rounded-xl text-xs text-slate-300 leading-relaxed">
-              <p className="font-semibold text-white mb-1">Executive Summary:</p>
-              {currentGuide.summary}
-            </div>
-
-            {/* How It Works (Deep-Dive Mechanism) */}
-            {currentGuide.howItWorks && (
-              <div className="space-y-2">
-                <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-cyan-400" />
-                  <span>Technical & Functional Engine</span>
-                </h4>
-                <div className="p-4 bg-cyan-950/20 border border-cyan-500/20 rounded-xl text-xs text-slate-300 leading-relaxed">
-                  {currentGuide.howItWorks}
-                </div>
-              </div>
-            )}
-
-            {/* Step-by-Step Instructions */}
-            <div>
-              <h4 className="text-sm font-bold text-white mb-3">Step-by-Step Setup & Configuration</h4>
-              <div className="space-y-3">
-                {currentGuide.steps.map((step, idx) => (
-                  <div key={idx} className="p-4 bg-slate-900/40 border border-white/5 rounded-xl space-y-1">
-                    <h5 className="text-xs font-bold text-cyan-300">{step.title}</h5>
-                    <p className="text-xs text-slate-300 leading-relaxed">{step.description}</p>
-                    {step.tip && (
-                      <p className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg mt-2 inline-block">
-                        Tip: {step.tip}
-                      </p>
-                    )}
-                    {step.url && (
-                      <div className="mt-2">
-                        <a
-                          href={step.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[11px] font-bold text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5 transition-colors"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          <span>{step.linkLabel || 'Open settings page'}</span>
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* How it Works in Bot Maps */}
-            <div className="pt-4 border-t border-white/10">
-              <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                <Zap className="w-4 h-4 text-cyan-400" />
-                <span>How to use this trigger in Bot Maps</span>
-              </h4>
-              <p className="text-xs text-slate-300 leading-relaxed bg-blue-950/20 border border-blue-500/20 p-3.5 rounded-xl">
-                {currentGuide.howItWorksInFlows}
-              </p>
-            </div>
-
-            {/* Sample Inbound Payload / Webhook Schema */}
-            {currentGuide.examplePayload && (
-              <div className="pt-4 border-t border-white/10 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Webhook className="w-4 h-4 text-cyan-400" />
-                    <span>Sample Inbound Webhook / Payload Schema</span>
-                  </h4>
-                  <button
-                    onClick={() => {
-                      if (currentGuide.examplePayload) {
-                        navigator.clipboard.writeText(currentGuide.examplePayload);
-                        setCopiedPayload(true);
-                        setTimeout(() => setCopiedPayload(false), 2000);
-                      }
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] font-bold text-slate-300 flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    {copiedPayload ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-slate-400" />}
-                    <span>{copiedPayload ? 'Copied' : 'Copy JSON'}</span>
-                  </button>
-                </div>
-                <div className="p-3 bg-slate-950 border border-white/10 rounded-xl overflow-x-auto text-[11px] font-mono text-cyan-300">
-                  <pre>{currentGuide.examplePayload}</pre>
-                </div>
-              </div>
-            )}
-
-            {/* High-Converting Best Practices */}
-            {currentGuide.bestPractices && currentGuide.bestPractices.length > 0 && (
-              <div className="pt-4 border-t border-white/10">
-                <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <span>High-Converting Best Practices</span>
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {currentGuide.bestPractices.map((tip, idx) => (
-                    <div key={idx} className="p-3 bg-white/5 border border-white/5 rounded-xl text-xs text-slate-300 flex items-start gap-2">
-                      <Check className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
-                      <span>{tip}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Troubleshooting Checklist */}
-            <div className="pt-4 border-t border-white/10">
-              <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                <HelpCircle className="w-4 h-4 text-slate-400" />
-                <span>Common Troubleshooting</span>
-              </h4>
-              <ul className="space-y-1.5 text-xs text-slate-400">
-                {currentGuide.troubleshooting.map((item, idx) => (
-                  <li key={idx} className="flex items-start gap-2">
-                    <span className="text-cyan-400 mt-0.5">•</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
+        <KbHelpCenter
+          key={kbHelpSearch}
+          workspaceId={workspace?.id}
+          initialSearch={kbHelpSearch}
+        />
       )}
 
       {/* Tab 4: General Settings */}
@@ -1193,12 +834,12 @@ export function SettingsView({
                 <ShieldCheck className="w-4 h-4 text-cyan-400 flex-shrink-0 mt-0.5" />
                 <div>
                   <span className="font-semibold text-white">Need help finding your credentials? </span>
-                  Read the step-by-step tutorial in our in-app Knowledge Base.
+                  Read the step by step tutorial in our in-app Knowledge Base.
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => handleOpenGuideFromModal(activeModalApp.id)}
+                onClick={() => handleOpenGuideFromModal(activeModalApp.name)}
                 className="text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 font-semibold flex-shrink-0 text-[11px] cursor-pointer"
               >
                 <BookOpen className="w-3.5 h-3.5" />
