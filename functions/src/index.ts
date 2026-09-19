@@ -67,6 +67,7 @@ import {
   selectWhatsAppNumber,
   whatsappAppReturnUrl,
 } from "./whatsappOAuth";
+import { handleBigmarkerAction } from "./bigmarker";
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
 import {
@@ -1210,6 +1211,10 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     const result = await selectWhatsAppNumber(workspaceId, uid, phoneNumberId);
     logger.info("WhatsApp number connected", { workspaceId, phoneNumberId: result.phoneNumberId });
     return result;
+  }
+  // BigMarker actions (folded in: proxy blocks new function creation)
+  if (typeof action === "string" && action.startsWith("bigmarker")) {
+    return handleBigmarkerAction(action, (request.data ?? {}) as Record<string, unknown>, workspaceId);
   }
   // Website Overlays SDK actions (folded in: proxy blocks new function
   // creation; logic lives in ./overlays so it can split out later).

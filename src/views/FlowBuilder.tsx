@@ -93,6 +93,89 @@ import { TriggerSelectorModal } from '../components/TriggerSelectorModal';
 import { ImageUpload } from '../components/ImageUpload';
 import { MediaUpload } from '../components/MediaUpload';
 import { loadBotMapData, saveBotMapData } from '../utils/botMapStorage';
+import { listBigmarkerWebinars, type BigMarkerWebinar } from '../lib/bigmarker';
+
+/**
+ * BigMarker webinar picker for the FlowBuilder webinar registration action.
+ * Loads the connected workspace's webinars and stores the selected
+ * conference id + title on the component.
+ */
+function BigmarkerWebinarPicker({
+  workspaceId,
+  value,
+  onSelect,
+}: {
+  workspaceId?: string;
+  value?: string;
+  onSelect: (conferenceId: string, title: string) => void;
+}) {
+  const [webinars, setWebinars] = useState<BigMarkerWebinar[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusLabel, setStatusLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!workspaceId) return;
+    setLoading(true);
+    setError(null);
+    listBigmarkerWebinars(workspaceId)
+      .then((r) => {
+        if (cancelled) return;
+        setStatusLabel(r.statusLabel);
+        if (r.status === 'connected') {
+          setWebinars(r.webinars);
+          if (r.webinars.length === 0) setError('No upcoming webinars found on this BigMarker account.');
+        } else {
+          setError(r.statusLabel);
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Could not load webinars.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [workspaceId]);
+
+  if (!workspaceId) {
+    return <p className="text-[10px] text-slate-500 leading-snug">Open this BotMap inside a workspace to pick a webinar.</p>;
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Webinar</label>
+      {loading && <p className="text-[10px] text-slate-500">Loading webinars…</p>}
+      {!loading && error && (
+        <p className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1.5 leading-snug">
+          {error}{statusLabel === 'Not connected' ? ' Connect BigMarker in Settings, then come back.' : ''}
+        </p>
+      )}
+      {!loading && !error && webinars.length > 0 && (
+        <select
+          value={value || ''}
+          onChange={(e) => {
+            const w = webinars.find((x) => x.id === e.target.value);
+            onSelect(e.target.value, w?.title || '');
+          }}
+          className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-sky-500"
+        >
+          <option value="">Choose a webinar…</option>
+          {webinars.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.title}{w.startAt ? ` (${new Date(w.startAt).toLocaleDateString()})` : ''}
+            </option>
+          ))}
+        </select>
+      )}
+      <p className="text-[10px] text-slate-500 leading-snug">
+        The contact is registered with their saved email and name. Already registered contacts count as a success, and a Webinar tag is added so you can send reminders.
+      </p>
+    </div>
+  );
+}
 
 export type MessageComponentType = 
   | 'text' 
@@ -101,6 +184,7 @@ export type MessageComponentType =
   | 'audio'
   | 'contact_capture'
   | 'question'
+  | 'bigmarker_register'
   | 'card' 
   | 'gallery' 
   | 'typing'
@@ -138,6 +222,12 @@ export interface MessageComponent {
   questionPrompt?: string;
   questionVariable?: string;
   questionType?: 'text' | 'number' | 'date';
+  // BigMarker webinar registration action: register the contact for the
+  // selected webinar through the BigMarker API. Registration is idempotent
+  // (register_or_update), so an already registered contact is a success.
+  // Attendance syncs back onto the contact record for flow branching.
+  bigmarkerConferenceId?: string;
+  bigmarkerConferenceTitle?: string;
   cardTitle?: string;
   cardSubtitle?: string;
   cardImageUrl?: string;
@@ -308,7 +398,8 @@ export function FlowBuilder({
   onBackToBotList,
   activeBotId = 'bot-1',
   activeBotTitle,
-  onUpdateBotTitle
+  onUpdateBotTitle,
+  workspaceId
 }: { 
   onNavigateToIntegrations?: () => void;
   onNavigateToDocs?: (docId?: string) => void;
@@ -316,6 +407,7 @@ export function FlowBuilder({
   activeBotId?: string;
   activeBotTitle?: string;
   onUpdateBotTitle?: (title: string) => void;
+  workspaceId?: string;
 } = {}) {
   const [aiMode, setAiMode] = useState<'manual' | 'copilot' | 'auto'>('manual');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -642,6 +734,7 @@ export function FlowBuilder({
           if (c.type === 'audio') estimatedY += 120;
           if (c.type === 'contact_capture') estimatedY += 140;
           if (c.type === 'question') estimatedY += 140;
+          if (c.type === 'bigmarker_register') estimatedY += 140;
           else if (c.type === 'typing') estimatedY += 44;
           else if (c.type === 'text') estimatedY += 48;
           else if (c.type === 'recurring_notification_optin' || c.type === 'one_time_notification_optin') estimatedY += 120;
@@ -2989,6 +3082,31 @@ const NodeCard = React.memo(function NodeCard({
                 );
               }
 
+              if (comp.type === 'bigmarker_register') {
+                const hasWebinar = !!(comp.bigmarkerConferenceId || '').trim();
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-sky-500/30 bg-slate-950/60 relative p-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="p-1.5 rounded-lg bg-sky-500/15 border border-sky-500/30">
+                        <VideoIcon className="w-4 h-4 text-sky-400" />
+                      </div>
+                      <span className="text-[11px] font-semibold text-sky-200">
+                        Register for webinar
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 truncate mb-1.5">
+                      {hasWebinar ? (comp.bigmarkerConferenceTitle || 'Webinar selected') : 'No webinar selected yet'}
+                    </div>
+                    <div className="flex gap-1.5 items-center">
+                      <span className="text-[10px] font-bold bg-sky-500/15 border border-sky-500/30 text-sky-300 px-2 py-1 rounded-lg">
+                        BigMarker
+                      </span>
+                      <span className="text-[10px] text-slate-500">contact is registered idempotently</span>
+                    </div>
+                  </div>
+                );
+              }
+
               if (comp.type === 'card') {
                 return (
                   <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-purple-500/30 bg-slate-950/70 shadow-md">
@@ -3630,6 +3748,13 @@ function NodeEditor({
         questionPrompt: 'What is your appointment date?',
         questionVariable: 'appointment_date',
         questionType: 'date',
+      };
+    } else if (type === 'bigmarker_register') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'bigmarker_register',
+        bigmarkerConferenceId: '',
+        bigmarkerConferenceTitle: '',
       };
     } else if (type === 'card') {
       newComp = {
@@ -5558,6 +5683,22 @@ function NodeEditor({
                         </div>
                       )}
 
+                      {/* BIGMARKER WEBINAR REGISTRATION EDITOR */}
+                      {comp.type === 'bigmarker_register' && (
+                        <div className="space-y-3 pt-1">
+                          <BigmarkerWebinarPicker
+                            workspaceId={workspaceId}
+                            value={comp.bigmarkerConferenceId}
+                            onSelect={(conferenceId, title) =>
+                              handleUpdateComponent(comp.id, {
+                                bigmarkerConferenceId: conferenceId,
+                                bigmarkerConferenceTitle: title,
+                              })
+                            }
+                          />
+                        </div>
+                      )}
+
                       {/* CARD COMPONENT EDITOR */}
                       {comp.type === 'card' && (
                         <div className="space-y-3 pt-1">
@@ -6504,6 +6645,15 @@ function NodeEditor({
               <HelpCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-violet-400 group-hover:scale-110 transition-transform mb-0.5" />
               <span className="text-[9px] sm:text-[10px] font-bold text-violet-300">Ask</span>
             </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('bigmarker_register')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-sky-500/40 hover:border-sky-400 hover:bg-sky-500/15 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm shadow-sky-500/10"
+              title="Register the contact for a BigMarker webinar"
+            >
+              <VideoIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-bold text-sky-300">Webinar</span>
+            </button>
           </div>
 
           {/* Meta Post-24h Compliance Opt-in Components */}
@@ -6560,7 +6710,8 @@ type SimulatorItem =
   | { id: string; sender: 'bot'; type: 'otn_optin'; topic: string; buttonText: string; tokenGranted?: boolean }
   | { id: string; sender: 'bot'; type: 'wa_template'; templateName: string; category: string; header?: string; body: string }
   | { id: string; sender: 'bot'; type: 'contact_capture'; prompt: string; fields: Array<'phone' | 'email'>; mode: 'quick_reply' | 'free_text' | 'both' }
-  | { id: string; sender: 'bot'; type: 'question'; prompt: string; variable: string; varType: 'text' | 'number' | 'date' };
+  | { id: string; sender: 'bot'; type: 'question'; prompt: string; variable: string; varType: 'text' | 'number' | 'date' }
+  | { id: string; sender: 'bot'; type: 'bigmarker_register'; title: string; registered: boolean };
 
 function PhoneSimulator({ 
   nodes, 
@@ -6982,6 +7133,27 @@ function PhoneSimulator({
             setActiveQuestion({ compId: comp.id, variable, varType });
             setQuestionInput('');
             setQuestionError(null);
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
+        } else if (comp.type === 'bigmarker_register') {
+          queue.push(() => {
+            const registered = !!(comp.bigmarkerConferenceId || '').trim();
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'bigmarker_register',
+                title: comp.bigmarkerConferenceTitle || 'Webinar',
+                registered,
+              }
+            ]);
+            // The simulator never hits the real BigMarker API; it shows what
+            // the contact would see after a successful registration. Live,
+            // the backend registers the contact idempotently and tags them.
             if (stepQueueRef.current.length > 0) {
               const next = stepQueueRef.current.shift();
               next?.();
@@ -7740,6 +7912,34 @@ function PhoneSimulator({
                         Saved: {savedValue}
                       </div>
                     )}
+                  </div>
+                </div>
+              );
+            }
+
+            // BigMarker registration action: shows the confirmation the
+            // contact would see after a successful registration. The live
+            // backend registers idempotently and adds the webinar tag.
+            if (item.type === 'bigmarker_register') {
+              return (
+                <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 w-full max-w-[90%]">
+                  <div className="bg-sky-950/50 border border-sky-500/40 rounded-2xl rounded-bl-none overflow-hidden shadow-lg w-full p-3.5 space-y-2">
+                    <div className="flex items-center gap-1.5 text-sky-300 font-bold text-xs">
+                      <VideoIcon className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Webinar registration</span>
+                    </div>
+                    {item.registered ? (
+                      <div className="text-xs text-slate-200 leading-relaxed">
+                        You are registered for <span className="font-semibold">{item.title}</span>. Your confirmation email is on its way.
+                      </div>
+                    ) : (
+                      <div className="text-xs text-amber-200 leading-relaxed">
+                        No webinar selected on this block yet. Pick one in the block editor.
+                      </div>
+                    )}
+                    <div className="text-[10px] text-sky-300/60 italic">
+                      Simulated. Live runs register the contact through BigMarker and add the webinar tag for reminders.
+                    </div>
                   </div>
                 </div>
               );

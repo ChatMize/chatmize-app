@@ -372,6 +372,7 @@ export default function App() {
               if (docId) setSelectedDocId(docId);
               setActiveTab('docs');
             }} 
+            workspaceId={activeWorkspace?.id}
           />
         );
       case 'agents':
@@ -545,6 +546,7 @@ export default function App() {
               if (docId) setSelectedDocId(docId);
               setActiveTab('docs');
             }} 
+            workspaceId={activeWorkspace?.id}
           />
         );
     }

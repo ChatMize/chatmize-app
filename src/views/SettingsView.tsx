@@ -43,6 +43,7 @@ import { WorkspaceSilo } from '../types/workspace';
 import { SmsChannelCard } from '../components/channels/SmsChannelCard';
 import { MetaConnectCard } from '../components/channels/MetaConnectCard';
 import { InstagramConnectCard } from '../components/channels/InstagramConnectCard';
+import { BigMarkerConnectCard } from '../components/channels/BigMarkerConnectCard';
 import { WhatsAppConnectCard } from '../components/channels/WhatsAppConnectCard';
 import { getMetaOAuthStatus, startMetaOAuth } from '../lib/meta';
 import { usePlans, usePlan } from '../lib/entitlements';
@@ -522,6 +523,7 @@ export function SettingsView({
             {workspace?.id && <InstagramConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" hasPageAnchor={anchor.connected} />}
             {workspace?.id && <WhatsAppConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={handleWhatsAppConnected} />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
+            {workspace?.id && <BigMarkerConnectCard workspaceId={workspace.id} />}
             {channels.map(channel => (
               <div
                 key={channel.id}
