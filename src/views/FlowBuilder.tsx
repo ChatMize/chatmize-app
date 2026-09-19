@@ -56,6 +56,7 @@ import {
   Smartphone,
   Layout,
   Webhook,
+  Table2,
   QrCode,
   Power,
   Sliders,
@@ -293,6 +294,10 @@ export interface FlowNode {
   // party URL as JSON. Configured per node, stored on the flow document.
   // variableNames limits the push; empty means all variables.
   webhookAction?: { url: string; variableNames?: string[] };
+  // Google Sheets action: append one row to a tab of the workspace's
+  // connected spreadsheet. mappings pair a column header with the variable
+  // name whose captured value fills that column.
+  sheetsAction?: { tab: string; mappings: Array<{ column: string; variable: string }> };
   delayText?: string;
   delayHours?: number;
   conditionText?: string;
@@ -2885,6 +2890,12 @@ const NodeCard = React.memo(function NodeCard({
           <div className="text-xs bg-amber-500/10 text-amber-100 px-2.5 py-1.5 rounded-lg border border-amber-500/20 flex items-start gap-2 mt-1.5">
             <Webhook className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
             <span className="truncate font-mono">Webhook: {node.webhookAction.url}</span>
+          </div>
+        )}
+        {isAction && node.sheetsAction?.tab && (
+          <div className="text-xs bg-emerald-500/10 text-emerald-100 px-2.5 py-1.5 rounded-lg border border-emerald-500/20 flex items-start gap-2 mt-1.5">
+            <Table2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
+            <span className="truncate">Sheets: {node.sheetsAction.tab} ({(node.sheetsAction.mappings || []).length} columns)</span>
           </div>
         )}
 
@@ -6269,6 +6280,74 @@ function NodeEditor({
               </p>
             </div>
 
+            {/* Google Sheets action: append one row to the workspace's connected sheet */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Table2 className="w-3 h-3 text-emerald-400" />
+                <span>Log to Google Sheet</span>
+              </label>
+              <input
+                type="text"
+                value={node.sheetsAction?.tab || ''}
+                onChange={(e) => onAutoUpdate({ sheetsAction: { ...(node.sheetsAction || { mappings: [] }), tab: e.target.value } })}
+                placeholder="Tab name, e.g. Leads"
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-emerald-500 transition-colors"
+              />
+              <div className="space-y-1.5">
+                {(node.sheetsAction?.mappings || []).map((m, idx) => (
+                  <div key={idx} className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={m.column}
+                      onChange={(e) => {
+                        const mappings = [...(node.sheetsAction?.mappings || [])];
+                        mappings[idx] = { ...mappings[idx], column: e.target.value };
+                        onAutoUpdate({ sheetsAction: { ...(node.sheetsAction || { tab: '' }), mappings } });
+                      }}
+                      placeholder="Column"
+                      className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder:text-slate-600 outline-none focus:border-emerald-500 transition-colors"
+                    />
+                    <span className="text-slate-600 text-xs">=</span>
+                    <input
+                      type="text"
+                      value={m.variable}
+                      onChange={(e) => {
+                        const mappings = [...(node.sheetsAction?.mappings || [])];
+                        mappings[idx] = { ...mappings[idx], variable: e.target.value };
+                        onAutoUpdate({ sheetsAction: { ...(node.sheetsAction || { tab: '' }), mappings } });
+                      }}
+                      placeholder="variable"
+                      className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono placeholder:text-slate-600 outline-none focus:border-emerald-500 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const mappings = (node.sheetsAction?.mappings || []).filter((_, i) => i !== idx);
+                        onAutoUpdate({ sheetsAction: { ...(node.sheetsAction || { tab: '' }), mappings } });
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-red-400 transition-colors cursor-pointer"
+                      title="Remove mapping"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const mappings = [...(node.sheetsAction?.mappings || []), { column: '', variable: '' }];
+                  onAutoUpdate({ sheetsAction: { ...(node.sheetsAction || { tab: '' }), mappings } });
+                }}
+                className="w-full px-3 py-1.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/25 text-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Map a column
+              </button>
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Appends one row to the tab. Column is the header in row 1; variable is the captured answer to fill it. Connect the sheet in Settings first.
+              </p>
+            </div>
+
             {/* Active Integrations Cascading Configuration: Connection -> List -> Tags */}
             <div className="pt-3 border-t border-white/10 space-y-2.5">
               <div className="flex items-center justify-between">
@@ -6882,6 +6961,23 @@ function PhoneSimulator({
             sender: 'bot',
             type: 'text',
             text: `Webhook simulated → ${node.webhookAction!.url}${pushedPairs ? ` (${pushedPairs})` : ''}`,
+          },
+        ]);
+      }
+      // Sheets action: simulate the row append (no real Google call from the
+      // browser). Production appends fire from the API via sheets_append_row.
+      if (node.sheetsAction?.tab) {
+        const mappedPairs = (node.sheetsAction.mappings || [])
+          .filter((m) => m.column)
+          .map((m) => `${m.column}=${simContact.variables[m.variable] ?? '(empty)'}`)
+          .join(', ');
+        setChatItems((prev) => [
+          ...prev,
+          {
+            id: `sheets-${Date.now()}`,
+            sender: 'bot',
+            type: 'text',
+            text: `Sheets simulated → row appended to "${node.sheetsAction!.tab}"${mappedPairs ? ` (${mappedPairs})` : ''}`,
           },
         ]);
       }
