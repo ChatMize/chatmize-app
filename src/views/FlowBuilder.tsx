@@ -65,6 +65,8 @@ import {
   HelpCircle
 } from 'lucide-react';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { getApp } from 'firebase/app';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { EmojiPickerButton, useEmojiTarget, useEmojiTargetMap } from '../components/emoji';
 import { 
   getActiveConnectedIntegrations, 
@@ -316,6 +318,7 @@ export function FlowBuilder({
   activeBotId?: string;
   activeBotTitle?: string;
   onUpdateBotTitle?: (title: string) => void;
+  workspaceId?: string;
 } = {}) {
   const [aiMode, setAiMode] = useState<'manual' | 'copilot' | 'auto'>('manual');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -2321,6 +2324,9 @@ export function FlowBuilder({
           <PhoneSimulator 
             nodes={nodes}
             connections={connections}
+            workspaceId={workspaceId}
+            flowId={activeBotId}
+            flowName={flowTitle}
             onClose={() => setShowSimulator(false)}
           />
         </div>
@@ -6565,12 +6571,49 @@ type SimulatorItem =
 function PhoneSimulator({ 
   nodes, 
   connections = [], 
+  workspaceId,
+  flowId,
+  flowName,
   onClose 
 }: { 
   nodes: FlowNode[]; 
   connections?: FlowConnection[]; 
+  workspaceId?: string;
+  flowId?: string;
+  flowName?: string;
   onClose: () => void;
 }) {
+  // Analytics: simulator runs are tracked separately (sim: true) so test
+  // traffic never pollutes live numbers. Best effort, never blocks the sim.
+  const enteredFiredRef = useRef(false);
+  const trackSimEvent = useCallback((
+    type: 'entered' | 'step' | 'completed',
+    stepId?: string,
+    stepTitle?: string,
+  ) => {
+    if (!workspaceId || !flowId) return;
+    try {
+      const functions = getFunctions(getApp(), 'us-west2');
+      const fn = httpsCallable(functions, 'trackFlowEvent');
+      fn({
+        workspaceId,
+        flowId,
+        flowName: flowName || 'Untitled flow',
+        type,
+        stepId,
+        stepTitle,
+        sim: true,
+      }).catch(() => {});
+    } catch {}
+  }, [workspaceId, flowId, flowName]);
+
+  // Fire "entered" once when the simulator opens.
+  useEffect(() => {
+    if (!enteredFiredRef.current) {
+      enteredFiredRef.current = true;
+      trackSimEvent('entered');
+    }
+  }, [trackSimEvent]);
   const [currentNodeId, setCurrentNodeId] = useState<string>('step-1');
   const [chatItems, setChatItems] = useState<SimulatorItem[]>([]);
   const [activeButtons, setActiveButtons] = useState<string[]>([]);
@@ -6656,6 +6699,8 @@ function PhoneSimulator({
     if (!node) return;
 
     setCurrentNodeId(nodeId);
+    // Analytics: funnel step view inside the simulator.
+    trackSimEvent('step', node.id, node.title);
 
     // If it's an action node, execute CRM action and immediately jump to connected target
     if (node.type === 'action') {
@@ -7103,6 +7148,8 @@ function PhoneSimulator({
         }, 400);
       } else {
         // Conclude simulation
+        // Analytics: the simulated run reached the end of the flow.
+        trackSimEvent('completed');
         setTimeout(() => {
           setChatItems(prev => [
             ...prev,

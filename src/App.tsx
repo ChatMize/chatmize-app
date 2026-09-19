@@ -323,7 +323,7 @@ export default function App() {
     switch (activeTab) {
       case 'dashboard':
       case 'analytics':
-        return <Dashboard title="Main Dashboard Overview" />;
+        return <Dashboard title="Main Dashboard Overview" workspaceId={activeWorkspace?.id} />;
       case 'bot-list':
         return (
           <BotListView 
@@ -365,6 +365,7 @@ export default function App() {
           <FlowBuilder 
             activeBotId={activeBotId}
             activeBotTitle={activeBotTitle}
+            workspaceId={activeWorkspace?.id}
             onUpdateBotTitle={(title) => setActiveBotTitle(title)}
             onBackToBotList={() => setActiveTab('bot-list')}
             onNavigateToIntegrations={() => setActiveTab('integrations')} 
@@ -540,6 +541,7 @@ export default function App() {
       default:
         return (
           <FlowBuilder 
+            workspaceId={activeWorkspace?.id}
             onNavigateToIntegrations={() => setActiveTab('integrations')} 
             onNavigateToDocs={(docId?: string) => {
               if (docId) setSelectedDocId(docId);

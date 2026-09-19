@@ -1,5 +1,11 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
+import {
+  trackInbound,
+  trackMessageSent,
+  trackHandoffResolved,
+  type AnalyticsChannel,
+} from "./analytics";
 
 export type Channel = "messenger" | "instagram" | "whatsapp";
 
@@ -14,6 +20,8 @@ export interface NormalizedMessage {
   text?: string;
   /** One-tap quick-reply payload (user_phone_number / user_email value). */
   quickReplyPayload?: string;
+  /** Button/postback tap payload (Meta messaging_postbacks). */
+  postbackPayload?: string;
   timestampMs: number;
   raw: unknown;
 }
@@ -115,6 +123,15 @@ export async function persistInboundMessage(
     return;
   }
 
+  // Analytics: detect a brand-new conversation and a brand-new contact.
+  // Two small reads per inbound message; inbound volume is human-paced.
+  const [convoSnap, contactSnap] = await Promise.all([
+    convoRef.get(),
+    db().collection("contacts").doc(`contact_${msg.channel}_${msg.senderId}`).get(),
+  ]);
+  const isNewConvo = !convoSnap.exists;
+  const isNewContact = !contactSnap.exists;
+
   const batch = db().batch();
   batch.set(
     convoRef,
@@ -124,6 +141,9 @@ export async function persistInboundMessage(
       recipientId: msg.recipientId,
       lastMessageAt: FieldValue.serverTimestamp(),
       lastMessageText: msg.text ?? "",
+      // Fallback sweep: an inbound message with no outbound reply inside
+      // the window counts as unanswered.
+      awaitingReply: true,
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -134,6 +154,7 @@ export async function persistInboundMessage(
     senderId: msg.senderId,
     text: msg.text ?? "",
     quickReplyPayload: msg.quickReplyPayload ?? null,
+    postbackPayload: msg.postbackPayload ?? null,
     timestampMs: msg.timestampMs,
     externalId: msg.externalId,
     createdAt: FieldValue.serverTimestamp(),
@@ -167,6 +188,13 @@ export async function persistInboundMessage(
 
   batch.set(contactRef, contactData, { merge: true });
   await batch.commit();
+
+  // Analytics: fold the inbound event into today's counters. Fire-and-forget.
+  trackInbound(workspaceId, msg.channel as AnalyticsChannel, {
+    newConvo: isNewConvo,
+    newContact: isNewContact,
+    clicked: !!(msg.quickReplyPayload || msg.postbackPayload),
+  });
 
   // Contact capture: if a BotMaps capture block armed pendingCapture on
   // this conversation, treat this inbound message as the answer (one-tap
@@ -264,6 +292,29 @@ export async function recordOutboundMessage(
     .doc(workspaceId)
     .collection("conversations")
     .doc(convoId);
+
+  // Analytics: handoff response time. If the conversation is in human mode
+  // and this is the first human reply since takeover, record the delay.
+  let handoffResponseMs: number | null = null;
+  try {
+    const convoSnap = await convoRef.get();
+    const cdata = (convoSnap.data() ?? {}) as {
+      botEnabled?: boolean;
+      handoffStartedAt?: string;
+      handoffFirstReplyAt?: string;
+    };
+    if (
+      cdata.botEnabled === false &&
+      cdata.handoffStartedAt &&
+      !cdata.handoffFirstReplyAt &&
+      ok
+    ) {
+      handoffResponseMs = Date.now() - new Date(cdata.handoffStartedAt).getTime();
+    }
+  } catch {
+    // Analytics never breaks the send path.
+  }
+
   const batch = db().batch();
   batch.set(
     convoRef,
@@ -272,6 +323,11 @@ export async function recordOutboundMessage(
       senderId: recipientId,
       lastMessageAt: FieldValue.serverTimestamp(),
       lastMessageText: text,
+      // The reply landed: this conversation is no longer awaiting one.
+      awaitingReply: false,
+      ...(handoffResponseMs !== null
+        ? { handoffFirstReplyAt: new Date().toISOString() }
+        : {}),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -289,4 +345,12 @@ export async function recordOutboundMessage(
     createdAt: FieldValue.serverTimestamp(),
   });
   await batch.commit();
+
+  // Analytics: fold the outbound event into today's counters. Fire-and-forget.
+  if (ok) {
+    trackMessageSent(workspaceId, channel as AnalyticsChannel);
+    if (handoffResponseMs !== null) {
+      trackHandoffResolved(workspaceId, channel as AnalyticsChannel, handoffResponseMs);
+    }
+  }
 }

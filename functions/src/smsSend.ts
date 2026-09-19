@@ -13,6 +13,7 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
 import { grantCredits } from "./credits";
+import { trackAnalytics } from "./analytics";
 import { resolvePersonalizationTags, getContactForPhone } from "./personalization";
 import {
   normalizePhone,
@@ -146,6 +147,12 @@ export async function sendSmsInternal(
       status: "sent",
       broadcastId,
     });
+    // Analytics: fold the outbound SMS into today's counters (fire-and-forget).
+    // Broadcasts aggregate separately in runSmsBroadcastInternal; single sends
+    // count here. broadcastId marks sends that belong to a broadcast run.
+    if (!broadcastId) {
+      trackAnalytics(workspaceId, { "sent.sms": 1 });
+    }
     return { ok: true, messageId, segments, chargedTo: charged.chargedTo };
   } catch (err) {
     const message = err instanceof Error ? err.message : "SMS send failed.";
