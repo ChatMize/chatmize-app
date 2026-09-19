@@ -22,6 +22,20 @@ service firebase.storage {
       allow delete: if request.auth != null;
     }
 
+    // Knowledge Base step and cover images. Same posture as workspace
+    // images: signed in users only, size and type capped. Stored under
+    // workspaces/{workspaceId}/kb_media/{articleId}/{fileName} so each
+    // article's media stays together and can age out with lifecycle rules.
+    match /workspaces/{workspaceId}/kb_media/{articleId}/{fileName} {
+      allow read: if request.auth != null;
+
+      allow create, update: if request.auth != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|gif|webp)');
+
+      allow delete: if request.auth != null;
+    }
+
     // Deny everything outside the workspace image folders.
     match /{allPaths=**} {
       allow read, write: if false;

@@ -69,6 +69,13 @@ import {
 } from "./whatsappOAuth";
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
+import {
+  publishKbArticleHandler,
+  unpublishKbArticleHandler,
+  kbFeedbackHandler,
+  PublishKbInput,
+  KbFeedbackKind,
+} from "./kb";
 import { handleCloakerRequest, CloakerReq, CloakerRes } from "./cloaker";
 import { isWaitlistRequest, handleWaitlistRequest } from "./waitlist";
 import {
@@ -1375,3 +1382,53 @@ export const mcpApi = onRequest(
     await handleMcpRequest(req, res);
   },
 );
+
+// ---------------------------------------------------------------------------
+// Knowledge Base (Phase 1: Builder MVP)
+// ---------------------------------------------------------------------------
+
+/** Publish a KB draft: validates, snapshots a revision, marks published. */
+export const publishKbArticle = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const { workspaceId, articleId, note } = (request.data ?? {}) as PublishKbInput;
+  if (!workspaceId || !articleId) {
+    throw new HttpsError("invalid-argument", "workspaceId and articleId are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  return publishKbArticleHandler(workspaceId, articleId, uid, note);
+});
+
+/** Send a published KB article back to draft. Revisions are kept as history. */
+export const unpublishKbArticle = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const { workspaceId, articleId } = (request.data ?? {}) as PublishKbInput;
+  if (!workspaceId || !articleId) {
+    throw new HttpsError("invalid-argument", "workspaceId and articleId are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  return unpublishKbArticleHandler(workspaceId, articleId);
+});
+
+/** Record a KB article view or a helpful / not helpful vote. */
+export const kbFeedback = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const { workspaceId, articleId, kind } = (request.data ?? {}) as {
+    workspaceId: string;
+    articleId: string;
+    kind: KbFeedbackKind;
+  };
+  if (!workspaceId || !articleId || !kind) {
+    throw new HttpsError("invalid-argument", "workspaceId, articleId, and kind are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  return kbFeedbackHandler(workspaceId, articleId, kind);
+});

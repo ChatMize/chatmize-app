@@ -55,6 +55,7 @@ import { WebsiteOverlaysView } from './components/growth/WebsiteOverlaysView';
 import { GrowthLinksView } from './components/growth/GrowthLinksView';
 import { GrowthSuiteHub } from './components/growth/GrowthSuiteHub';
 import { ContestsView } from './components/growth/ContestsView';
+import { KnowledgeBaseView } from './views/KnowledgeBaseView';
 import { ContestEntryPage } from './components/growth/ContestEntryPage';
 import { NurtureToolType } from './types/nurture';
 import { OverlayType } from './types/growthTools';
@@ -445,6 +446,8 @@ export default function App() {
         );
       case 'contests':
         return <ContestsView workspaceId={activeWorkspace?.id} />;
+      case 'knowledge-base':
+        return <KnowledgeBaseView workspaceId={activeWorkspace?.id} />;
       case 'capture-tools':
       case 'capture':
       case 'nurture':
@@ -525,7 +528,6 @@ export default function App() {
           />
         );
       case 'docs':
-      case 'knowledge-base':
         return (
           <SettingsView
             initialTab="docs"
@@ -794,6 +796,7 @@ export default function App() {
                 'capture-tools',
                 'support-chat',
                 'support_widget',
+                'knowledge-base',
                 'overlays',
                 'website-overlays',
                 'popup_modal',
@@ -817,7 +820,7 @@ export default function App() {
                       setActiveTab('support-chat');
                     }
                   }}
-                  title="Capture Tools (Support Chat, Overlays, Growth Links, Contests)"
+                  title="Capture Tools (Support Chat, Knowledge Base, Overlays, Growth Links, Contests)"
                   className={`w-full p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer ${
                     isCaptureActive
                       ? 'bg-gradient-to-r from-cyan-500/15 to-blue-500/15 text-cyan-300 border border-cyan-500/30'
@@ -848,7 +851,7 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono font-bold">
-                        4 Tools
+                        5 Tools
                       </span>
                       <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isCaptureExpanded ? 'rotate-180 text-cyan-400' : ''}`} />
                     </div>
@@ -873,7 +876,23 @@ export default function App() {
                         <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">24/7 AI</span>
                       </button>
 
-                      {/* Child 2: Website Overlays */}
+                      {/* Child 2: Knowledge Base */}
+                      <button
+                        onClick={() => setActiveTab('knowledge-base')}
+                        className={`w-full text-left py-1.5 px-2 rounded-lg text-xs font-medium transition-all flex items-center justify-between cursor-pointer ${
+                          activeTab === 'knowledge-base'
+                            ? 'bg-cyan-500/20 text-cyan-300 font-bold'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Knowledge Base</span>
+                        </div>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">Guides</span>
+                      </button>
+
+                      {/* Child 3: Website Overlays */}
                       <button
                         onClick={() => {
                           setActiveTab('overlays');
