@@ -28,11 +28,14 @@ import {
 } from "./instagramOAuth";
 import {
   CHANNEL_SENDERS,
+  sendMessengerMessage,
   sendInstagramMessage,
   sendInstagramDirectMessage,
   sendMessengerMedia,
   sendInstagramMedia,
   sendInstagramDirectMedia,
+  toQuickReplies,
+  QuickReply,
   MediaAttachmentType,
 } from "./send";
 import {
@@ -100,6 +103,7 @@ export async function sendChannelMessageInternal(
   text: string,
   clientMessageId?: string | null,
   media?: ChannelMedia | null,
+  quickReplies?: string[] | null,
 ): Promise<ChannelSendResult> {
   if (!workspaceId || !channel || !recipientId) {
     throw new ChannelSendError(
@@ -136,9 +140,19 @@ export async function sendChannelMessageInternal(
 
   // Media always leads: when both media and text are present, the
   // attachment goes out first and the text follows as its own message.
-  const units: Array<{ media?: ChannelMedia; text?: string }> = [];
+  // Quick replies are a Meta text-first element: Meta's Messenger docs say
+  // to add the quick_replies array to a text message, and Instagram docs
+  // say quick replies only support plain text. They always ride the text
+  // unit, never the media unit. If there is no text, the replies go out
+  // on a minimal follow-up text message after the media.
+  const qr = toQuickReplies(quickReplies);
+  const units: Array<{ media?: ChannelMedia; text?: string; quickReplies?: QuickReply[] }> = [];
   if (media?.url) units.push({ media });
-  if (text && text.trim()) units.push({ text: resolvedText });
+  if (text && text.trim()) {
+    units.push({ text: resolvedText, quickReplies: qr.length > 0 ? qr : undefined });
+  } else if (qr.length > 0) {
+    units.push({ text: "Choose an option", quickReplies: qr });
+  }
 
   // Token self-heal, per connection:
   // - Messenger always runs on the Page token.
@@ -200,10 +214,10 @@ export async function sendChannelMessageInternal(
       for (const unit of units) {
         const unitText = unit.media
           ? `[${unit.media.type} attachment] ${unit.media.url}`
-          : resolvedText;
+          : unit.text ?? resolvedText;
         const r = unit.media
           ? await sendInstagramDirectMedia(igToken, recipientId, unit.media.url, unit.media.type)
-          : await sendInstagramDirectMessage(igToken, recipientId, resolvedText);
+          : await sendInstagramDirectMessage(igToken, recipientId, unit.text ?? resolvedText, unit.quickReplies);
         await recordOutboundMessage(
           workspaceId,
           channel,
@@ -229,10 +243,10 @@ export async function sendChannelMessageInternal(
       for (const unit of units) {
         const unitText = unit.media
           ? `[${unit.media.type} attachment] ${unit.media.url}`
-          : resolvedText;
+          : unit.text ?? resolvedText;
         const r = unit.media
           ? await sendInstagramMedia(pageToken, recipientId, unit.media.url, unit.media.type)
-          : await sendInstagramMessage(pageToken, recipientId, resolvedText);
+          : await sendInstagramMessage(pageToken, recipientId, unit.text ?? resolvedText, unit.quickReplies);
         await recordOutboundMessage(
           workspaceId,
           channel,
@@ -259,10 +273,10 @@ export async function sendChannelMessageInternal(
     for (const unit of units) {
       const unitText = unit.media
         ? `[${unit.media.type} attachment] ${unit.media.url}`
-        : resolvedText;
+        : unit.text ?? resolvedText;
       const r = unit.media
         ? await sendMessengerMedia(pageToken, recipientId, unit.media.url, unit.media.type)
-        : await CHANNEL_SENDERS[channel](pageToken, recipientId, resolvedText);
+        : await sendMessengerMessage(pageToken, recipientId, unit.text ?? resolvedText, unit.quickReplies);
       await recordOutboundMessage(
         workspaceId,
         channel,

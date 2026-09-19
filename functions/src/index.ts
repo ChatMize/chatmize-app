@@ -407,6 +407,8 @@ interface SendMessageData {
   /** Optional media attachment (bot builder video/audio/image). */
   mediaUrl?: string;
   mediaType?: "video" | "audio" | "image";
+  /** Optional quick replies. Meta text-first rule: always sent with the text message, never the media. */
+  quickReplies?: string[];
   /** Frontend's optimistic message id, echoed back as clientId on the
    * persisted doc so the UI can reconcile instead of duplicating. */
   clientMessageId?: string;
@@ -423,7 +425,7 @@ export const sendChannelMessage = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "Sign in required.");
     }
-    const { workspaceId, channel, recipientId, text, mediaUrl, mediaType, clientMessageId } = (request.data ?? {}) as SendMessageData;
+    const { workspaceId, channel, recipientId, text, mediaUrl, mediaType, quickReplies, clientMessageId } = (request.data ?? {}) as SendMessageData;
     if (!workspaceId || !channel || !recipientId) {
       throw new HttpsError("invalid-argument", "workspaceId, channel, and recipientId are required.");
     }
@@ -432,6 +434,9 @@ export const sendChannelMessage = onCall(
     }
     if (mediaUrl && !["video", "audio", "image"].includes(mediaType ?? "")) {
       throw new HttpsError("invalid-argument", "mediaType must be video, audio, or image.");
+    }
+    if (quickReplies !== undefined && (!Array.isArray(quickReplies) || quickReplies.some((q) => typeof q !== "string"))) {
+      throw new HttpsError("invalid-argument", "quickReplies must be an array of strings.");
     }
 
     // Membership check (Super Admin claim bypasses).
@@ -446,6 +451,7 @@ export const sendChannelMessage = onCall(
         text ?? "",
         clientMessageId ?? null,
         mediaUrl ? { url: mediaUrl, type: mediaType as "video" | "audio" | "image" } : null,
+        quickReplies ?? null,
       );
       // Gamification: count the handled outbound message (fire-and-forget).
       recordMessageHandled(workspaceId, uid).catch((err) =>
