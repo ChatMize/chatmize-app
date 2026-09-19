@@ -53,6 +53,10 @@ export const PERSONALIZATION_TAGS: PersonalizationTag[] = [
   { tag: "state", label: "State", hint: "Contact state" },
   { tag: "country", label: "Country", hint: "Contact country" },
   { tag: "zip_code", label: "ZIP code", hint: "Contact ZIP or postal code" },
+  { tag: "booking_event", label: "Booking event", hint: "Name of the latest booking event" },
+  { tag: "booking_date", label: "Booking date", hint: "Date of the latest booking" },
+  { tag: "booking_time", label: "Booking time", hint: "Time of the latest booking" },
+  { tag: "booking_status", label: "Booking status", hint: "Status of the latest booking" },
 ];
 
 const db = () => getFirestore("chatmize-prod");

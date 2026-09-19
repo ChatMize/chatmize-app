@@ -30,8 +30,32 @@ service cloud.firestore {
     match /workspaces/{workspaceId} {
       allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
       allow create, update, delete: if isSuperAdmin();
-      match /{document=**} {
-        allow read, write: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+      // Bookings: server-only (Admin SDK). Clients use callables + /booking-api.
+      // These explicit denies sit alongside the member grants below; both
+      // must deny for access to be refused, and the member grants exclude
+      // these collections by name.
+      match /bookings/{bookingId} {
+        allow read, write: if false;
+      }
+      match /bookingSettings/{docId} {
+        allow read, write: if false;
+      }
+      match /bookingLocks/{lockId} {
+        allow read, write: if false;
+      }
+      match /bookingEvents/{eventId} {
+        allow read, write: if false;
+      }
+      // All other nested collections: workspace members (or Super Admin).
+      // The server-only booking collections are excluded by name so a
+      // broad member grant can never open them.
+      match /{collectionId}/{docId} {
+        allow read, write: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
+          && !(collectionId in ['bookings', 'bookingSettings', 'bookingLocks', 'bookingEvents']);
+      }
+      match /{collectionId}/{docId}/{rest=**} {
+        allow read, write: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
+          && !(collectionId in ['bookings', 'bookingSettings', 'bookingLocks', 'bookingEvents']);
       }
     }
 

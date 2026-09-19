@@ -88,6 +88,17 @@ import {
   OverlayTrackRes,
 } from "./overlays";
 import { handleContestAdminAction, handleContestPublicRequest } from "./contest.js";
+import {
+  getBookingSettings as bookingGetSettings,
+  saveBookingSettings as bookingSaveSettings,
+  listBookings as bookingListAll,
+  createBooking as bookingCreateOne,
+  setBookingStatus as bookingSetStatusOne,
+  cancelBookingById as bookingCancelOne,
+  handleBookingPublicRequest,
+  runBookingReminderSweep,
+  clientSafeSettings,
+} from "./bookings.js";
 import { handleMigrationAction } from "./migration";
 import {
   resolvePersonalizationTags,
@@ -285,6 +296,18 @@ export const metaWebhook = onRequest(
       await handleContestPublicRequest(
         req as unknown as Parameters<typeof handleContestPublicRequest>[0],
         res as unknown as Parameters<typeof handleContestPublicRequest>[1],
+      );
+      return;
+    }
+
+    // 0a. Bookings public API (folded in: proxy blocks new function creation).
+    //     Unauthenticated by design — the booking widget, embed, and manage
+    //     links hit POST /booking-api (hosting rewrite -> this function).
+    //     Rate limits and slot double-booking guards run inside.
+    if (reqPath === "/booking-api" || reqPath.endsWith("/booking-api")) {
+      await handleBookingPublicRequest(
+        req as unknown as Parameters<typeof handleBookingPublicRequest>[0],
+        res as unknown as Parameters<typeof handleBookingPublicRequest>[1],
       );
       return;
     }
@@ -619,6 +642,29 @@ export const resetMonthlyCredits = onSchedule(
   },
   async () => {
     await resetAllMonthlyCredits();
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Bookings: reminder + no-show sweep (the no-show killer)
+// ---------------------------------------------------------------------------
+
+/**
+ * Every 15 minutes: send due booking reminders (email/SMS/chat per the
+ * workspace's reminder rules) and auto mark no-shows past the grace period.
+ * One collection-group query per run; cost stays flat as workspaces grow.
+ * NOTE: new function — the deploy coordinator must create it via the CLI or
+ * the API create path; it cannot ride an existing export.
+ */
+export const bookingReminderSweep = onSchedule(
+  {
+    region: REGION,
+    schedule: "*/15 * * * *",
+    timeZone: "America/Phoenix",
+    timeoutSeconds: 540,
+  },
+  async () => {
+    await runBookingReminderSweep();
   },
 );
 
@@ -1200,6 +1246,65 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   // client-side via Firestore security rules.
   if (typeof action === "string" && action.startsWith("contest")) {
     return handleContestAdminAction(action, (request.data ?? {}) as Record<string, unknown>, uid);
+  }
+  // Bookings app admin actions (folded in: proxy blocks new function
+  // creation). All booking mutations and reads go through ./bookings.js;
+  // Firestore rules deny client reads/writes on booking collections, and the
+  // settings signing key is stripped before anything crosses to the client.
+  if (typeof action === "string" && action.startsWith("booking")) {
+    const data = (request.data ?? {}) as Record<string, unknown>;
+    if (action === "bookingGetSettings") {
+      const settings = await bookingGetSettings(workspaceId);
+      return { ok: true, settings: clientSafeSettings(settings) };
+    }
+    if (action === "bookingSaveSettings") {
+      const settings = await bookingSaveSettings(workspaceId, (data.settings || {}) as Record<string, unknown>);
+      return { ok: true, settings: clientSafeSettings(settings) };
+    }
+    if (action === "bookingList") {
+      const rows = await bookingListAll(workspaceId, {
+        fromIso: data.fromIso as string | undefined,
+        toIso: data.toIso as string | undefined,
+        status: data.status as "confirmed" | "completed" | "cancelled" | "no_show" | undefined,
+        limit: Number(data.limit) || 50,
+      });
+      return {
+        ok: true,
+        bookings: rows.map((r) => ({
+          id: r.id,
+          name: r.booking.name,
+          email: r.booking.email,
+          phone: r.booking.phone || "",
+          startUtc: r.booking.startUtc.toDate().toISOString(),
+          endUtc: r.booking.endUtc.toDate().toISOString(),
+          status: r.booking.status,
+          source: r.booking.source,
+          remindersSent: r.booking.remindersSent,
+        })),
+      };
+    }
+    if (action === "bookingCreate") {
+      const { id, booking, manageLink } = await bookingCreateOne({
+        workspaceId,
+        name: String(data.name || ""),
+        email: String(data.email || ""),
+        phone: data.phone ? String(data.phone) : undefined,
+        startUtc: String(data.startUtc || ""),
+        contactId: data.contactId ? String(data.contactId) : undefined,
+        source: "admin",
+        notes: data.notes ? String(data.notes) : undefined,
+      });
+      return { ok: true, bookingId: id, manageLink, startUtc: booking.startUtc.toDate().toISOString() };
+    }
+    if (action === "bookingSetStatus") {
+      await bookingSetStatusOne(workspaceId, String(data.bookingId || ""), data.status as "confirmed" | "completed" | "cancelled" | "no_show");
+      return { ok: true };
+    }
+    if (action === "bookingCancel") {
+      await bookingCancelOne(workspaceId, String(data.bookingId || ""), "cancelled by workspace admin");
+      return { ok: true };
+    }
+    throw new HttpsError("invalid-argument", `Unknown booking action: ${action}`);
   }
   // WhatsApp actions (folded in: proxy blocks new function creation)
   if (action === "listWhatsAppAccounts") {

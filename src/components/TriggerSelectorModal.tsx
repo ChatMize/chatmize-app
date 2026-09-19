@@ -22,7 +22,12 @@ import {
   UserCheck,
   Check,
   BookOpen,
-  ArrowRight
+  ArrowRight,
+  Calendar,
+  BellRing,
+  CheckCircle2,
+  CalendarX,
+  XCircle
 } from 'lucide-react';
 import { 
   TriggerChannel, 
@@ -128,6 +133,11 @@ export function TriggerSelectorModal({
       case 'ExternalLink': return <ExternalLink className="w-4 h-4" />;
       case 'Webhook': return <Webhook className="w-4 h-4" />;
       case 'FileText': return <FileText className="w-4 h-4" />;
+      case 'Calendar': return <Calendar className="w-4 h-4" />;
+      case 'BellRing': return <BellRing className="w-4 h-4" />;
+      case 'CheckCircle2': return <CheckCircle2 className="w-4 h-4" />;
+      case 'CalendarX': return <CalendarX className="w-4 h-4" />;
+      case 'XCircle': return <XCircle className="w-4 h-4" />;
       default: return getChannelStyle(channel).icon;
     }
   };
