@@ -2183,6 +2183,7 @@ export const shopifyAbandonedCartSweep = onSchedule(
 /** Web push notification channel (FCM). See functions/src/push.ts. */
 export {
   getPushPublicConfig,
+  getPushPromptCopy,
   getPushStatus,
   setPushVapidKey,
   setPushPromptCopy,
