@@ -255,6 +255,9 @@ export interface ContactRecord {
   customFields: Record<string, string | number | boolean>; // Synced with variables
   meta: MetaAttribution;
   notes?: string;
+  // BigMarker webinar statuses, keyed by conference id. Written by the
+  // BigMarker integration when a contact registers or the status is synced.
+  bigmarker?: Record<string, { status?: string; conferenceTitle?: string; syncedAtMs?: number }>;
   createdAt: string;
   lastInteractionAt: string;
 }
@@ -389,6 +392,7 @@ export function subscribeToContacts(
           customFields: vars,
           meta: data.meta || {},
           notes: data.notes || '',
+          bigmarker: data.bigmarker || {},
           createdAt: data.createdAt || new Date().toISOString(),
           lastInteractionAt: data.lastInteractionAt || new Date().toISOString(),
         });

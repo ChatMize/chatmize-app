@@ -345,8 +345,16 @@ interface ContactDoc {
   lastName?: string;
   name?: string;
   tags?: string[];
+  variables?: Record<string, unknown>;
   bigmarker?: Record<string, { status?: string; conferenceTitle?: string; syncedAtMs?: number }>;
 }
+
+/**
+ * Variable name mirrored onto the contact so the latest webinar status is
+ * readable anywhere variables resolve ({{bigmarker_status}} in messages,
+ * the MCP API, and future condition checks).
+ */
+const STATUS_VARIABLE = "bigmarker_status";
 
 function splitName(c: ContactDoc): { first: string; last: string } {
   const first = (c.firstName || "").trim();
@@ -408,6 +416,7 @@ export async function registerBigmarkerContact(
   await ref.set(
     {
       tags,
+      variables: { ...(contact.variables ?? {}), [STATUS_VARIABLE]: "registered" },
       bigmarker: {
         ...(contact.bigmarker ?? {}),
         [conferenceId]: {
@@ -438,29 +447,39 @@ async function emailInList(
   list: "live_attendees" | "on_demand_attendees" | "no_shows",
   email: string,
 ): Promise<boolean> {
-  const params = new URLSearchParams({ per_page: String(ATTENDANCE_PAGE_SIZE) });
-  const res = await bmFetch(
-    resolved.baseUrl,
-    resolved.key,
-    "GET",
-    `/reporting/conferences/${list}/${encodeURIComponent(conferenceId)}?${params.toString()}`,
-  );
-  if (!res.ok) {
-    logger.warn("BigMarker attendance list failed", {
-      workspaceId,
-      conferenceId,
-      list,
-      status: res.status,
-    });
-    return false;
-  }
-  const data = res.data as {
-    attendees?: Array<{ email?: string }>;
-    registrations?: Array<{ email?: string }>;
-  };
-  const rows = data.attendees ?? data.registrations ?? [];
+  // Paginate the reporting list so large webinars are checked fully. The
+  // loop is capped and stops on a short page, so an API that ignores the
+  // page parameter costs at most a few extra reads.
   const want = email.toLowerCase();
-  return rows.some((r) => (r.email || "").toLowerCase() === want);
+  for (let page = 1; page <= 10; page++) {
+    const params = new URLSearchParams({
+      per_page: String(ATTENDANCE_PAGE_SIZE),
+      page: String(page),
+    });
+    const res = await bmFetch(
+      resolved.baseUrl,
+      resolved.key,
+      "GET",
+      `/reporting/conferences/${list}/${encodeURIComponent(conferenceId)}?${params.toString()}`,
+    );
+    if (!res.ok) {
+      logger.warn("BigMarker attendance list failed", {
+        workspaceId,
+        conferenceId,
+        list,
+        status: res.status,
+      });
+      return false;
+    }
+    const data = res.data as {
+      attendees?: Array<{ email?: string }>;
+      registrations?: Array<{ email?: string }>;
+    };
+    const rows = data.attendees ?? data.registrations ?? [];
+    if (rows.some((r) => (r.email || "").toLowerCase() === want)) return true;
+    if (rows.length < ATTENDANCE_PAGE_SIZE) break;
+  }
+  return false;
 }
 
 /**
@@ -517,6 +536,7 @@ export async function syncBigmarkerStatus(
   const title = (conferenceTitle || "").trim() || contact.bigmarker?.[conferenceId]?.conferenceTitle || "BigMarker webinar";
   await ref.set(
     {
+      variables: { ...(contact.variables ?? {}), [STATUS_VARIABLE]: status },
       bigmarker: {
         ...(contact.bigmarker ?? {}),
         [conferenceId]: { status, conferenceTitle: title, syncedAtMs: Date.now() },
