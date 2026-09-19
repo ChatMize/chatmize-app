@@ -30,8 +30,32 @@ service cloud.firestore {
     match /workspaces/{workspaceId} {
       allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
       allow create, update, delete: if isSuperAdmin();
-      match /{document=**} {
-        allow read, write: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+      // Bookings: server-only (Admin SDK). Clients use callables + /booking-api.
+      // These explicit denies sit alongside the member grants below; both
+      // must deny for access to be refused, and the member grants exclude
+      // these collections by name.
+      match /bookings/{bookingId} {
+        allow read, write: if false;
+      }
+      match /bookingSettings/{docId} {
+        allow read, write: if false;
+      }
+      match /bookingLocks/{lockId} {
+        allow read, write: if false;
+      }
+      match /bookingEvents/{eventId} {
+        allow read, write: if false;
+      }
+      // All other nested collections: workspace members (or Super Admin).
+      // The server-only booking collections are excluded by name so a
+      // broad member grant can never open them.
+      match /{collectionId}/{docId} {
+        allow read, write: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
+          && !(collectionId in ['bookings', 'bookingSettings', 'bookingLocks', 'bookingEvents']);
+      }
+      match /{collectionId}/{docId}/{rest=**} {
+        allow read, write: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
+          && !(collectionId in ['bookings', 'bookingSettings', 'bookingLocks', 'bookingEvents']);
       }
     }
 
@@ -103,9 +127,97 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // send.chat link cloaker: cloaked link docs live in a top-level
+    // collection (schema contract with the Growth suite UI). Authenticated
+    // read/write for now; the app enforces workspace scoping client-side.
+    // Membership tightening is a separate queued task.
+    match /cloaked_links/{linkId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Connectivity probe: readable when signed in, never writable from clients.
     match /test/{docId} {
       allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Waitlist signups: written only by the backend (Admin SDK) via the
+    // public waitlist API. Super Admin can read for the admin list/export.
+    match /waitlist_signups/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    // Waitlist rate limits: backend-only bookkeeping, never client readable.
+    match /waitlist_rate_limits/{docId} {
+      allow read, write: if false;
+    }
+
+    // Website Overlays SDK (overlays.js): the published config snapshot is
+    // read directly from Firestore by the unauthenticated snippet, so it is
+    // public-read. Only the backend publishes it (Admin SDK bypasses rules);
+    // clients can never write it. Stats are member-read, backend-write only.
+    match /overlayConfigs/{workspaceId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /overlayStats/{workspaceId} {
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+
+    // Contest engine (viral contests / giveaways). Contests are public by
+    // design once published+active; participants/referrals/draws are
+    // workspace-private; writes go through the backend (Admin SDK) so
+    // anti-fraud (dedupe, rate limits, draws) cannot be bypassed.
+    function contestIsPublic() {
+      return resource.data.status == 'active' && resource.data.published == true;
+    }
+    match /contests/{contestId} {
+      allow read: if contestIsPublic() || isWorkspaceMember(resource.data.workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+    match /contest_leaderboards/{contestId} {
+      // Public top-100 snapshot: display aliases + points only, no PII.
+      allow read: if true;
+      allow write: if false;
+    }
+    match /contest_participants/{participantId} {
+      allow read: if isWorkspaceMember(resource.data.workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+    match /contest_referrals/{referralId} {
+      allow read: if isWorkspaceMember(resource.data.workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+    match /contest_draws/{drawId} {
+      allow read: if isWorkspaceMember(resource.data.workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+    match /contest_grants/{grantId} {
+      allow read: if isWorkspaceMember(resource.data.workspaceId) || isSuperAdmin();
+      allow write: if false;
+    }
+    match /contest_rate_limits/{key} {
+      allow read, write: if false;
+    }
+
+    // SegMate migration importer: backend-written via Admin SDK; Super Admin
+    // reads (Karl's concierge dashboard). Clients never write.
+    match /migration_rows/{rowKey} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /migration_jobs/{jobId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /migration_staging/{rowKey} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /migration_billing/{rowKey} {
+      allow read: if isSuperAdmin();
       allow write: if false;
     }
 

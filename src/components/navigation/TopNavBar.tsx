@@ -8,9 +8,6 @@ import {
   ShieldCheck, 
   LogOut, 
   ExternalLink, 
-  Facebook, 
-  Instagram, 
-  Phone, 
   Check, 
   Plus, 
   Menu,
@@ -25,7 +22,9 @@ import {
 } from 'lucide-react';
 import { WorkspaceSilo } from '../../types/workspace';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
-import { AppUser, signOutUser } from '../../lib/firebase';
+import { BuildCatalogBell } from './BuildCatalogBell';
+import { AppUser, signOutUser, prodDb } from '../../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 interface TopNavBarProps {
   activeTab: string;
@@ -58,6 +57,24 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
+  const [isOg, setIsOg] = useState(false);
+
+  // OG stamp: live badge state from the user's own profile doc.
+  useEffect(() => {
+    if (!currentUser?.uid) {
+      setIsOg(false);
+      return;
+    }
+    const unsub = onSnapshot(
+      doc(prodDb, 'users', currentUser.uid),
+      (snap) => {
+        const badges = (snap.data() as { badges?: { id: string }[] } | undefined)?.badges ?? [];
+        setIsOg(badges.some((b) => b.id === 'og_stamp'));
+      },
+      () => setIsOg(false),
+    );
+    return unsub;
+  }, [currentUser?.uid]);
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
 
@@ -125,6 +142,8 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
       case 'docs':
       case 'knowledge-base':
         return { title: 'Knowledge Base', category: 'Documentation', icon: HelpCircle };
+      case 'whats-new':
+        return { title: 'Build Catalog', category: 'Release Notes', icon: Sparkles };
       default:
         return { title: 'Platform Control', category: 'ChatMize', icon: LayoutDashboard };
     }
@@ -210,26 +229,10 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
             onNavigateToSuperAdmin={() => setActiveTab('kanban')}
           />
 
-          {/* Connected Silo Channels Pill (Desktop) */}
-          <div className="hidden xl:flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px]">
-            <div className="flex items-center gap-1 text-slate-300" title="Connected Facebook Page">
-              <Facebook className="w-3.5 h-3.5 text-blue-400" />
-              <span className="font-semibold text-white truncate max-w-[90px]">
-                {activeWorkspace?.connectedPage.pageName.split(' ')[0]}
-              </span>
-            </div>
-            <span className="text-slate-700">|</span>
-            <div className="flex items-center gap-1" title="Connected Instagram">
-              <Instagram className="w-3 h-3 text-pink-400" />
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            </div>
-            <div className="flex items-center gap-1" title="Connected WhatsApp">
-              <Phone className="w-3 h-3 text-emerald-400" />
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            </div>
-          </div>
+          {/* Channel status lives in the workspace switcher dropdown (avoids header crowding as channels grow) */}
 
           {/* Notifications Trigger */}
+          <BuildCatalogBell onOpenCatalog={() => setActiveTab('whats-new')} />
           <div className="relative" ref={notifRef}>
             <button
               onClick={() => setShowNotifications(prev => !prev)}
@@ -283,8 +286,16 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
             {showUserMenu && (
               <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl shadow-slate-950 p-2 z-50 animate-in fade-in zoom-in-95">
                 <div className="p-2.5 pb-2 border-b border-slate-800 mb-1">
-                  <p className="text-xs font-bold text-white truncate">
+                  <p className="text-xs font-bold text-white truncate flex items-center gap-1.5">
                     {currentUser?.displayName || 'Master Administrator'}
+                    {isOg && (
+                      <img
+                        src="/badges/og-stamp.webp"
+                        alt="OG Stamp"
+                        title="OG Stamp — original SegMate crew"
+                        className="w-5 h-5 rounded-full object-cover shrink-0"
+                      />
+                    )}
                   </p>
                   <p className="text-[11px] text-slate-400 truncate">
                     {currentUser?.email || 'instantreferralsapp@gmail.com'}

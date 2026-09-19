@@ -34,6 +34,8 @@ import {
   QrCode,
   Smartphone,
   Instagram,
+  Trophy,
+  Rocket,
   X
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
@@ -53,23 +55,43 @@ import { SupportChatView } from './components/growth/SupportChatView';
 import { WebsiteOverlaysView } from './components/growth/WebsiteOverlaysView';
 import { GrowthLinksView } from './components/growth/GrowthLinksView';
 import { GrowthSuiteHub } from './components/growth/GrowthSuiteHub';
+import { ContestsView } from './components/growth/ContestsView';
+import { KnowledgeBaseView } from './views/KnowledgeBaseView';
+import { ContestEntryPage } from './components/growth/ContestEntryPage';
+import { SurveyTakePage } from './components/growth/SurveyTakePage';
+import { BookingWidgetPage } from './components/bookings/BookingWidgetPage';
+import { ManageBookingPage } from './components/bookings/ManageBookingPage';
+import { ManageLinkAuth, parseManageLinkAuth } from './lib/bookings';
 import { NurtureToolType } from './types/nurture';
 import { OverlayType } from './types/growthTools';
 import { RecurringNotificationBroadcastHub } from './components/RecurringNotificationBroadcastHub';
 import { AuthGateModal } from './components/AuthGateModal';
-import { subscribeToAuthChanges, signOutUser, AppUser } from './lib/firebase';
+import { subscribeToAuthChanges, signOutUser, AppUser, db } from './lib/firebase';
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
 import { CopilotGuide } from './components/CopilotGuide';
+import GlobalEmojiBuddy from './components/emoji/GlobalEmojiBuddy';
+import GlobalPersonalizationBuddy from './components/personalization/GlobalPersonalizationBuddy';
+import { BadgeToast } from './components/BadgeToast';
+import { MetaReconnectBanner } from './components/MetaReconnectBanner';
+import { isWorkspaceOwner } from './lib/workspaceAccess';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { SnapshotImportView } from './views/SnapshotImportView';
 import { SnapshotLibraryView } from './views/SnapshotLibraryView';
 import { SmsBroadcastView } from './views/SmsBroadcastView';
+import { BuildCatalogView } from './views/BuildCatalogView';
 import { WorkspaceSilo } from './types/workspace';
 import { DEFAULT_WORKSPACES } from './data/workspaceDefaults';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('bot-list');
+  const [activeTab, setActiveTab] = useState(() => {
+    // Restore the last viewed tab so refresh keeps you on the same page
+    try {
+      return localStorage.getItem('chatmize_activeTab') || 'bot-list';
+    } catch {
+      return 'bot-list';
+    }
+  });
   const [activeBotId, setActiveBotId] = useState<string>('bot-1');
   const [activeBotTitle, setActiveBotTitle] = useState<string>('(Ad) Build-A-Bot Invite');
   const [isBotsExpanded, setIsBotsExpanded] = useState<boolean>(true);
@@ -159,7 +181,11 @@ export default function App() {
   // localStorage bypass: a signed-out user sees the auth gate, period.
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan'>('general');
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan'>(() => {
+    try {
+      return (localStorage.getItem('chatmize_settings_tab') as 'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan') || 'general';
+    } catch { return 'general'; }
+  });
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges((user) => {
@@ -168,6 +194,86 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Persist the active tab so a browser refresh keeps you on the same page.
+  useEffect(() => {
+    try {
+      localStorage.setItem('chatmize_activeTab', activeTab);
+    } catch {
+      // storage unavailable; ignore
+    }
+  }, [activeTab]);
+
+  // Sync real Firestore integration status into the workspace object.
+  // The localStorage workspace data is stale demo data; this pulls the live
+  // connection state (FB Page, Instagram, WhatsApp) from Firestore.
+  useEffect(() => {
+    const syncIntegrations = async () => {
+      try {
+        const { doc, getDoc } = await import('firebase/firestore');
+        // Map UI workspace to Firestore workspace (Dev Sandbox -> ws-chatmize-dev)
+        const ws = workspaces.find(w => w.id === activeWorkspaceId);
+        if (!ws) return;
+        // Sync the active workspace with the real Firestore data (ws-chatmize-dev)
+        // Note: was name-based ('dev sandbox'), now syncs any active workspace since
+        // there's only one real Firestore workspace until multi-workspace is built.
+
+        const firestoreWsId = 'ws-chatmize-dev';
+        const metaSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'meta'));
+        const igSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'instagram'));
+
+        let updated = { ...ws };
+        let changed = false;
+
+        if (metaSnap.exists()) {
+          const metaData = metaSnap.data();
+          if (metaData.status === 'connected' && metaData.pageId) {
+            updated.connectedPage = {
+              ...updated.connectedPage,
+              pageId: metaData.pageId,
+              pageName: metaData.pageName || updated.connectedPage.pageName,
+              serviceStatus: 'active',
+            };
+            // Use the Facebook Page profile image as the workspace avatar
+            if (metaData.pagePictureUrl) {
+              updated.avatarUrl = metaData.pagePictureUrl;
+              updated.connectedPage.avatarUrl = metaData.pagePictureUrl;
+            }
+            changed = true;
+          }
+        }
+
+        if (igSnap.exists()) {
+          const igData = igSnap.data();
+          if (igData.status === 'connected' && igData.igUserId) {
+            updated.connectedPage = {
+              ...updated.connectedPage,
+              connectedIg: {
+                username: igData.username || '',
+                igId: igData.igUserId,
+                followersCount: 0,
+                connected: true,
+                status: 'active',
+              },
+            };
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          const newWorkspaces = workspaces.map(w => w.id === ws.id ? updated : w);
+          setWorkspaces(newWorkspaces);
+          try {
+            localStorage.setItem('chatmize_workspaces', JSON.stringify(newWorkspaces));
+          } catch { /* ignore */ }
+        }
+      } catch (e) {
+        console.warn('Failed to sync integrations:', e);
+      }
+    };
+
+    syncIntegrations();
+  }, [activeWorkspaceId]);
 
   // Deep link: ?snapshot=<id> opens the snapshot import view.
   const [deepSnapshotId, setDeepSnapshotId] = useState<string | null>(null);
@@ -223,11 +329,12 @@ export default function App() {
     switch (activeTab) {
       case 'dashboard':
       case 'analytics':
-        return <Dashboard title="Main Dashboard Overview" />;
+        return <Dashboard title="Main Dashboard Overview" workspaceId={activeWorkspace?.id} />;
       case 'bot-list':
         return (
           <BotListView 
             triggerCreateModal={createModalTrigger}
+            workspaceSlug={activeWorkspace?.slug}
             onOpenLibrary={() => setActiveTab('snapshot-library')}
             onOpenBotMap={(bot) => {
               setActiveBotId(bot.id);
@@ -254,6 +361,7 @@ export default function App() {
           <SnapshotImportView
             snapshotId={deepSnapshotId}
             workspaceName={activeWorkspace?.name || 'your workspace'}
+            workspaceSlug={activeWorkspace?.slug}
             onBack={() => setActiveTab('bot-list')}
             onImported={() => setActiveTab('bot-list')}
           />
@@ -265,6 +373,7 @@ export default function App() {
             activeBotTitle={activeBotTitle}
             onUpdateBotTitle={(title) => setActiveBotTitle(title)}
             onBackToBotList={() => setActiveTab('bot-list')}
+            workspaceId={activeWorkspace?.id}
             onNavigateToIntegrations={() => setActiveTab('integrations')} 
             onNavigateToDocs={(docId?: string) => {
               if (docId) setSelectedDocId(docId);
@@ -279,6 +388,10 @@ export default function App() {
       case 'conversations':
         return (
           <LiveConversationsView
+            workspaceId={activeWorkspace?.id}
+            workspaceName={activeWorkspace?.name}
+            ownerName={activeWorkspace?.ownerName}
+            isOwner={isWorkspaceOwner(activeWorkspace, currentUser)}
             onNavigateToAudience={(contactId) => {
               setActiveTab('audience');
             }}
@@ -338,6 +451,10 @@ export default function App() {
             }}
           />
         );
+      case 'contests':
+        return <ContestsView workspaceId={activeWorkspace?.id} />;
+      case 'knowledge-base':
+        return <KnowledgeBaseView workspaceId={activeWorkspace?.id} />;
       case 'capture-tools':
       case 'capture':
       case 'nurture':
@@ -353,6 +470,7 @@ export default function App() {
                 ? 'growth_links'
                 : 'support_chat'
             }
+            workspaceId={activeWorkspace?.id}
             initialOverlayFilter={
               ['popup_modal', 'slider', 'page_takeover', 'sticky_bar'].includes(nurtureSubTab)
                 ? (nurtureSubTab as any)
@@ -360,6 +478,7 @@ export default function App() {
             }
             workspaceName={activeWorkspace?.name || 'Apex Marketing'}
             workspaceSlug={activeWorkspace?.slug || 'apex-marketing'}
+            workspacePlanId={activeWorkspace?.planId}
             onNavigateToFlows={(botId) => {
               if (botId) setActiveBotId(botId);
               setActiveTab('flows');
@@ -417,7 +536,6 @@ export default function App() {
           />
         );
       case 'docs':
-      case 'knowledge-base':
         return (
           <SettingsView
             initialTab="docs"
@@ -427,9 +545,12 @@ export default function App() {
             onUpdateWorkspace={handleUpdateWorkspace}
           />
         );
+      case 'whats-new':
+        return <BuildCatalogView onBack={() => setActiveTab('dashboard')} />;
       default:
         return (
           <FlowBuilder 
+            workspaceId={activeWorkspace?.id}
             onNavigateToIntegrations={() => setActiveTab('integrations')} 
             onNavigateToDocs={(docId?: string) => {
               if (docId) setSelectedDocId(docId);
@@ -470,6 +591,48 @@ export default function App() {
     } catch { /* ignore */ }
   }, [activeWorkspaceId]);
 
+  // Public contest entry page: /enter/:contestId renders without auth.
+  // The hosting rewrite sends every path to index.html, so the SPA owns
+  // this route. Placed after all hooks (same pattern as the onboarding gate).
+  const [publicContestId] = useState<string | null>(() => {
+    try {
+      const m = window.location.pathname.match(/^\/enter\/([A-Za-z0-9_-]+)/);
+      return m ? m[1] : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Public survey page: /survey/:surveyId renders without auth (same pattern).
+  const [publicSurveyId] = useState<string | null>(() => {
+    try {
+      const m = window.location.pathname.match(/^\/survey\/([A-Za-z0-9_-]+)/);
+      return m ? m[1] : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Public booking widget: ?book=<workspaceId> renders without auth.
+  // ?booking=<workspaceId>.<bookingId>&sig=...&exp=... renders the manage
+  // (reschedule/cancel) page with a server-signed link.
+  const [publicBook] = useState<{ workspaceId: string; embed: boolean } | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ws = params.get('book');
+      return ws ? { workspaceId: ws, embed: params.get('embed') === '1' } : null;
+    } catch {
+      return null;
+    }
+  });
+  const [publicManage] = useState<ManageLinkAuth | null>(() => {
+    try {
+      return parseManageLinkAuth(new URLSearchParams(window.location.search));
+    } catch {
+      return null;
+    }
+  });
+
   // Onboarding gate: a signed-in user whose workspace hasn't finished onboarding
   // goes through the wizard (connect accounts -> choose DIY/DFU route -> tier).
   if (!authLoading && currentUser && activeWorkspace && !activeWorkspace.onboardingComplete) {
@@ -481,6 +644,22 @@ export default function App() {
         initialStep={oauthReturnTo === 'onboarding:connect' ? 'connect' : undefined}
       />
     );
+  }
+
+  if (publicContestId) {
+    return <ContestEntryPage contestId={publicContestId} />;
+  }
+
+  if (publicSurveyId) {
+    return <SurveyTakePage surveyId={publicSurveyId} />;
+  }
+
+  if (publicBook) {
+    return <BookingWidgetPage workspaceId={publicBook.workspaceId} embed={publicBook.embed} />;
+  }
+
+  if (publicManage) {
+    return <ManageBookingPage auth={publicManage} />;
   }
 
   const showGuide = Boolean(
@@ -670,6 +849,7 @@ export default function App() {
                 'capture-tools',
                 'support-chat',
                 'support_widget',
+                'knowledge-base',
                 'overlays',
                 'website-overlays',
                 'popup_modal',
@@ -681,6 +861,7 @@ export default function App() {
                 'send-chat',
                 'mme',
                 'igme',
+                'contests',
                 'nurture',
                 'convertmate'
               ].includes(activeTab);
@@ -692,7 +873,7 @@ export default function App() {
                       setActiveTab('support-chat');
                     }
                   }}
-                  title="Capture Tools (Support Chat, Overlays, Growth Links)"
+                  title="Capture Tools (Support Chat, Knowledge Base, Overlays, Growth Links, Contests)"
                   className={`w-full p-2.5 rounded-xl transition-all flex items-center justify-center cursor-pointer ${
                     isCaptureActive
                       ? 'bg-gradient-to-r from-cyan-500/15 to-blue-500/15 text-cyan-300 border border-cyan-500/30'
@@ -723,7 +904,7 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono font-bold">
-                        3 Tools
+                        5 Tools
                       </span>
                       <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isCaptureExpanded ? 'rotate-180 text-cyan-400' : ''}`} />
                     </div>
@@ -748,7 +929,23 @@ export default function App() {
                         <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">24/7 AI</span>
                       </button>
 
-                      {/* Child 2: Website Overlays */}
+                      {/* Child 2: Knowledge Base */}
+                      <button
+                        onClick={() => setActiveTab('knowledge-base')}
+                        className={`w-full text-left py-1.5 px-2 rounded-lg text-xs font-medium transition-all flex items-center justify-between cursor-pointer ${
+                          activeTab === 'knowledge-base'
+                            ? 'bg-cyan-500/20 text-cyan-300 font-bold'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Knowledge Base</span>
+                        </div>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">Guides</span>
+                      </button>
+
+                      {/* Child 3: Website Overlays */}
                       <button
                         onClick={() => {
                           setActiveTab('overlays');
@@ -784,6 +981,22 @@ export default function App() {
                           <span>Growth Links</span>
                         </div>
                         <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono">send.chat</span>
+                      </button>
+
+                      {/* Child 4: Contests */}
+                      <button
+                        onClick={() => setActiveTab('contests')}
+                        className={`w-full text-left py-1.5 px-2 rounded-lg text-xs font-medium transition-all flex items-center justify-between cursor-pointer ${
+                          activeTab === 'contests'
+                            ? 'bg-amber-500/20 text-amber-300 font-bold'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Contests</span>
+                        </div>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">viral</span>
                       </button>
                     </div>
                   )}
@@ -882,6 +1095,14 @@ export default function App() {
               active={activeTab === 'settings' || activeTab === 'channels'} 
               onClick={() => { setSettingsInitialTab('general'); setActiveTab('settings'); }}               collapsed={isSidebarCollapsed} 
             />
+
+            <NavItem 
+              icon={<Rocket className="w-4 h-4" />} 
+              label="Build Catalog" 
+              active={activeTab === 'whats-new'} 
+              onClick={() => setActiveTab('whats-new')} 
+              collapsed={isSidebarCollapsed} 
+            />
           </div>
 
         </nav>
@@ -939,6 +1160,12 @@ export default function App() {
 
         {/* View Viewport */}
         <main className={`flex-1 min-w-0 flex flex-col relative ${isFlows || activeTab === 'conversations' ? 'overflow-hidden p-0 h-full' : 'overflow-y-auto p-3.5 sm:p-5 md:p-6 lg:p-8'}`}>
+          {activeWorkspace?.id && (
+            <MetaReconnectBanner
+              workspaceId={activeWorkspace.id}
+              workspaceName={activeWorkspace.name}
+            />
+          )}
           {showPlanNudge && (
             <div className="mb-4 w-full px-4 py-3 rounded-2xl bg-gradient-to-r from-purple-600/15 to-indigo-600/15 border border-purple-500/30 flex items-center justify-between gap-3">
               <button
@@ -983,6 +1210,10 @@ export default function App() {
           onDismiss={dismissGuide}
         />
       )}
+      <GlobalEmojiBuddy />
+      <GlobalPersonalizationBuddy />
+      {/* Gamification: badge-earned toasts */}
+      {currentUser && <BadgeToast currentUser={currentUser} workspaceId={activeWorkspace?.id} />}
     </div>
   );
 }
