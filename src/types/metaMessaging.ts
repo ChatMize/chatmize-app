@@ -42,6 +42,11 @@ export type TriggerType =
   // Integrations & Events
   | 'webhook'
   | 'shopify_trigger'
+  | 'shopify_cart_abandoned'
+  | 'shopify_order_created'
+  | 'shopify_order_shipped'
+  | 'shopify_order_delivered'
+  | 'shopify_product_purchased'
   | 'lead_form';
 
 export interface FlowTrigger {
@@ -494,6 +499,87 @@ export const TRIGGER_CATALOG: TriggerTemplate[] = [
       title: 'Shopify Abandoned Checkout Recovery',
       description: 'Triggered when Shopify checkout is abandoned for > 15 mins',
       keywords: ['ABANDONED_CHECKOUT', 'ORDER_PAID', 'CART_RECOVERY'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'shopify_cart_abandoned',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Shopify Cart Abandoned',
+    description: 'Fire when a shopper leaves checkout open past your abandonment window with no order.',
+    badge: 'E-Commerce',
+    icon: 'ShoppingBag',
+    popular: true,
+    defaultConfig: {
+      title: 'Shopify Cart Abandoned',
+      description: 'Cart recovery message with the shopper items and a one tap return link',
+      keywords: ['CART_ABANDONED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'shopify_order_created',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Shopify Order Confirmed',
+    description: 'Fire when a new order is placed or paid for in your Shopify store.',
+    badge: 'E-Commerce',
+    icon: 'ShoppingBag',
+    defaultConfig: {
+      title: 'Shopify Order Confirmed',
+      description: 'Thank you and order summary right after purchase',
+      keywords: ['ORDER_CREATED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'shopify_order_shipped',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Shopify Order Shipped',
+    description: 'Fire when a fulfillment is created, with tracking details when available.',
+    badge: 'E-Commerce',
+    icon: 'ShoppingBag',
+    defaultConfig: {
+      title: 'Shopify Order Shipped',
+      description: 'Shipping notification with tracking number',
+      keywords: ['ORDER_SHIPPED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'shopify_order_delivered',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Shopify Order Delivered',
+    description: 'Fire when the carrier marks the shipment delivered. Great for reviews and upsells.',
+    badge: 'E-Commerce',
+    icon: 'ShoppingBag',
+    defaultConfig: {
+      title: 'Shopify Order Delivered',
+      description: 'Delivery confirmation plus review request',
+      keywords: ['ORDER_DELIVERED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'shopify_product_purchased',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Shopify Product Purchased',
+    description: 'Fire when a specific product is bought. Add the product id in the trigger settings to filter.',
+    badge: 'E-Commerce',
+    icon: 'ShoppingBag',
+    defaultConfig: {
+      title: 'Shopify Product Purchased',
+      description: 'Post purchase flow for one product: onboarding, cross sell, review',
+      keywords: ['PRODUCT_PURCHASED'],
       matchRule: 'contains',
       keywordMode: 'keywords'
     }
