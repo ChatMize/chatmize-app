@@ -39,6 +39,8 @@ export type { IntegrationApp };
 export { CHATMIZE_INTEGRATIONS };
 import { WorkspaceSilo } from '../types/workspace';
 import { SmsChannelCard } from '../components/channels/SmsChannelCard';
+import { PushChannelCard } from '../components/channels/PushChannelCard';
+import { PushOptinBuilder } from '../components/push/PushOptinBuilder';
 import { MetaConnectCard } from '../components/channels/MetaConnectCard';
 import { InstagramConnectCard } from '../components/channels/InstagramConnectCard';
 import { getMetaOAuthStatus, startMetaOAuth } from '../lib/meta';
@@ -492,6 +494,8 @@ export function SettingsView({
             {workspace?.id && <MetaConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={refreshAnchor} />}
             {workspace?.id && <InstagramConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" hasPageAnchor={anchor.connected} />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
+            {workspace?.id && <PushChannelCard workspaceId={workspace.id} />}
+            {workspace?.id && <PushOptinBuilder workspaceId={workspace.id} />}
             {channels.map(channel => (
               <div
                 key={channel.id}
