@@ -15,6 +15,7 @@ import {
   Send,
   Trash2,
   Undo2,
+  Video as VideoIcon,
   X,
 } from 'lucide-react';
 import {
@@ -27,8 +28,10 @@ import {
   saveKbArticle,
   unpublishKbArticleFn,
   uploadKbImage,
+  uploadKbVideo,
 } from '../../lib/kb';
 import { KbImage } from './KbImage';
+import { KbMedia } from './KbMedia';
 import { KbArticleViewer } from './KbArticleViewer';
 
 function StepImageField({
@@ -112,6 +115,94 @@ function StepImageField({
             <ImageIcon className="w-4 h-4" />
           )}
           {uploading ? 'Uploading and compressing...' : 'Add a screenshot: click to browse or drop a file here'}
+        </button>
+      )}
+      {error && <p className="text-xs text-rose-300 mt-1.5">{error}</p>}
+    </div>
+  );
+}
+
+function StepVideoField({
+  workspaceId,
+  articleId,
+  stepId,
+  videoPath,
+  onChange,
+}: {
+  workspaceId: string;
+  articleId: string;
+  stepId: string;
+  videoPath?: string;
+  onChange: (path?: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const startUpload = async (file: File) => {
+    setError(null);
+    setUploading(true);
+    try {
+      const path = await uploadKbVideo(workspaceId, articleId, stepId, file);
+      onChange(path);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload failed. Try a different video.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="video/mp4,video/webm"
+        className="hidden"
+        onChange={e => {
+          const f = e.target.files?.[0];
+          if (f) startUpload(f);
+          e.target.value = '';
+        }}
+      />
+      {videoPath ? (
+        <div className="relative group rounded-xl overflow-hidden border border-white/10">
+          <KbMedia path={videoPath} alt="Step video" className="w-full max-h-56" />
+          <button
+            onClick={() => onChange(undefined)}
+            title="Remove video"
+            className="absolute top-2 right-2 p-1.5 rounded-lg bg-slate-950/80 text-slate-300 hover:text-rose-300 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => fileRef.current?.click()}
+          onDragOver={e => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={e => {
+            e.preventDefault();
+            setDragging(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f) startUpload(f);
+          }}
+          className={`w-full p-4 rounded-xl border border-dashed text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+            dragging
+              ? 'border-cyan-400 bg-cyan-500/10 text-cyan-300'
+              : 'border-white/15 bg-white/[0.02] text-slate-400 hover:text-slate-200 hover:border-white/25'
+          }`}
+        >
+          {uploading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <VideoIcon className="w-4 h-4" />
+          )}
+          {uploading ? 'Uploading video...' : 'Add a video: click to browse or drop a file here (MP4 or WebM, up to 100 MB)'}
         </button>
       )}
       {error && <p className="text-xs text-rose-300 mt-1.5">{error}</p>}
@@ -504,6 +595,16 @@ export function KbStepEditor({
             onChange={path => touch({ ...article, coverImagePath: path || '' })}
           />
         </div>
+        <div>
+          <label className="text-xs font-bold text-slate-300 block mb-1.5">Cover video (optional)</label>
+          <StepVideoField
+            workspaceId={workspaceId}
+            articleId={article.id}
+            stepId="cover"
+            videoPath={article.coverVideoPath || undefined}
+            onChange={path => touch({ ...article, coverVideoPath: path || '' })}
+          />
+        </div>
       </div>
 
       {/* Steps */}
@@ -599,6 +700,14 @@ export function KbStepEditor({
               stepId={step.id}
               imagePath={step.imagePath}
               onChange={path => updateStep(step.id, { imagePath: path })}
+            />
+
+            <StepVideoField
+              workspaceId={workspaceId}
+              articleId={article.id}
+              stepId={step.id}
+              videoPath={step.videoPath}
+              onChange={path => updateStep(step.id, { videoPath: path })}
             />
 
             <div className="flex gap-2.5 items-start p-3 rounded-xl bg-amber-500/[0.06] border border-amber-500/20">
