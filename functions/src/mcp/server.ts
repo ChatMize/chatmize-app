@@ -100,6 +100,8 @@ export function buildMcpServer(key: VerifiedKey): McpServer {
         .describe("Publicly fetchable media URL (e.g. a Firebase Storage download URL). Sent as a Messenger/Instagram attachment."),
       mediaType: z.enum(["video", "audio", "image"]).optional()
         .describe("Attachment type for mediaUrl. Required when mediaUrl is given."),
+      quickReplies: z.array(z.string()).max(13).optional()
+        .describe("Quick reply buttons (max 13, 20 chars each). Meta text-first rule: always sent with the text message, never the media. Ignored on WhatsApp/SMS."),
       contactCaptureFields: z.array(z.enum(["phone", "email"])).optional()
         .describe("Contact capture: send the text with one-tap phone/email quick replies attached. The reply is validated and saved to the contact."),
       contactCaptureMode: z.enum(["quick_reply", "free_text", "both"]).optional()

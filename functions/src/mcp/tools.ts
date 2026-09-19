@@ -150,15 +150,16 @@ async function resolveSendTarget(
  */
 export async function sendMessage(
   ctx: ToolContext,
-  args: { channel: string; recipientId?: string; conversationId?: string; text?: string; mediaUrl?: string; mediaType?: "video" | "audio" | "image"; contactCaptureFields?: Array<"phone" | "email">; contactCaptureMode?: "quick_reply" | "free_text" | "both" },
+  args: { channel: string; recipientId?: string; conversationId?: string; text?: string; mediaUrl?: string; mediaType?: "video" | "audio" | "image"; quickReplies?: string[]; contactCaptureFields?: Array<"phone" | "email">; contactCaptureMode?: "quick_reply" | "free_text" | "both" },
 ): Promise<{ ok: boolean; messageId: string | null; channel: string; recipientId: string }> {
-  const contactCapture = args.contactCaptureFields?.length
-    ? { fields: args.contactCaptureFields, mode: args.contactCaptureMode ?? ("both" as const) }
-    : null;
-  if ((!args.text || !args.text.trim()) && !args.mediaUrl && !contactCapture) throw new Error("Provide text, a media attachment, or a contact capture.");
+  const hasCapture = !!args.contactCaptureFields?.length;
+  if ((!args.text || !args.text.trim()) && !args.mediaUrl && !hasCapture && !(args.quickReplies?.length)) throw new Error("Provide text, a media attachment, quick replies, or a contact capture.");
   if (args.text && args.text.length > 1600) throw new Error("text is too long (max 1600 characters).");
   if (args.mediaUrl && !["video", "audio", "image"].includes(args.mediaType ?? "")) {
     throw new Error("mediaType must be video, audio, or image.");
+  }
+  if (args.quickReplies !== undefined && (!Array.isArray(args.quickReplies) || args.quickReplies.some((q) => typeof q !== "string"))) {
+    throw new Error("quickReplies must be an array of strings.");
   }
   const { channel, recipientId } = await resolveSendTarget(ctx, args);
   try {
@@ -174,7 +175,12 @@ export async function sendMessage(
       args.text ?? "",
       null,
       args.mediaUrl ? { url: args.mediaUrl, type: args.mediaType as "video" | "audio" | "image" } : null,
-      contactCapture,
+      {
+        quickReplies: args.quickReplies ?? null,
+        contactCapture: hasCapture
+          ? { fields: args.contactCaptureFields!, mode: args.contactCaptureMode ?? "both" }
+          : null,
+      },
     );
     return { ok: true, messageId: r.metaMessageId, channel, recipientId };
   } catch (err) {

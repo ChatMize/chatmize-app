@@ -3230,6 +3230,7 @@ function NodeEditor({
   onToggleTrigger?: (triggerId: string) => void;
 }) {
   const [newBtnText, setNewBtnText] = useState('');
+  const [newQrText, setNewQrText] = useState('');
   const [newTagText, setNewTagText] = useState('');
   const [newKeywordInput, setNewKeywordInput] = useState('');
   // Emoji picker targets for bot message authoring
@@ -3478,6 +3479,20 @@ function NodeEditor({
     if (!node.buttons) return;
     const updated = node.buttons.filter((_, i) => i !== index);
     onAutoUpdate({ buttons: updated });
+  };
+
+  const handleAddQuickReply = () => {
+    if (!newQrText.trim()) return;
+    const current = node.quickReplies || [];
+    if (current.length >= 13) return;
+    onAutoUpdate({ quickReplies: [...current, newQrText.trim().slice(0, 20)] });
+    setNewQrText('');
+  };
+
+  const handleRemoveQuickReply = (index: number) => {
+    if (!node.quickReplies) return;
+    const updated = node.quickReplies.filter((_, i) => i !== index);
+    onAutoUpdate({ quickReplies: updated });
   };
 
   const handleAddTag = () => {
@@ -5765,6 +5780,55 @@ function NodeEditor({
           </div>
         )}
 
+        {/* Quick Replies */}
+        {node.type === 'message' && (
+          <div>
+            <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Quick Replies</label>
+            <p className="text-[10px] text-slate-500 mb-2">Meta requires quick replies to send with message text. They always go out with the text, after any media.</p>
+            {(!node.content || !node.content.trim()) && (node.quickReplies || []).length > 0 && (
+              <p className="text-[10px] text-amber-400 mb-2">Add message text above so the quick replies have text to attach to.</p>
+            )}
+            <div className="space-y-2 mb-3">
+              {(node.quickReplies || []).map((qr, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold text-white">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{qr}</span>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveQuickReply(idx)}
+                    className="text-slate-400 hover:text-red-400 p-1 transition-colors"
+                    title="Remove quick reply"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Add new quick reply input */}
+            <div className="flex gap-2 items-center">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Reply label... (max 20 chars)"
+                  value={newQrText}
+                  onChange={(e) => setNewQrText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddQuickReply()}
+                  maxLength={20}
+                  className="w-full bg-slate-900 border border-white/10 rounded-xl pl-3 pr-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors"
+                />
+              </div>
+              <button
+                onClick={handleAddQuickReply}
+                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Actions configuration */}
         {node.type === 'action' && (
           <div>
@@ -6323,6 +6387,7 @@ function PhoneSimulator({
   const [currentNodeId, setCurrentNodeId] = useState<string>('step-1');
   const [chatItems, setChatItems] = useState<SimulatorItem[]>([]);
   const [activeButtons, setActiveButtons] = useState<string[]>([]);
+  const [activeQuickReplies, setActiveQuickReplies] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [typingDuration, setTypingDuration] = useState<number>(3);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(3);
@@ -6684,12 +6749,18 @@ function PhoneSimulator({
     // Everything else runs in sequence after the media and text.
     orderedComps.filter((c) => !isMediaComponent(c)).forEach(pushComponent);
 
-    // Final interactive buttons
+    // Final interactive buttons + quick replies. Quick replies render with
+    // the text step per Meta's text-first rule (they never ride the media).
     queue.push(() => {
       if (node.buttons && node.buttons.length > 0) {
         setActiveButtons(node.buttons);
       } else {
         setActiveButtons([]);
+      }
+      if (node.quickReplies && node.quickReplies.length > 0) {
+        setActiveQuickReplies(node.quickReplies);
+      } else {
+        setActiveQuickReplies([]);
       }
     });
 
@@ -6726,6 +6797,7 @@ function PhoneSimulator({
       { id: `user-${Date.now()}`, sender: 'user', text: btnLabel }
     ]);
     setActiveButtons([]);
+    setActiveQuickReplies([]);
 
     // Persist user button response as a dynamic variable to Firestore contact
     try {
@@ -6822,6 +6894,7 @@ function PhoneSimulator({
     setActiveCapture(null);
     setCaptureInput('');
     setCaptureError(null);
+    setActiveQuickReplies([]);
     setAppliedTag(null);
 
     const startNode = nodes.find(n => n.type === 'trigger') || nodes.find(n => n.id === 'step-1') || nodes[0];
@@ -7358,6 +7431,21 @@ function PhoneSimulator({
                 >
                   <span>{btn}</span>
                   <ChevronRight className="w-3.5 h-3.5 text-blue-400" />
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Quick Replies (Meta text-first: shown with the text step, never on media) */}
+          {!isTyping && activeQuickReplies.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-1 w-full max-w-[88%] animate-in fade-in slide-in-from-bottom-2 duration-200">
+              {activeQuickReplies.map((qr, qIdx) => (
+                <button
+                  key={qIdx}
+                  type="button"
+                  onClick={() => setActiveQuickReplies([])}
+                  className="py-1.5 px-3 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/40 hover:border-emerald-400 text-emerald-200 rounded-full text-xs font-semibold transition-all cursor-pointer active:scale-95"
+                >
+                  {qr}
                 </button>
               ))}
             </div>

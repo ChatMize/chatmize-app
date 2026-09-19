@@ -289,7 +289,7 @@ export async function handleContactCapture(
         capturePromptFor(remaining),
         null,
         null,
-        capture,
+        { contactCapture: capture },
       );
       return true;
     }
@@ -317,7 +317,7 @@ export async function handleContactCapture(
       rejectionGuidance(resolution, pending.mode),
       null,
       null,
-      capture,
+      { contactCapture: capture },
     );
     return true;
   } catch (err) {

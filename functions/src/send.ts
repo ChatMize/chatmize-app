@@ -50,15 +50,46 @@ async function postJson(
 }
 
 /** Send a Messenger message via the page access token. */
+export interface QuickReply {
+  content_type: "text";
+  title: string;
+  payload: string;
+}
+
+/**
+ * Sanitize raw quick reply titles into Meta quick_reply objects.
+ * Meta limits: max 13 replies, 20 chars per title. Quick replies are a
+ * Meta-channel feature and must ride on a text message (Messenger docs:
+ * "add the quick_replies array to a text message"; Instagram docs:
+ * "Quick replies only support plain text").
+ */
+export function toQuickReplies(titles: string[] | undefined | null): QuickReply[] {
+  if (!titles || titles.length === 0) return [];
+  return titles
+    .map((t) => (typeof t === "string" ? t.trim() : ""))
+    .filter((t) => t.length > 0)
+    .slice(0, 13)
+    .map((t) => ({
+      content_type: "text" as const,
+      title: t.slice(0, 20),
+      payload: t.slice(0, 1000),
+    }));
+}
+
+/** Send a Messenger text message via the page access token. */
 export function sendMessengerMessage(
   pageAccessToken: string,
   psid: string,
   text: string,
+  quickReplies?: QuickReply[],
 ): Promise<SendResult> {
   return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
     recipient: { id: psid },
     messaging_type: "RESPONSE",
-    message: { text },
+    message: {
+      text,
+      ...(quickReplies && quickReplies.length > 0 ? { quick_replies: quickReplies } : {}),
+    },
   });
 }
 
@@ -93,10 +124,14 @@ export function sendInstagramMessage(
   pageAccessToken: string,
   igsid: string,
   text: string,
+  quickReplies?: QuickReply[],
 ): Promise<SendResult> {
   return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
     recipient: { id: igsid },
-    message: { text },
+    message: {
+      text,
+      ...(quickReplies && quickReplies.length > 0 ? { quick_replies: quickReplies } : {}),
+    },
   });
 }
 
@@ -131,10 +166,14 @@ export function sendInstagramDirectMessage(
   igAccessToken: string,
   igsid: string,
   text: string,
+  quickReplies?: QuickReply[],
 ): Promise<SendResult> {
   return postJson(`${IG_GRAPH_BASE}/me/messages`, igAccessToken, {
     recipient: { id: igsid },
-    message: { text },
+    message: {
+      text,
+      ...(quickReplies && quickReplies.length > 0 ? { quick_replies: quickReplies } : {}),
+    },
   });
 }
 

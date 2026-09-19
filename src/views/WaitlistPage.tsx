@@ -103,6 +103,7 @@ export const WaitlistPage: React.FC = () => {
                 <input
                   id="wl-name"
                   type="text"
+                  name="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Jane Founder"
@@ -115,10 +116,12 @@ export const WaitlistPage: React.FC = () => {
                 <input
                   id="wl-email"
                   type="email"
+                  name="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
                   autoComplete="email"
+                  inputMode="email"
                   required
                   className="w-full px-4 py-3 rounded-xl bg-slate-950/80 border border-white/10 text-white placeholder:text-slate-500 text-sm focus:outline-none focus:border-indigo-500/60 focus:ring-2 focus:ring-indigo-500/20"
                 />

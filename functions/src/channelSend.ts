@@ -28,6 +28,7 @@ import {
 } from "./instagramOAuth";
 import {
   CHANNEL_SENDERS,
+  sendMessengerMessage,
   sendInstagramMessage,
   sendInstagramDirectMessage,
   sendMessengerMedia,
@@ -36,6 +37,8 @@ import {
   sendMessengerContactCapture,
   sendInstagramContactCapture,
   sendInstagramDirectContactCapture,
+  toQuickReplies,
+  QuickReply,
   MediaAttachmentType,
   ContactCaptureField,
 } from "./send";
@@ -110,6 +113,16 @@ export interface ContactCapture {
 export const DEFAULT_CAPTURE_PROMPT =
   "How can we reach you? Tap below or type it in.";
 
+/** Optional extras for a send: plain quick replies and/or contact capture. */
+export interface SendExtras {
+  /** Plain-text quick reply buttons. Meta text-first rule: always sent
+   * with the text message, never the media. */
+  quickReplies?: string[] | null;
+  /** Contact capture (BotMaps block): one-tap phone/email quick replies
+   * on the text prompt, then arms pendingCapture on the conversation. */
+  contactCapture?: ContactCapture | null;
+}
+
 /**
  * Send one message through the workspace's connected Meta channels.
  * Throws ChannelSendError on validation / connection / provider failures.
@@ -117,6 +130,7 @@ export const DEFAULT_CAPTURE_PROMPT =
  * Either text, media, or a contact capture must be provided. When both
  * media and text are given, the media attachment sends first and the text
  * follows as a second message, so media always leads the conversation.
+ * Quick replies always ride the text unit, never the media (Meta rule).
  * A contact capture sends the prompt as text with one-tap phone/email
  * quick replies attached, then arms pendingCapture on the conversation
  * so the next inbound message is saved as the answer.
@@ -128,8 +142,10 @@ export async function sendChannelMessageInternal(
   text: string,
   clientMessageId?: string | null,
   media?: ChannelMedia | null,
-  contactCapture?: ContactCapture | null,
+  extras?: SendExtras | null,
 ): Promise<ChannelSendResult> {
+  const quickReplies = extras?.quickReplies ?? null;
+  const contactCapture = extras?.contactCapture ?? null;
   if (!workspaceId || !channel || !recipientId) {
     throw new ChannelSendError(
       "invalid-argument",
@@ -169,11 +185,17 @@ export async function sendChannelMessageInternal(
         "Contact capture cannot be combined with a media attachment. Send them as separate messages.",
       );
     }
+    if (quickReplies?.length) {
+      throw new ChannelSendError(
+        "invalid-argument",
+        "Contact capture cannot be combined with custom quick replies. The capture prompt already carries one-tap phone/email buttons.",
+      );
+    }
   }
-  if (!text && !media?.url && !contactCapture) {
+  if (!text && !media?.url && !contactCapture && !(quickReplies?.length)) {
     throw new ChannelSendError(
       "invalid-argument",
-      "Provide message text, a media attachment, or a contact capture.",
+      "Provide message text, a media attachment, quick replies, or a contact capture.",
     );
   }
   if (media?.url && !["video", "audio", "image"].includes(media.type)) {
@@ -199,9 +221,15 @@ export async function sendChannelMessageInternal(
 
   // Media always leads: when both media and text are present, the
   // attachment goes out first and the text follows as its own message.
+  // Quick replies are a Meta text-first element: Meta's Messenger docs say
+  // to add the quick_replies array to a text message, and Instagram docs
+  // say quick replies only support plain text. They always ride the text
+  // unit, never the media unit. If there is no text, the replies go out
+  // on a minimal follow-up text message after the media.
   // A contact capture goes out as one text message carrying the one-tap
-  // quick replies (quick replies must ride on text per Meta's rules).
-  const units: Array<{ media?: ChannelMedia; text?: string; capture?: ContactCapture }> = [];
+  // phone/email quick replies (same text-first rule).
+  const qr = toQuickReplies(quickReplies);
+  const units: Array<{ media?: ChannelMedia; text?: string; quickReplies?: QuickReply[]; capture?: ContactCapture }> = [];
   if (media?.url) units.push({ media });
   if (contactCapture) {
     units.push({
@@ -209,7 +237,9 @@ export async function sendChannelMessageInternal(
       text: text && text.trim() ? resolvedText : DEFAULT_CAPTURE_PROMPT,
     });
   } else if (text && text.trim()) {
-    units.push({ text: resolvedText });
+    units.push({ text: resolvedText, quickReplies: qr.length > 0 ? qr : undefined });
+  } else if (qr.length > 0) {
+    units.push({ text: "Choose an option", quickReplies: qr });
   }
 
   // Token self-heal, per connection:
@@ -279,7 +309,7 @@ export async function sendChannelMessageInternal(
           ? await sendInstagramDirectContactCapture(igToken, recipientId, unit.text ?? resolvedText, unit.capture.fields)
           : unit.media
             ? await sendInstagramDirectMedia(igToken, recipientId, unit.media.url, unit.media.type)
-            : await sendInstagramDirectMessage(igToken, recipientId, unit.text ?? resolvedText);
+            : await sendInstagramDirectMessage(igToken, recipientId, unit.text ?? resolvedText, unit.quickReplies);
         await recordOutboundMessage(
           workspaceId,
           channel,
@@ -310,7 +340,7 @@ export async function sendChannelMessageInternal(
           ? await sendInstagramContactCapture(pageToken, recipientId, unit.text ?? resolvedText, unit.capture.fields)
           : unit.media
             ? await sendInstagramMedia(pageToken, recipientId, unit.media.url, unit.media.type)
-            : await sendInstagramMessage(pageToken, recipientId, unit.text ?? resolvedText);
+            : await sendInstagramMessage(pageToken, recipientId, unit.text ?? resolvedText, unit.quickReplies);
         await recordOutboundMessage(
           workspaceId,
           channel,
@@ -342,7 +372,7 @@ export async function sendChannelMessageInternal(
         ? await sendMessengerContactCapture(pageToken, recipientId, unit.text ?? resolvedText, unit.capture.fields)
         : unit.media
           ? await sendMessengerMedia(pageToken, recipientId, unit.media.url, unit.media.type)
-          : await CHANNEL_SENDERS[channel](pageToken, recipientId, unit.text ?? resolvedText);
+          : await sendMessengerMessage(pageToken, recipientId, unit.text ?? resolvedText, unit.quickReplies);
       await recordOutboundMessage(
         workspaceId,
         channel,

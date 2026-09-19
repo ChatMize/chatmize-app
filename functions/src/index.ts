@@ -407,12 +407,14 @@ interface SendMessageData {
   /** Optional media attachment (bot builder video/audio/image). */
   mediaUrl?: string;
   mediaType?: "video" | "audio" | "image";
-  /** Contact capture (BotMaps block): one-tap phone/email quick replies. */
-  contactCaptureFields?: Array<"phone" | "email">;
-  contactCaptureMode?: "quick_reply" | "free_text" | "both";
-  /** Frontend's optimistic message id, echoed back as clientId on the
-   * persisted doc so the UI can reconcile instead of duplicating. */
-  clientMessageId?: string;
+    /** Optional quick replies. Meta text-first rule: always sent with the text message, never the media. */
+    quickReplies?: string[];
+    /** Contact capture (BotMaps block): one-tap phone/email quick replies. */
+    contactCaptureFields?: Array<"phone" | "email">;
+    contactCaptureMode?: "quick_reply" | "free_text" | "both";
+    /** Frontend's optimistic message id, echoed back as clientId on the
+     * persisted doc so the UI can reconcile instead of duplicating. */
+    clientMessageId?: string;
 }
 /**
  * Authenticated callable: send a message on Messenger, Instagram, or WhatsApp.
@@ -426,21 +428,19 @@ export const sendChannelMessage = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "Sign in required.");
     }
-    const { workspaceId, channel, recipientId, text, mediaUrl, mediaType, contactCaptureFields, contactCaptureMode, clientMessageId } = (request.data ?? {}) as SendMessageData;
+    const { workspaceId, channel, recipientId, text, mediaUrl, mediaType, quickReplies, contactCaptureFields, contactCaptureMode, clientMessageId } = (request.data ?? {}) as SendMessageData;
     if (!workspaceId || !channel || !recipientId) {
       throw new HttpsError("invalid-argument", "workspaceId, channel, and recipientId are required.");
     }
-    const contactCapture = contactCaptureFields?.length
-      ? {
-          fields: contactCaptureFields,
-          mode: contactCaptureMode ?? ("both" as const),
-        }
-      : null;
-    if (!text && !mediaUrl && !contactCapture) {
-      throw new HttpsError("invalid-argument", "Provide message text, a media attachment, or a contact capture.");
+    const hasCapture = !!contactCaptureFields?.length;
+    if (!text && !mediaUrl && !hasCapture && !(quickReplies?.length)) {
+      throw new HttpsError("invalid-argument", "Provide message text, a media attachment, quick replies, or a contact capture.");
     }
     if (mediaUrl && !["video", "audio", "image"].includes(mediaType ?? "")) {
       throw new HttpsError("invalid-argument", "mediaType must be video, audio, or image.");
+    }
+    if (quickReplies !== undefined && (!Array.isArray(quickReplies) || quickReplies.some((q) => typeof q !== "string"))) {
+      throw new HttpsError("invalid-argument", "quickReplies must be an array of strings.");
     }
 
     // Membership check (Super Admin claim bypasses).
@@ -455,7 +455,12 @@ export const sendChannelMessage = onCall(
         text ?? "",
         clientMessageId ?? null,
         mediaUrl ? { url: mediaUrl, type: mediaType as "video" | "audio" | "image" } : null,
-        contactCapture,
+        {
+          quickReplies: quickReplies ?? null,
+          contactCapture: contactCaptureFields?.length
+            ? { fields: contactCaptureFields, mode: contactCaptureMode ?? "both" }
+            : null,
+        },
       );
       // Gamification: count the handled outbound message (fire-and-forget).
       recordMessageHandled(workspaceId, uid).catch((err) =>
