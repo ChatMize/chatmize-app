@@ -360,6 +360,7 @@ export default function App() {
             }
             workspaceName={activeWorkspace?.name || 'Apex Marketing'}
             workspaceSlug={activeWorkspace?.slug || 'apex-marketing'}
+            workspacePlanId={activeWorkspace?.planId}
             onNavigateToFlows={(botId) => {
               if (botId) setActiveBotId(botId);
               setActiveTab('flows');

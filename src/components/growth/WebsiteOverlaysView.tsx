@@ -28,11 +28,16 @@ import {
 } from 'lucide-react';
 import { WebsiteOverlay, OverlayType, OverlayTrigger, OverlayPosition, OverlayCtaAction, MobileTriggerType, MobileTriggerConfig, ContestStub } from '../../types/growthTools';
 import { DEFAULT_WEBSITE_OVERLAYS } from '../../data/growthToolsDefaults';
+import { usePlan } from '../../lib/entitlements';
+import { limitFor } from '../../lib/planModules';
+import { UpgradePromptModal } from '../UpgradePromptModal';
 
 interface WebsiteOverlaysViewProps {
   availableBots?: Array<{ id: string; name: string }>;
   onNavigateToFlows?: (botId?: string) => void;
   initialFilter?: OverlayType | 'all';
+  /** Firestore plan id of the active workspace; drives capture tool limits. */
+  workspacePlanId?: string;
 }
 
 const OVERLAY_TYPE_INFO: Record<OverlayType, {
@@ -233,8 +238,14 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
     { id: 'bot-abandoned-cart-recovery', name: 'Cart Recovery & Voucher Bot' }
   ],
   onNavigateToFlows,
-  initialFilter = 'all'
+  initialFilter = 'all',
+  workspacePlanId
 }) => {
+  // Modular plan enforcement: the workspace's plan caps capture tools.
+  const plan = usePlan(workspacePlanId);
+  const captureToolLimit = limitFor(plan, 'capture_tools');
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
+
   const [overlays, setOverlays] = useState<WebsiteOverlay[]>(() => {
     const saved = localStorage.getItem('chatmize_website_overlays');
     return saved ? JSON.parse(saved) : DEFAULT_WEBSITE_OVERLAYS;
@@ -285,6 +296,12 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
     : overlays.filter(o => o.type === activeFilter);
 
   const handleCreateNew = (type: OverlayType = 'popup_modal') => {
+    // Plan enforcement: creating beyond the capture tool limit shows the
+    // upgrade prompt instead of opening the editor.
+    if (overlays.length >= captureToolLimit) {
+      setLimitModalOpen(true);
+      return;
+    }
     const info = OVERLAY_TYPE_INFO[type];
     const newOverlay: WebsiteOverlay = {
       id: `overlay-${type.replace('_', '-')}-${Date.now().toString().slice(-6)}`,
@@ -1588,6 +1605,15 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
 
           </div>
         </div>
+      )}
+
+      {limitModalOpen && (
+        <UpgradePromptModal
+          resourceName="capture tool"
+          limit={captureToolLimit}
+          unit="per workspace"
+          onClose={() => setLimitModalOpen(false)}
+        />
       )}
 
     </div>
