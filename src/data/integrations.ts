@@ -298,6 +298,19 @@ export const CHATMIZE_INTEGRATIONS: IntegrationApp[] = [
       { name: 'webhookUrl', label: 'Integrately Webhook URL', placeholder: 'https://webhooks.integrately.com/a/webhooks/...', helpText: 'Copy from your active automation recipe' },
     ],
   },
+  {
+    id: 'google_sheets',
+    name: 'Google Sheets',
+    category: 'automation',
+    tagline: 'Log chat answers straight into a spreadsheet',
+    description: 'Connect a Google Sheet, then log captured answers and contact fields as new rows. Flows can also look up rows to personalize replies.',
+    logoBg: 'bg-[#0F9D58]',
+    logoTextColor: 'text-white',
+    initials: 'GS',
+    connected: false,
+    authType: 'OAuth / API Token',
+    fields: [],
+  },
 
   // Affiliate & E-commerce & Contests
   {

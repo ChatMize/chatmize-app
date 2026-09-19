@@ -15,6 +15,12 @@ import { sendChannelMessageInternal, ChannelSendError } from "../channelSend";
 import { sendSmsInternal, SmsSendError } from "../smsSend";
 import { runSmsBroadcastInternal, SmsBroadcastError } from "../smsBroadcast";
 import { executeWebhookAction } from "../flowWebhook";
+import {
+  appendSheetsRow,
+  readSheetsRows,
+  listSheetsTabs,
+  resolveSpreadsheetId,
+} from "../googleSheets";
 import { sanitizeVariableName, assertVariableNameAllowed } from "../flowVariables";
 import type { VerifiedKey } from "./auth";
 
@@ -413,4 +419,59 @@ export async function createBroadcast(
     }
     throw err;
   }
+}
+
+/**
+ * sheets_append_row: append one row to a tab of the workspace's connected
+ * Google Sheet. `values` maps column header -> cell value; cells land under
+ * the matching header and unknown headers are ignored. No retries.
+ */
+export async function sheetsAppendRow(
+  ctx: ToolContext,
+  args: { tab: string; values: Record<string, string>; spreadsheetId?: string },
+): Promise<{ updatedRange: string | null }> {
+  if (!args.tab) throw new Error("tab is required.");
+  if (!args.values || typeof args.values !== "object") throw new Error("values is required.");
+  return appendSheetsRow(ctx.workspaceId, {
+    tab: args.tab,
+    values: args.values,
+    spreadsheetId: args.spreadsheetId,
+  });
+}
+
+/**
+ * sheets_read_rows: read rows from a tab of the connected Google Sheet. The
+ * first row is treated as headers; every row comes back keyed by header.
+ * Optionally keep only rows where a column equals a value.
+ */
+export async function sheetsReadRows(
+  ctx: ToolContext,
+  args: {
+    tab: string;
+    matchHeader?: string;
+    matchValue?: string;
+    limit?: number;
+    spreadsheetId?: string;
+  },
+): Promise<{ headers: string[]; rows: Array<Record<string, string>> }> {
+  if (!args.tab) throw new Error("tab is required.");
+  return readSheetsRows(ctx.workspaceId, {
+    tab: args.tab,
+    matchHeader: args.matchHeader,
+    matchValue: args.matchValue,
+    limit: args.limit,
+    spreadsheetId: args.spreadsheetId,
+  });
+}
+
+/**
+ * sheets_list_tabs: list the tabs of the connected Google Sheet with their
+ * header rows, so API users can see where to append or read.
+ */
+export async function sheetsListTabs(
+  ctx: ToolContext,
+  args: { spreadsheetId?: string },
+): Promise<{ tabs: Array<{ title: string; headers: string[] }> }> {
+  const spreadsheetId = await resolveSpreadsheetId(ctx.workspaceId, args.spreadsheetId);
+  return { tabs: await listSheetsTabs(ctx.workspaceId, spreadsheetId) };
 }
