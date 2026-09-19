@@ -160,6 +160,75 @@ export function sendInstagramDirectMedia(
   });
 }
 
+/** Contact fields a BotMaps contact-capture block can collect. */
+export type ContactCaptureField = "phone" | "email";
+
+/**
+ * Build the one-tap quick replies for a contact capture.
+ * Meta fills the button with the phone/email from the user's own profile;
+ * tapping it sends the value back in message.quick_reply.payload.
+ * Per Meta's docs these carry no title or payload of their own.
+ */
+function contactCaptureQuickReplies(
+  fields: ContactCaptureField[],
+): Array<Record<string, string>> {
+  const out: Array<Record<string, string>> = [];
+  if (fields.includes("phone")) out.push({ content_type: "user_phone_number" });
+  if (fields.includes("email")) out.push({ content_type: "user_email" });
+  return out;
+}
+
+/**
+ * Send a Messenger text message with one-tap phone/email quick replies.
+ * Quick replies MUST ride on text (Meta rule) — never on an attachment.
+ * If the user's profile has no phone/email, Meta simply hides that chip.
+ */
+export function sendMessengerContactCapture(
+  pageAccessToken: string,
+  psid: string,
+  text: string,
+  fields: ContactCaptureField[],
+): Promise<SendResult> {
+  return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
+    recipient: { id: psid },
+    messaging_type: "RESPONSE",
+    message: { text, quick_replies: contactCaptureQuickReplies(fields) },
+  });
+}
+
+/**
+ * Send an Instagram DM with one-tap phone/email quick replies via the
+ * linked page access token. Meta's Instagram Messaging docs confirm the
+ * user_phone_number quick reply on Instagram; email rides the same shape.
+ */
+export function sendInstagramContactCapture(
+  pageAccessToken: string,
+  igsid: string,
+  text: string,
+  fields: ContactCaptureField[],
+): Promise<SendResult> {
+  return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
+    recipient: { id: igsid },
+    message: { text, quick_replies: contactCaptureQuickReplies(fields) },
+  });
+}
+
+/**
+ * Send an Instagram DM with one-tap phone/email quick replies via an
+ * Instagram Login (IG-only) user token on graph.instagram.com.
+ */
+export function sendInstagramDirectContactCapture(
+  igAccessToken: string,
+  igsid: string,
+  text: string,
+  fields: ContactCaptureField[],
+): Promise<SendResult> {
+  return postJson(`${IG_GRAPH_BASE}/me/messages`, igAccessToken, {
+    recipient: { id: igsid },
+    message: { text, quick_replies: contactCaptureQuickReplies(fields) },
+  });
+}
+
 /** Send a WhatsApp text message via the Cloud API. */
 export function sendWhatsappMessage(
   whatsappToken: string,

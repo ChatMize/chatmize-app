@@ -72,6 +72,7 @@ import {
   IntegrationApp 
 } from '../data/integrations';
 import { saveContact, setContactVariable, saveRecurringNotificationToken, saveOtnToken } from '../lib/firebase';
+import { validateCaptureInput, CaptureField, CaptureMode } from '../lib/contactCapture';
 import { PersonalizationPickerButton, usePersonalizationTarget, usePersonalizationTargetMap } from '../components/personalization';
 import { 
   MetaMessageTag, 
@@ -96,6 +97,7 @@ export type MessageComponentType =
   | 'image' 
   | 'video'
   | 'audio'
+  | 'contact_capture'
   | 'card' 
   | 'gallery' 
   | 'typing'
@@ -122,6 +124,11 @@ export interface MessageComponent {
   videoCaption?: string;
   audioUrl?: string;
   audioCaption?: string;
+  // Contact capture block: grab phone/email via one-tap quick replies,
+  // typed text, or both. The reply is validated and saved to the contact.
+  captureFields?: Array<'phone' | 'email'>;
+  captureMode?: 'quick_reply' | 'free_text' | 'both';
+  capturePrompt?: string;
   cardTitle?: string;
   cardSubtitle?: string;
   cardImageUrl?: string;
@@ -620,6 +627,7 @@ export function FlowBuilder({
         node.components.forEach(c => {
           if (c.type === 'image' || c.type === 'video' || c.type === 'card' || c.type === 'gallery') estimatedY += 160;
           if (c.type === 'audio') estimatedY += 120;
+          if (c.type === 'contact_capture') estimatedY += 140;
           else if (c.type === 'typing') estimatedY += 44;
           else if (c.type === 'text') estimatedY += 48;
           else if (c.type === 'recurring_notification_optin' || c.type === 'one_time_notification_optin') estimatedY += 120;
@@ -2893,6 +2901,44 @@ const NodeCard = React.memo(function NodeCard({
                 );
               }
 
+              if (comp.type === 'contact_capture') {
+                const fields = comp.captureFields && comp.captureFields.length > 0 ? comp.captureFields : ['phone', 'email'];
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-sky-500/30 bg-slate-950/60 relative p-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="p-1.5 rounded-lg bg-sky-500/15 border border-sky-500/30">
+                        <UserCheck className="w-4 h-4 text-sky-400" />
+                      </div>
+                      <span className="text-[11px] font-semibold text-sky-200">
+                        Capture {fields.join(' + ')}
+                      </span>
+                    </div>
+                    {comp.capturePrompt && (
+                      <div className="text-[11px] text-slate-300 truncate mb-1.5">
+                        {comp.capturePrompt}
+                      </div>
+                    )}
+                    <div className="flex gap-1.5">
+                      {fields.includes('phone') && (
+                        <span className="text-[10px] font-bold bg-sky-500/15 border border-sky-500/30 text-sky-300 px-2 py-1 rounded-lg">
+                          Tap for phone
+                        </span>
+                      )}
+                      {fields.includes('email') && (
+                        <span className="text-[10px] font-bold bg-sky-500/15 border border-sky-500/30 text-sky-300 px-2 py-1 rounded-lg">
+                          Tap for email
+                        </span>
+                      )}
+                      {comp.captureMode !== 'quick_reply' && (
+                        <span className="text-[10px] font-medium text-slate-400 px-1 py-1">
+                          or type it
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
               if (comp.type === 'card') {
                 return (
                   <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-purple-500/30 bg-slate-950/70 shadow-md">
@@ -3483,6 +3529,14 @@ function NodeEditor({
         type: 'audio',
         audioUrl: '',
         audioCaption: '',
+      };
+    } else if (type === 'contact_capture') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'contact_capture',
+        captureFields: ['phone', 'email'],
+        captureMode: 'both',
+        capturePrompt: 'How can we reach you? Tap below or type it in.',
       };
     } else if (type === 'card') {
       newComp = {
@@ -5266,6 +5320,77 @@ function NodeEditor({
                         </div>
                       )}
 
+                      {/* CONTACT CAPTURE COMPONENT EDITOR */}
+                      {comp.type === 'contact_capture' && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Prompt</label>
+                            <input
+                              type="text"
+                              value={comp.capturePrompt || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { capturePrompt: e.target.value })}
+                              placeholder="How can we reach you?"
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-sky-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Collect</label>
+                            <div className="flex gap-1.5">
+                              {(['phone', 'email'] as const).map((f) => {
+                                const active = (comp.captureFields || []).includes(f);
+                                return (
+                                  <button
+                                    key={f}
+                                    type="button"
+                                    onClick={() => {
+                                      const cur = comp.captureFields || ['phone', 'email'];
+                                      const next = active ? cur.filter((x) => x !== f) : [...cur, f];
+                                      if (next.length === 0) return;
+                                      handleUpdateComponent(comp.id, { captureFields: next });
+                                    }}
+                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                                      active
+                                        ? 'bg-sky-500 text-white'
+                                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                    }`}
+                                  >
+                                    {f === 'phone' ? 'Phone' : 'Email'}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">How they answer</label>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {([
+                                { v: 'quick_reply', label: 'One tap' },
+                                { v: 'free_text', label: 'Type it' },
+                                { v: 'both', label: 'Both' },
+                              ] as const).map((m) => (
+                                <button
+                                  key={m.v}
+                                  type="button"
+                                  onClick={() => handleUpdateComponent(comp.id, { captureMode: m.v })}
+                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                                    (comp.captureMode || 'both') === m.v
+                                      ? 'bg-sky-500 text-white'
+                                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                  }`}
+                                >
+                                  {m.label}
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
+                              One tap serves their own number or email as a button on Messenger and Instagram. Typing works everywhere and is validated automatically.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {/* CARD COMPONENT EDITOR */}
                       {comp.type === 'card' && (
                         <div className="space-y-3 pt-1">
@@ -6120,6 +6245,15 @@ function NodeEditor({
               <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-400 group-hover:scale-110 transition-transform mb-0.5" />
               <span className="text-[9px] sm:text-[10px] font-medium text-slate-300">Audio</span>
             </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('contact_capture')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-sky-500/40 hover:border-sky-400 hover:bg-sky-500/15 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm shadow-sky-500/10"
+              title="Add contact capture block (phone/email)"
+            >
+              <UserCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-bold text-sky-300">Capture</span>
+            </button>
           </div>
 
           {/* Meta Post-24h Compliance Opt-in Components */}
@@ -6174,7 +6308,8 @@ type SimulatorItem =
   | { id: string; sender: 'bot'; type: 'gallery'; cards: CardItem[] }
   | { id: string; sender: 'bot'; type: 'rn_optin'; topic: string; frequency: string; title: string; buttonText: string; tokenGranted?: boolean }
   | { id: string; sender: 'bot'; type: 'otn_optin'; topic: string; buttonText: string; tokenGranted?: boolean }
-  | { id: string; sender: 'bot'; type: 'wa_template'; templateName: string; category: string; header?: string; body: string };
+  | { id: string; sender: 'bot'; type: 'wa_template'; templateName: string; category: string; header?: string; body: string }
+  | { id: string; sender: 'bot'; type: 'contact_capture'; prompt: string; fields: Array<'phone' | 'email'>; mode: 'quick_reply' | 'free_text' | 'both' };
 
 function PhoneSimulator({ 
   nodes, 
@@ -6193,6 +6328,10 @@ function PhoneSimulator({
   const [secondsRemaining, setSecondsRemaining] = useState<number>(3);
   const [appliedTag, setAppliedTag] = useState<string | null>(null);
   const [typingMode, setTypingMode] = useState<'realistic' | 'instant'>('realistic');
+  // Contact capture: armed while a capture block waits for the user's answer.
+  const [activeCapture, setActiveCapture] = useState<{ compId: string; fields: Array<'phone' | 'email'>; mode: 'quick_reply' | 'free_text' | 'both' } | null>(null);
+  const [captureInput, setCaptureInput] = useState('');
+  const [captureError, setCaptureError] = useState<string | null>(null);
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const galleryScrollRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -6487,6 +6626,31 @@ function PhoneSimulator({
               next?.();
             }
           });
+        } else if (comp.type === 'contact_capture') {
+          queue.push(() => {
+            const fields = comp.captureFields && comp.captureFields.length > 0 ? comp.captureFields : (['phone', 'email'] as Array<'phone' | 'email'>);
+            const mode = comp.captureMode || 'both';
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'contact_capture',
+                prompt: replaceVars(comp.capturePrompt || 'How can we reach you? Tap below or type it in.'),
+                fields,
+                mode,
+              }
+            ]);
+            // Arm the capture: the flow waits here until the user taps a
+            // one-tap chip or types an answer (validated like the server).
+            setActiveCapture({ compId: comp.id, fields, mode });
+            setCaptureInput('');
+            setCaptureError(null);
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
         }
     };
 
@@ -6620,12 +6784,44 @@ function PhoneSimulator({
     }
   };
 
+  // --- Contact capture: one-tap chips and typed input ---
+  const handleCaptureQuickReply = (field: 'phone' | 'email') => {
+    if (!activeCapture) return;
+    const value = field === 'phone' ? '15555550100' : 'test@example.com';
+    const label = field === 'phone' ? '(555) 555-0100' : 'test@example.com';
+    setSimContact((prev) => ({ ...prev, [field === 'phone' ? 'phone' : 'email']: value }));
+    setChatItems((prev) => [...prev, { id: `user-capture-${Date.now()}`, sender: 'user', type: 'text', text: label }]);
+    setActiveCapture(null);
+    setCaptureInput('');
+    setCaptureError(null);
+    advanceFromNode(capturedNodeRef.current, activeCapture.compId);
+  };
+
+  const handleCaptureSubmit = () => {
+    if (!activeCapture) return;
+    const result = validateCaptureInput(captureInput, activeCapture.fields);
+    if (!result.ok) {
+      setCaptureError(result.error);
+      return;
+    }
+    setSimContact((prev) => ({ ...prev, [result.field === 'phone' ? 'phone' : 'email']: result.value }));
+    setChatItems((prev) => [...prev, { id: `user-capture-${Date.now()}`, sender: 'user', type: 'text', text: result.value }]);
+    const compId = activeCapture.compId;
+    setActiveCapture(null);
+    setCaptureInput('');
+    setCaptureError(null);
+    advanceFromNode(capturedNodeRef.current, compId);
+  };
+
   const handleReset = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     stepQueueRef.current = [];
     setIsTyping(false);
     setChatItems([]);
     setActiveButtons([]);
+    setActiveCapture(null);
+    setCaptureInput('');
+    setCaptureError(null);
     setAppliedTag(null);
 
     const startNode = nodes.find(n => n.type === 'trigger') || nodes.find(n => n.id === 'step-1') || nodes[0];
@@ -7052,6 +7248,73 @@ function PhoneSimulator({
                         <Check className="w-2.5 h-2.5" /> Verified
                       </span>
                     </div>
+                  </div>
+                </div>
+              );
+            }
+
+            if (item.type === 'contact_capture') {
+              const showControls = activeCapture?.compId === item.id.replace('comp-', '');
+              return (
+                <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 w-full max-w-[90%]">
+                  <div className="bg-sky-950/50 border border-sky-500/40 rounded-2xl rounded-bl-none overflow-hidden shadow-lg w-full p-3.5 space-y-2">
+                    <div className="flex items-center gap-1.5 text-sky-300 font-bold text-xs">
+                      <UserCheck className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Contact capture</span>
+                    </div>
+                    <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+                      {item.prompt}
+                    </div>
+                    {showControls && (
+                      <div className="space-y-2 pt-1">
+                        {activeCapture.mode !== 'free_text' && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {activeCapture.fields.includes('phone') && (
+                              <button
+                                type="button"
+                                onClick={() => handleCaptureQuickReply('phone')}
+                                className="bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold px-3 py-1.5 rounded-full transition-colors"
+                              >
+                                Share phone number
+                              </button>
+                            )}
+                            {activeCapture.fields.includes('email') && (
+                              <button
+                                type="button"
+                                onClick={() => handleCaptureQuickReply('email')}
+                                className="bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold px-3 py-1.5 rounded-full transition-colors"
+                              >
+                                Share email address
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {activeCapture.mode !== 'quick_reply' && (
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              value={captureInput}
+                              onChange={(e) => { setCaptureInput(e.target.value); setCaptureError(null); }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleCaptureSubmit(); }}
+                              placeholder={activeCapture.fields.includes('email') && !activeCapture.fields.includes('phone') ? 'you@example.com' : 'Your phone number'}
+                              className="flex-1 min-w-0 bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-sky-500 placeholder:text-slate-600"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleCaptureSubmit}
+                              className="bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold px-3 rounded-lg transition-colors"
+                            >
+                              Send
+                            </button>
+                          </div>
+                        )}
+                        {captureError && (
+                          <div className="text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-1.5">
+                            {captureError}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );

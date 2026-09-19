@@ -150,9 +150,12 @@ async function resolveSendTarget(
  */
 export async function sendMessage(
   ctx: ToolContext,
-  args: { channel: string; recipientId?: string; conversationId?: string; text?: string; mediaUrl?: string; mediaType?: "video" | "audio" | "image" },
+  args: { channel: string; recipientId?: string; conversationId?: string; text?: string; mediaUrl?: string; mediaType?: "video" | "audio" | "image"; contactCaptureFields?: Array<"phone" | "email">; contactCaptureMode?: "quick_reply" | "free_text" | "both" },
 ): Promise<{ ok: boolean; messageId: string | null; channel: string; recipientId: string }> {
-  if ((!args.text || !args.text.trim()) && !args.mediaUrl) throw new Error("Provide text, a media attachment, or both.");
+  const contactCapture = args.contactCaptureFields?.length
+    ? { fields: args.contactCaptureFields, mode: args.contactCaptureMode ?? ("both" as const) }
+    : null;
+  if ((!args.text || !args.text.trim()) && !args.mediaUrl && !contactCapture) throw new Error("Provide text, a media attachment, or a contact capture.");
   if (args.text && args.text.length > 1600) throw new Error("text is too long (max 1600 characters).");
   if (args.mediaUrl && !["video", "audio", "image"].includes(args.mediaType ?? "")) {
     throw new Error("mediaType must be video, audio, or image.");
@@ -171,6 +174,7 @@ export async function sendMessage(
       args.text ?? "",
       null,
       args.mediaUrl ? { url: args.mediaUrl, type: args.mediaType as "video" | "audio" | "image" } : null,
+      contactCapture,
     );
     return { ok: true, messageId: r.metaMessageId, channel, recipientId };
   } catch (err) {

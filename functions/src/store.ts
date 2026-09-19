@@ -12,6 +12,8 @@ export interface NormalizedMessage {
   /** Meta message id for idempotency. */
   externalId: string;
   text?: string;
+  /** One-tap quick-reply payload (user_phone_number / user_email value). */
+  quickReplyPayload?: string;
   timestampMs: number;
   raw: unknown;
 }
@@ -131,6 +133,7 @@ export async function persistInboundMessage(
     channel: msg.channel,
     senderId: msg.senderId,
     text: msg.text ?? "",
+    quickReplyPayload: msg.quickReplyPayload ?? null,
     timestampMs: msg.timestampMs,
     externalId: msg.externalId,
     createdAt: FieldValue.serverTimestamp(),
@@ -164,6 +167,20 @@ export async function persistInboundMessage(
 
   batch.set(contactRef, contactData, { merge: true });
   await batch.commit();
+
+  // Contact capture: if a BotMaps capture block armed pendingCapture on
+  // this conversation, treat this inbound message as the answer (one-tap
+  // quick reply or typed text), validate, and save to the contact.
+  // Dynamic import avoids a module cycle (contactCapture -> channelSend).
+  try {
+    const { handleContactCapture } = await import("./contactCapture.js");
+    await handleContactCapture(workspaceId, msg);
+  } catch (err) {
+    logger.warn("Contact capture hook failed", {
+      workspaceId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // Background profile enrichment: never blocks the inbox.
   fetchSenderProfile(workspaceId, msg.senderId, msg.channel)

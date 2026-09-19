@@ -7,7 +7,14 @@ interface MetaEntry {
     sender?: { id?: string };
     recipient?: { id?: string };
     timestamp?: number;
-    message?: { mid?: string; text?: string; is_echo?: boolean };
+    message?: {
+      mid?: string;
+      text?: string;
+      is_echo?: boolean;
+      // One-tap quick replies (user_phone_number / user_email): Meta puts
+      // the captured value in quick_reply.payload.
+      quick_reply?: { payload?: string };
+    };
   }>;
   changes?: Array<{
     field?: string;
@@ -61,6 +68,7 @@ export function normalizeEntry(entry: MetaEntry, object: string): NormalizedMess
       recipientId: m.recipient?.id ?? "",
       externalId: mid,
       text: m.message?.text,
+      quickReplyPayload: m.message?.quick_reply?.payload,
       timestampMs: m.timestamp ?? Date.now(),
       raw: m,
     });
