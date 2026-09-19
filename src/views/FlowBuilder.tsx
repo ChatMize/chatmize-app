@@ -172,7 +172,7 @@ function BigmarkerWebinarPicker({
         </select>
       )}
       <p className="text-[10px] text-slate-500 leading-snug">
-        The contact is registered with their saved email and name. Already registered contacts count as a success, and a Webinar tag is added so you can send reminders.
+        The contact is registered with their saved email and name. Already registered contacts count as a success, and a Webinar tag is added so you can send reminders. The latest status is also saved on the contact as {`{{bigmarker_status}}`}.
       </p>
     </div>
   );
