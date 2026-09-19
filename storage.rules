@@ -37,16 +37,22 @@ service firebase.storage {
       allow delete: if request.auth != null;
     }
 
-    // Knowledge Base step and cover images. Restricted to workspace members
-    // (tightened 2026-09-19 per Karl — was signed-in-user only).
-    // Stored under workspaces/{workspaceId}/kb_media/{articleId}/{fileName}
-    // so each article's media stays together and can age out with lifecycle rules.
+    // Knowledge Base step and cover images and videos. Restricted to
+    // workspace members (tightened 2026-09-19 per Karl — was signed-in-user
+    // only). Stored under workspaces/{workspaceId}/kb_media/{articleId}/
+    // {fileName} so each article's media stays together and can age out
+    // with lifecycle rules. Images stay capped at 5 MB; videos (MP4, WebM)
+    // are stored raw and capped at 100 MB.
     match /workspaces/{workspaceId}/kb_media/{articleId}/{fileName} {
       allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
 
       allow create, update: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
-        && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/(jpeg|png|gif|webp)');
+        && (
+          (request.resource.size < 5 * 1024 * 1024
+            && request.resource.contentType.matches('image/(jpeg|png|gif|webp)'))
+          || (request.resource.size < 100 * 1024 * 1024
+            && request.resource.contentType.matches('video/(mp4|webm)'))
+        );
 
       allow delete: if isWorkspaceMember(workspaceId) || isSuperAdmin();
     }

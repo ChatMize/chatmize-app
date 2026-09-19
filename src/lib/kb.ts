@@ -9,8 +9,9 @@
  * transactions instead; same validation, same revision snapshots, same
  * counter logic). Step images go to Cloud Storage at
  * workspaces/{wsId}/kb_media/{articleId}/ and are compressed in the browser
- * before upload. Docs store the storage path, never a public URL, so media
- * can be revoked or reprocessed later.
+ * before upload. Step and cover videos go to the same directory, stored raw
+ * (no compression) as MP4 or WebM. Docs store the storage path, never a
+ * public URL, so media can be revoked or reprocessed later.
  */
 
 import { getAuth } from 'firebase/auth';
@@ -38,6 +39,7 @@ export interface KbStep {
   title: string;
   body: string;
   imagePath?: string;
+  videoPath?: string;
   tip?: string;
   order: number;
 }
@@ -52,6 +54,7 @@ export interface KbArticle {
   steps: KbStep[];
   source: 'manual';
   coverImagePath?: string;
+  coverVideoPath?: string;
   viewCount: number;
   helpfulYes: number;
   helpfulNo: number;
@@ -87,12 +90,14 @@ export function kbDocToArticle(id: string, data: Record<string, unknown>): KbArt
         title: typeof s.title === 'string' ? s.title : '',
         body: typeof s.body === 'string' ? s.body : '',
         imagePath: typeof s.imagePath === 'string' ? s.imagePath : undefined,
+        videoPath: typeof s.videoPath === 'string' ? s.videoPath : undefined,
         tip: typeof s.tip === 'string' ? s.tip : undefined,
         order: typeof s.order === 'number' ? s.order : i,
       }))
       .sort((a: KbStep, b: KbStep) => a.order - b.order),
     source: 'manual',
     coverImagePath: typeof data.coverImagePath === 'string' ? data.coverImagePath : undefined,
+    coverVideoPath: typeof data.coverVideoPath === 'string' ? data.coverVideoPath : undefined,
     viewCount: typeof data.viewCount === 'number' ? data.viewCount : 0,
     helpfulYes: typeof data.helpfulYes === 'number' ? data.helpfulYes : 0,
     helpfulNo: typeof data.helpfulNo === 'number' ? data.helpfulNo : 0,
@@ -184,6 +189,7 @@ export async function saveKbArticle(workspaceId: string, article: KbArticle): Pr
     body: s.body,
     order: i,
     ...(s.imagePath ? { imagePath: s.imagePath } : {}),
+    ...(s.videoPath ? { videoPath: s.videoPath } : {}),
     ...(s.tip ? { tip: s.tip } : {}),
   }));
   await updateDoc(doc(db, 'workspaces', workspaceId, 'kb_articles', article.id), {
@@ -192,6 +198,7 @@ export async function saveKbArticle(workspaceId: string, article: KbArticle): Pr
     tags: article.tags,
     steps,
     ...(article.coverImagePath ? { coverImagePath: article.coverImagePath } : { coverImagePath: '' }),
+    ...(article.coverVideoPath ? { coverVideoPath: article.coverVideoPath } : { coverVideoPath: '' }),
     updatedAt: serverTimestamp(),
   });
 }
@@ -233,6 +240,49 @@ export async function uploadKbImage(
 /** Resolve a stored kb_media path to a download URL for display. */
 export async function kbImageUrl(path: string): Promise<string> {
   return getDownloadURL(ref(storage, path));
+}
+
+/** Raw video cap. Videos are stored as uploaded, so the cap stays generous. */
+export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+
+export const ACCEPTED_VIDEO_TYPES = ['video/mp4', 'video/webm'];
+
+const ACCEPTED_VIDEO_EXTENSIONS = ['mp4', 'webm'];
+
+/** Returns a plain English error, or null when the file is fine. */
+export function validateVideoFile(file: File): string | null {
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  const typeOk = ACCEPTED_VIDEO_TYPES.includes(file.type);
+  if (!typeOk && !ACCEPTED_VIDEO_EXTENSIONS.includes(ext)) {
+    return 'That file is not a video. Please choose an MP4 or WebM file.';
+  }
+  if (file.size > MAX_VIDEO_BYTES) {
+    return 'That video is too large. Please choose a file under 100 MB.';
+  }
+  return null;
+}
+
+/**
+ * Upload a step or cover video: stored raw (no compression) at
+ * workspaces/{wsId}/kb_media/{articleId}/{stepId}.{ext}. Returns the storage
+ * path (not a URL).
+ */
+export async function uploadKbVideo(
+  workspaceId: string,
+  articleId: string,
+  stepId: string,
+  file: File,
+): Promise<string> {
+  const validationError = validateVideoFile(file);
+  if (validationError) throw new Error(validationError);
+  const nameExt = file.name.split('.').pop()?.toLowerCase() || '';
+  const ext = file.type === 'video/webm' || nameExt === 'webm' ? 'webm' : 'mp4';
+  const path = `workspaces/${workspaceId}/kb_media/${articleId}/${stepId}.${ext}`;
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, file, {
+    contentType: ext === 'webm' ? 'video/webm' : 'video/mp4',
+  });
+  return path;
 }
 
 /** Flag articles with real traffic but poor helpful ratings for a rewrite. */

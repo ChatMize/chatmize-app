@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, Check, Lightbulb, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { KbArticle, kbFeedbackFn } from '../../lib/kb';
 import { KbImage } from './KbImage';
+import { KbMedia } from './KbMedia';
 
 /** Shown when an article id or slug does not resolve. Never falls back to another article. */
 export function KbArticleNotFound({ onBack, searchHint }: { onBack?: () => void; searchHint?: string }) {
@@ -127,8 +128,12 @@ export function KbArticleViewer({
             )}
           </div>
 
-          {article.coverImagePath && (
-            <KbImage path={article.coverImagePath} alt={article.title} className="w-full rounded-2xl border border-white/10" />
+          {article.coverVideoPath ? (
+            <KbMedia path={article.coverVideoPath} alt={article.title} className="w-full rounded-2xl border border-white/10" />
+          ) : (
+            article.coverImagePath && (
+              <KbImage path={article.coverImagePath} alt={article.title} className="w-full rounded-2xl border border-white/10" />
+            )
           )}
 
           <ol className="space-y-8">
@@ -147,6 +152,13 @@ export function KbArticleViewer({
                       path={step.imagePath}
                       alt={step.title || `Step ${i + 1}`}
                       className="w-full rounded-xl border border-white/10"
+                    />
+                  )}
+                  {step.videoPath && (
+                    <KbMedia
+                      path={step.videoPath}
+                      alt={step.title ? `${step.title} video` : `Step ${i + 1} video`}
+                      className="w-full rounded-xl border border-white/10 max-h-96"
                     />
                   )}
                   {step.tip && <StepTip text={step.tip} />}
