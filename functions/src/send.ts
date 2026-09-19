@@ -62,6 +62,32 @@ export function sendMessengerMessage(
   });
 }
 
+/** Attachment types Meta accepts for Messenger and Instagram DMs. */
+export type MediaAttachmentType = "video" | "audio" | "image";
+
+/**
+ * Send a Messenger media attachment (video, audio, or image) via the page
+ * access token. The URL must be publicly fetchable by Meta's servers —
+ * Firebase Storage download URLs (with their unguessable token) qualify.
+ */
+export function sendMessengerMedia(
+  pageAccessToken: string,
+  psid: string,
+  mediaUrl: string,
+  mediaType: MediaAttachmentType,
+): Promise<SendResult> {
+  return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
+    recipient: { id: psid },
+    messaging_type: "RESPONSE",
+    message: {
+      attachment: {
+        type: mediaType,
+        payload: { url: mediaUrl, is_reusable: true },
+      },
+    },
+  });
+}
+
 /** Send an Instagram DM via the linked page access token. */
 export function sendInstagramMessage(
   pageAccessToken: string,
@@ -71,6 +97,27 @@ export function sendInstagramMessage(
   return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
     recipient: { id: igsid },
     message: { text },
+  });
+}
+
+/**
+ * Send an Instagram media attachment (video or audio, per Meta's Messaging
+ * API) via the linked page access token on graph.facebook.com.
+ */
+export function sendInstagramMedia(
+  pageAccessToken: string,
+  igsid: string,
+  mediaUrl: string,
+  mediaType: MediaAttachmentType,
+): Promise<SendResult> {
+  return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
+    recipient: { id: igsid },
+    message: {
+      attachment: {
+        type: mediaType,
+        payload: { url: mediaUrl, is_reusable: true },
+      },
+    },
   });
 }
 
@@ -88,6 +135,28 @@ export function sendInstagramDirectMessage(
   return postJson(`${IG_GRAPH_BASE}/me/messages`, igAccessToken, {
     recipient: { id: igsid },
     message: { text },
+  });
+}
+
+/**
+ * Send an Instagram media attachment via an Instagram Login (IG-only) user
+ * token on graph.instagram.com. Same attachment shape as the page-anchored
+ * path; IGSIDs stay scoped to the connection that received them.
+ */
+export function sendInstagramDirectMedia(
+  igAccessToken: string,
+  igsid: string,
+  mediaUrl: string,
+  mediaType: MediaAttachmentType,
+): Promise<SendResult> {
+  return postJson(`${IG_GRAPH_BASE}/me/messages`, igAccessToken, {
+    recipient: { id: igsid },
+    message: {
+      attachment: {
+        type: mediaType,
+        payload: { url: mediaUrl, is_reusable: true },
+      },
+    },
   });
 }
 

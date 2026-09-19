@@ -30,6 +30,10 @@ import {
   CHANNEL_SENDERS,
   sendInstagramMessage,
   sendInstagramDirectMessage,
+  sendMessengerMedia,
+  sendInstagramMedia,
+  sendInstagramDirectMedia,
+  MediaAttachmentType,
 } from "./send";
 import {
   resolvePersonalizationTags,
@@ -75,9 +79,18 @@ export interface ChannelSendResult {
   metaMessageId: string | null;
 }
 
+/** Optional media attachment for a send (bot builder video/audio/image). */
+export interface ChannelMedia {
+  url: string;
+  type: MediaAttachmentType;
+}
+
 /**
  * Send one message through the workspace's connected Meta channels.
  * Throws ChannelSendError on validation / connection / provider failures.
+ *
+ * Either text or media (or both — the caption is dropped for attachment
+ * sends today) must be provided.
  */
 export async function sendChannelMessageInternal(
   workspaceId: string,
@@ -85,11 +98,30 @@ export async function sendChannelMessageInternal(
   recipientId: string,
   text: string,
   clientMessageId?: string | null,
+  media?: ChannelMedia | null,
 ): Promise<ChannelSendResult> {
-  if (!workspaceId || !channel || !recipientId || !text) {
+  if (!workspaceId || !channel || !recipientId) {
     throw new ChannelSendError(
       "invalid-argument",
-      "workspaceId, channel, recipientId, and text are required.",
+      "workspaceId, channel, and recipientId are required.",
+    );
+  }
+  if (!text && !media?.url) {
+    throw new ChannelSendError(
+      "invalid-argument",
+      "Provide message text, a media attachment, or both.",
+    );
+  }
+  if (media?.url && !["video", "audio", "image"].includes(media.type)) {
+    throw new ChannelSendError(
+      "invalid-argument",
+      `Unsupported media type: ${media.type}. Use video, audio, or image.`,
+    );
+  }
+  if (media?.url && channel === "whatsapp") {
+    throw new ChannelSendError(
+      "failed-precondition",
+      "Media attachments are not supported on WhatsApp yet. Send text instead.",
     );
   }
   if (!["messenger", "instagram", "whatsapp"].includes(channel)) {
@@ -100,6 +132,8 @@ export async function sendChannelMessageInternal(
   // record so merge tags never go out as raw text.
   const contact = await getContactForRecipient(channel, recipientId);
   const resolvedText = resolvePersonalizationTags(text, contact);
+  // What lands in the conversation log for an attachment send.
+  const logText = media?.url ? `[${media.type} attachment] ${media.url}` : resolvedText;
 
   // Token self-heal, per connection:
   // - Messenger always runs on the Page token.
@@ -115,8 +149,7 @@ export async function sendChannelMessageInternal(
       resolvedText,
       WHATSAPP_PHONE_NUMBER_ID.value(),
     );
-  } else if (channel === "instagram") {
-    igRoute = await resolveInstagramRoute(workspaceId, recipientId);
+  } else if (channel === "instagram") {    igRoute = await resolveInstagramRoute(workspaceId, recipientId);
     if (igRoute === null) {
       throw new ChannelSendError(
         "failed-precondition",
@@ -144,7 +177,9 @@ export async function sendChannelMessageInternal(
           "Could not read the Instagram token. Reconnect Instagram in Settings under Channels, then send again.",
         );
       }
-      result = await sendInstagramDirectMessage(igToken, recipientId, resolvedText);
+      result = media?.url
+        ? await sendInstagramDirectMedia(igToken, recipientId, media.url, media.type)
+        : await sendInstagramDirectMessage(igToken, recipientId, resolvedText);
     } else {
       const health = await ensureFreshPageToken(workspaceId);
       if (health === "invalid") {
@@ -153,11 +188,10 @@ export async function sendChannelMessageInternal(
           "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
         );
       }
-      result = await sendInstagramMessage(
-        await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()),
-        recipientId,
-        resolvedText,
-      );
+      const pageToken = await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value());
+      result = media?.url
+        ? await sendInstagramMedia(pageToken, recipientId, media.url, media.type)
+        : await sendInstagramMessage(pageToken, recipientId, resolvedText);
     }
   } else {
     const health = await ensureFreshPageToken(workspaceId);
@@ -167,18 +201,17 @@ export async function sendChannelMessageInternal(
         "The Facebook page connection expired. Reconnect it in Settings under Channels, then send again.",
       );
     }
-    result = await CHANNEL_SENDERS[channel](
-      await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()),
-      recipientId,
-      resolvedText,
-    );
+    const pageToken = await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value());
+    result = media?.url
+      ? await sendMessengerMedia(pageToken, recipientId, media.url, media.type)
+      : await CHANNEL_SENDERS[channel](pageToken, recipientId, resolvedText);
   }
 
   await recordOutboundMessage(
     workspaceId,
     channel,
     recipientId,
-    resolvedText,
+    logText,
     result.metaMessageId,
     result.ok,
     result.error,
