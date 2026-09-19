@@ -17,6 +17,8 @@ import {
   Globe, 
   Image as ImageIcon, 
   Layers, 
+  Mic,
+  Video as VideoIcon,
   Link2,
   Maximize2, 
   MessageCircle, 
@@ -86,11 +88,14 @@ import {
 import { MetaPolicyModal } from '../components/MetaPolicyModal';
 import { TriggerSelectorModal } from '../components/TriggerSelectorModal';
 import { ImageUpload } from '../components/ImageUpload';
+import { MediaUpload } from '../components/MediaUpload';
 import { loadBotMapData, saveBotMapData } from '../utils/botMapStorage';
 
 export type MessageComponentType = 
   | 'text' 
   | 'image' 
+  | 'video'
+  | 'audio'
   | 'card' 
   | 'gallery' 
   | 'typing'
@@ -113,6 +118,10 @@ export interface MessageComponent {
   text?: string;
   imageUrl?: string;
   imageCaption?: string;
+  videoUrl?: string;
+  videoCaption?: string;
+  audioUrl?: string;
+  audioCaption?: string;
   cardTitle?: string;
   cardSubtitle?: string;
   cardImageUrl?: string;
@@ -609,7 +618,8 @@ export function FlowBuilder({
       }
       if (node.components && node.components.length > 0) {
         node.components.forEach(c => {
-          if (c.type === 'image' || c.type === 'card' || c.type === 'gallery') estimatedY += 160;
+          if (c.type === 'image' || c.type === 'video' || c.type === 'card' || c.type === 'gallery') estimatedY += 160;
+          if (c.type === 'audio') estimatedY += 120;
           else if (c.type === 'typing') estimatedY += 44;
           else if (c.type === 'text') estimatedY += 48;
           else if (c.type === 'recurring_notification_optin' || c.type === 'one_time_notification_optin') estimatedY += 120;
@@ -2835,6 +2845,54 @@ const NodeCard = React.memo(function NodeCard({
                 );
               }
 
+              if (comp.type === 'video') {
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-rose-500/30 bg-slate-950/60 relative">
+                    {comp.videoUrl ? (
+                      <video 
+                        src={comp.videoUrl} 
+                        controls
+                        preload="metadata"
+                        className="w-full h-28 object-cover bg-black"
+                      />
+                    ) : (
+                      <div className="w-full h-20 bg-slate-800/80 flex items-center justify-center gap-2 text-slate-400 text-xs">
+                        <VideoIcon className="w-4 h-4 text-rose-400" />
+                        <span>No video set</span>
+                      </div>
+                    )}
+                    {comp.videoCaption && (
+                      <div className="p-2 text-[11px] text-slate-300 bg-slate-900/95 border-t border-white/5 truncate">
+                        {comp.videoCaption}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              if (comp.type === 'audio') {
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-orange-500/30 bg-slate-950/60 relative p-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="p-1.5 rounded-lg bg-orange-500/15 border border-orange-500/30">
+                        <Mic className="w-4 h-4 text-orange-400" />
+                      </div>
+                      <span className="text-[11px] font-semibold text-orange-200">
+                        {comp.audioUrl ? 'Audio attachment' : 'No audio set'}
+                      </span>
+                    </div>
+                    {comp.audioUrl && (
+                      <audio src={comp.audioUrl} controls preload="metadata" className="w-full h-8" />
+                    )}
+                    {comp.audioCaption && (
+                      <div className="mt-1.5 text-[11px] text-slate-300 truncate">
+                        {comp.audioCaption}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
               if (comp.type === 'card') {
                 return (
                   <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-purple-500/30 bg-slate-950/70 shadow-md">
@@ -3411,6 +3469,20 @@ function NodeEditor({
         type: 'image',
         imageUrl: PRESET_IMAGES[0].url,
         imageCaption: 'Build-A-Bot Live Workshop flyer',
+      };
+    } else if (type === 'video') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'video',
+        videoUrl: '',
+        videoCaption: '',
+      };
+    } else if (type === 'audio') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'audio',
+        audioUrl: '',
+        audioCaption: '',
       };
     } else if (type === 'card') {
       newComp = {
@@ -5140,6 +5212,60 @@ function NodeEditor({
                         </div>
                       )}
 
+                      {/* VIDEO COMPONENT EDITOR */}
+                      {comp.type === 'video' && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <MediaUpload
+                              label="Video"
+                              kind="video"
+                              value={comp.videoUrl || ''}
+                              onChange={(url) => handleUpdateComponent(comp.id, { videoUrl: url })}
+                              accentClass="focus-within:border-rose-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Caption (Optional)</label>
+                            <input 
+                              type="text" 
+                              value={comp.videoCaption || ''} 
+                              onChange={(e) => handleUpdateComponent(comp.id, { videoCaption: e.target.value })}
+                              placeholder="What this video shows..."
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-rose-500"
+                            />
+                          </div>
+
+                        </div>
+                      )}
+
+                      {/* AUDIO COMPONENT EDITOR */}
+                      {comp.type === 'audio' && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <MediaUpload
+                              label="Audio"
+                              kind="audio"
+                              value={comp.audioUrl || ''}
+                              onChange={(url) => handleUpdateComponent(comp.id, { audioUrl: url })}
+                              accentClass="focus-within:border-orange-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Caption (Optional)</label>
+                            <input 
+                              type="text" 
+                              value={comp.audioCaption || ''} 
+                              onChange={(e) => handleUpdateComponent(comp.id, { audioCaption: e.target.value })}
+                              placeholder="What this audio covers..."
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-orange-500"
+                            />
+                          </div>
+
+                        </div>
+                      )}
+
                       {/* CARD COMPONENT EDITOR */}
                       {comp.type === 'card' && (
                         <div className="space-y-3 pt-1">
@@ -5930,7 +6056,7 @@ function NodeEditor({
               {(node.components || []).length} added
             </span>
           </div>
-          <div className="grid grid-cols-5 gap-1 sm:gap-1.5 mb-1.5">
+          <div className="grid grid-cols-4 gap-1 sm:gap-1.5 mb-1.5">
             <button 
               type="button"
               onClick={() => handleAddComponent('text')}
@@ -5975,6 +6101,24 @@ function NodeEditor({
             >
               <MoreHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400 group-hover:scale-110 transition-transform mb-0.5" />
               <span className="text-[9px] sm:text-[10px] font-bold text-cyan-300">Typing</span>
+            </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('video')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-white/10 hover:border-rose-500/50 hover:bg-slate-800/80 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm"
+              title="Add video attachment"
+            >
+              <VideoIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-medium text-slate-300">Video</span>
+            </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('audio')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-white/10 hover:border-orange-500/50 hover:bg-slate-800/80 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm"
+              title="Add audio attachment"
+            >
+              <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-medium text-slate-300">Audio</span>
             </button>
           </div>
 

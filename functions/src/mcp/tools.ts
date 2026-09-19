@@ -150,21 +150,27 @@ async function resolveSendTarget(
  */
 export async function sendMessage(
   ctx: ToolContext,
-  args: { channel: string; recipientId?: string; conversationId?: string; text: string },
+  args: { channel: string; recipientId?: string; conversationId?: string; text?: string; mediaUrl?: string; mediaType?: "video" | "audio" | "image" },
 ): Promise<{ ok: boolean; messageId: string | null; channel: string; recipientId: string }> {
-  if (!args.text || !args.text.trim()) throw new Error("text is required.");
-  if (args.text.length > 1600) throw new Error("text is too long (max 1600 characters).");
+  if ((!args.text || !args.text.trim()) && !args.mediaUrl) throw new Error("Provide text, a media attachment, or both.");
+  if (args.text && args.text.length > 1600) throw new Error("text is too long (max 1600 characters).");
+  if (args.mediaUrl && !["video", "audio", "image"].includes(args.mediaType ?? "")) {
+    throw new Error("mediaType must be video, audio, or image.");
+  }
   const { channel, recipientId } = await resolveSendTarget(ctx, args);
   try {
     if (channel === "sms") {
-      const r = await sendSmsInternal(ctx.workspaceId, recipientId, args.text);
+      if (args.mediaUrl) throw new Error("Media attachments are not supported on SMS.");
+      const r = await sendSmsInternal(ctx.workspaceId, recipientId, args.text ?? "");
       return { ok: true, messageId: r.messageId, channel, recipientId };
     }
     const r = await sendChannelMessageInternal(
       ctx.workspaceId,
       channel as "messenger" | "instagram" | "whatsapp",
       recipientId,
-      args.text,
+      args.text ?? "",
+      null,
+      args.mediaUrl ? { url: args.mediaUrl, type: args.mediaType as "video" | "audio" | "image" } : null,
     );
     return { ok: true, messageId: r.metaMessageId, channel, recipientId };
   } catch (err) {

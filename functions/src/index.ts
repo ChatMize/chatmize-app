@@ -404,6 +404,9 @@ interface SendMessageData {
   channel?: Channel;
   recipientId?: string;
   text?: string;
+  /** Optional media attachment (bot builder video/audio/image). */
+  mediaUrl?: string;
+  mediaType?: "video" | "audio" | "image";
   /** Frontend's optimistic message id, echoed back as clientId on the
    * persisted doc so the UI can reconcile instead of duplicating. */
   clientMessageId?: string;
@@ -420,9 +423,15 @@ export const sendChannelMessage = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "Sign in required.");
     }
-    const { workspaceId, channel, recipientId, text, clientMessageId } = (request.data ?? {}) as SendMessageData;
-    if (!workspaceId || !channel || !recipientId || !text) {
-      throw new HttpsError("invalid-argument", "workspaceId, channel, recipientId, and text are required.");
+    const { workspaceId, channel, recipientId, text, mediaUrl, mediaType, clientMessageId } = (request.data ?? {}) as SendMessageData;
+    if (!workspaceId || !channel || !recipientId) {
+      throw new HttpsError("invalid-argument", "workspaceId, channel, and recipientId are required.");
+    }
+    if (!text && !mediaUrl) {
+      throw new HttpsError("invalid-argument", "Provide message text, a media attachment, or both.");
+    }
+    if (mediaUrl && !["video", "audio", "image"].includes(mediaType ?? "")) {
+      throw new HttpsError("invalid-argument", "mediaType must be video, audio, or image.");
     }
 
     // Membership check (Super Admin claim bypasses).
@@ -430,7 +439,14 @@ export const sendChannelMessage = onCall(
 
     // The shared send pipeline (channelSend.ts) also serves the MCP server.
     try {
-      const sendResult = await sendChannelMessageInternal(workspaceId, channel, recipientId, text, clientMessageId ?? null);
+      const sendResult = await sendChannelMessageInternal(
+        workspaceId,
+        channel,
+        recipientId,
+        text ?? "",
+        clientMessageId ?? null,
+        mediaUrl ? { url: mediaUrl, type: mediaType as "video" | "audio" | "image" } : null,
+      );
       // Gamification: count the handled outbound message (fire-and-forget).
       recordMessageHandled(workspaceId, uid).catch((err) =>
         logger.error("Gamification record failed (outbound)", { workspaceId, err }),

@@ -88,14 +88,18 @@ export function buildMcpServer(key: VerifiedKey): McpServer {
 
   server.tool(
     "send_message",
-    "Send one outbound message through the workspace's connected channels. Uses the production send pipeline (token self-heal, personalization tags, SMS opt-in and billing).",
+    "Send one outbound message through the workspace's connected channels. Uses the production send pipeline (token self-heal, personalization tags, SMS opt-in and billing). Supports text and media attachments (video/audio on Messenger and Instagram).",
     {
       channel: z.enum(["messenger", "instagram", "whatsapp", "sms"]),
       recipientId: z.string().optional()
         .describe("PSID / IGSID / WhatsApp number / E.164 phone. Omit when conversationId is given."),
       conversationId: z.string().optional()
         .describe("Reply inside this thread; the recipient is resolved from it."),
-      text: z.string().max(1600).describe("Message text. {{contact tags}} are resolved automatically."),
+      text: z.string().max(1600).optional().describe("Message text. {{contact tags}} are resolved automatically. Optional when mediaUrl is given."),
+      mediaUrl: z.string().url().optional()
+        .describe("Publicly fetchable media URL (e.g. a Firebase Storage download URL). Sent as a Messenger/Instagram attachment."),
+      mediaType: z.enum(["video", "audio", "image"]).optional()
+        .describe("Attachment type for mediaUrl. Required when mediaUrl is given."),
     },
     async (args) => {
       try {
