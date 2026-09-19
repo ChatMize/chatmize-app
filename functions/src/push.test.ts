@@ -6,12 +6,14 @@ import assert from "node:assert/strict";
 import { resolvePushLink, tokenDocId, cleanText } from "./push";
 
 let passed = 0;
+let failed = 0;
 function check(name: string, fn: () => void) {
   try {
     fn();
     passed++;
     console.log(`ok - ${name}`);
   } catch (e) {
+    failed++;
     console.error(`FAIL - ${name}: ${e instanceof Error ? e.message : e}`);
     process.exitCode = 1;
   }
@@ -110,4 +112,4 @@ check("cleanText: strips control chars", () => {
   assert.equal(cleanText("a\u0000b", 10), "ab");
 });
 
-console.log(`\n${passed} checks passed`);
+console.log(`\n${passed} checks passed, ${failed} failed`);

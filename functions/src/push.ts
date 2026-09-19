@@ -46,13 +46,6 @@ export interface PushPayload {
   image?: string;
 }
 
-/** Human labels for the link type picker (shared by backend validation). */
-export const PUSH_LINK_TYPE_LABELS: Record<PushLinkType, string> = {
-  messenger: "Messenger deep link",
-  onpage: "On-page chat",
-  website: "Website URL",
-};
-
 export function tokenDocId(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -87,6 +80,7 @@ export function resolvePushLink(linkType: unknown, linkValue: unknown): string |
     } else {
       handle = value.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split(/[/?#]/)[0];
     }
+    handle = handle.replace(/^@+/, "");
     if (!/^[A-Za-z0-9._-]{1,64}$/.test(handle)) {
       throw new HttpsError(
         "invalid-argument",
@@ -96,13 +90,24 @@ export function resolvePushLink(linkType: unknown, linkValue: unknown): string |
     return `https://m.me/${handle}`;
   }
 
-  if (!/^https:\/\//i.test(value)) {
+  let url = value;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) {
+    // No scheme: only a bare domain (something with a dot) gets https prepended.
+    if (!/^[^/?#]+\.[^/?#]+/.test(url)) {
+      throw new HttpsError("invalid-argument", "Link must be a full https URL.");
+    }
+    url = `https://${url}`;
+  }
+  if (!/^https:\/\//i.test(url)) {
     throw new HttpsError("invalid-argument", "Link must be a full https URL.");
   }
-  const url = value.slice(0, 2000);
+  url = url.slice(0, 2000);
   if (type === "onpage") {
-    const sep = url.includes("?") ? "&" : "?";
-    return `${url}${sep}chatmize_chat=open`;
+    const u = new URL(url);
+    if (!u.searchParams.has("chatmize_chat")) {
+      u.searchParams.set("chatmize_chat", "open");
+    }
+    return u.toString();
   }
   return url;
 }
