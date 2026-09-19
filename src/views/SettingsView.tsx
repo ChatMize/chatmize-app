@@ -46,6 +46,7 @@ import { MetaConnectCard } from '../components/channels/MetaConnectCard';
 import { InstagramConnectCard } from '../components/channels/InstagramConnectCard';
 import { BigMarkerConnectCard } from '../components/channels/BigMarkerConnectCard';
 import { WhatsAppConnectCard } from '../components/channels/WhatsAppConnectCard';
+import { ShopifyConnectCard } from '../components/channels/ShopifyConnectCard';
 import { getMetaOAuthStatus, startMetaOAuth } from '../lib/meta';
 import { usePlans, usePlan } from '../lib/entitlements';
 import { Plan, PlanMode, formatPrice } from '../lib/billing';
@@ -547,6 +548,7 @@ export function SettingsView({
             {workspace?.id && <MetaConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={refreshAnchor} />}
             {workspace?.id && <InstagramConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" hasPageAnchor={anchor.connected} />}
             {workspace?.id && <WhatsAppConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={handleWhatsAppConnected} />}
+            {workspace?.id && <ShopifyConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
             {workspace?.id && <BigMarkerConnectCard workspaceId={workspace.id} />}
             {channels.map(channel => (

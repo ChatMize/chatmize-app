@@ -30,6 +30,11 @@ export const META_PAGE_TOKEN_DEFAULT = defineSecret("META_PAGE_TOKEN_DEFAULT");
 export const WHATSAPP_TOKEN_DEFAULT = defineSecret("WHATSAPP_TOKEN_DEFAULT");
 export const WHATSAPP_PHONE_NUMBER_ID = defineSecret("WHATSAPP_PHONE_NUMBER_ID");
 
+// Shopify app credentials (one ChatMize Shopify app; merchants install via
+// OAuth). Client secret also verifies webhook HMAC signatures.
+export const SHOPIFY_CLIENT_ID = defineSecret("SHOPIFY_CLIENT_ID");
+export const SHOPIFY_CLIENT_SECRET = defineSecret("SHOPIFY_CLIENT_SECRET");
+
 // NOTE: there is intentionally no ALL_SECRETS bundle. Each function declares
 // only the secrets it actually reads (least privilege, and avoids mounting
 // placeholder values where they are not needed).

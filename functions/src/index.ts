@@ -74,6 +74,25 @@ import {
   selectWhatsAppNumber,
   whatsappAppReturnUrl,
 } from "./whatsappOAuth";
+import {
+  SHOPIFY_CLIENT_ID,
+  SHOPIFY_CLIENT_SECRET,
+} from "./secrets";
+import {
+  buildShopifyLoginUrl,
+  consumeShopifyOAuthState,
+  exchangeShopifyCode,
+  fetchShopInfo,
+  connectShopifyStore,
+  getShopifyConnection,
+  updateShopifySettings,
+  disconnectShopify,
+  normalizeShopDomain,
+  verifyShopifyHmac,
+  routeShopifyWebhook,
+  sweepAbandonedCheckouts,
+  shopifyAppReturnUrl,
+} from "./shopify";
 import { handleBigmarkerAction } from "./bigmarker";
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
@@ -1671,3 +1690,134 @@ export const kbFeedback = onCall({ region: REGION }, async (request) => {
   await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
   return kbFeedbackHandler(workspaceId, articleId, kind);
 });
+
+// ---------------------------------------------------------------------------
+// Shopify integration: OAuth connect, webhook receiver, abandoned cart sweep
+// ---------------------------------------------------------------------------
+
+/** Step 1: validate the shop domain and return the Shopify authorize URL. */
+export const shopifyOAuthStart = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, shop, returnTo } = (request.data ?? {}) as {
+    workspaceId?: string;
+    shop?: string;
+    returnTo?: string;
+  };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const shopDomain = normalizeShopDomain(shop ?? "");
+  if (!shopDomain) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Enter your store domain like mystore.myshopify.com.",
+    );
+  }
+  const url = await buildShopifyLoginUrl(workspaceId, uid, shopDomain, returnTo);
+  logger.info("Shopify OAuth started", { workspaceId, shop: shopDomain });
+  return { url };
+});
+
+/** Step 2: Shopify redirects here with ?code&state. Public; state is single-use. */
+export const shopifyOAuthCallback = onRequest(
+  { region: REGION, secrets: [SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET] },
+  async (req, res) => {
+    const code = req.query["code"];
+    const state = req.query["state"];
+    let returnTo: string | undefined;
+    try {
+      if (typeof code !== "string" || typeof state !== "string") {
+        throw new Error("Missing code or state.");
+      }
+      const consumed = await consumeShopifyOAuthState(state);
+      returnTo = consumed.returnTo;
+      const token = await exchangeShopifyCode(consumed.shop, code);
+      const info = await fetchShopInfo(consumed.shop, token);
+      await connectShopifyStore(consumed.workspaceId, consumed.uid, consumed.shop, token, info);
+      logger.info("Shopify OAuth callback ok", {
+        workspaceId: consumed.workspaceId,
+        shop: consumed.shop,
+      });
+      res.redirect(302, shopifyAppReturnUrl("success", undefined, returnTo));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Shopify login failed.";
+      logger.warn("Shopify OAuth callback failed", { message });
+      res.redirect(302, shopifyAppReturnUrl("error", message, returnTo));
+    }
+  },
+);
+
+/** Connection status + settings for the client (no tokens leave the server). */
+export const shopifyOAuthStatus = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, action, abandonedCartMinutes } = (request.data ?? {}) as {
+    workspaceId?: string;
+    action?: string;
+    abandonedCartMinutes?: number;
+  };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  if (action === "updateSettings") {
+    await updateShopifySettings(workspaceId, { abandonedCartMinutes });
+    logger.info("Shopify settings updated", { workspaceId, abandonedCartMinutes });
+    return getShopifyConnection(workspaceId);
+  }
+  if (action === "disconnect") {
+    await disconnectShopify(workspaceId);
+    logger.info("Shopify disconnected by owner", { workspaceId });
+    return getShopifyConnection(workspaceId);
+  }
+  return getShopifyConnection(workspaceId);
+});
+
+/**
+ * Public webhook receiver. Verifies the Shopify HMAC signature, then routes
+ * the event. The 200 goes back immediately; routing failures are logged and
+ * never retried by us (Shopify redelivers on non-2xx, deduped by event id).
+ */
+export const shopifyWebhook = onRequest(
+  { region: REGION, secrets: [SHOPIFY_CLIENT_SECRET] },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.sendStatus(405);
+      return;
+    }
+    const rawBody: Buffer =
+      (req as unknown as { rawBody?: Buffer }).rawBody ?? Buffer.from("");
+    const topic = req.header("x-shopify-topic") ?? "";
+    const shop = req.header("x-shopify-shop-domain") ?? "";
+    const signature = req.header("x-shopify-hmac-sha256");
+    if (!verifyShopifyHmac(rawBody, signature, SHOPIFY_CLIENT_SECRET.value())) {
+      logger.warn("Shopify webhook rejected: bad signature", { shop, topic });
+      res.sendStatus(401);
+      return;
+    }
+    res.sendStatus(200);
+    // Process after the 200 so Shopify never waits on us.
+    try {
+      const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;
+      await routeShopifyWebhook(shop, topic, payload);
+    } catch (err) {
+      logger.error("Shopify webhook payload handling failed", {
+        shop,
+        topic,
+        error: err instanceof Error ? err.message : "unknown",
+      });
+    }
+  },
+);
+
+/** Hourly: turn stale open checkouts into abandoned cart events. */
+export const shopifyAbandonedCartSweep = onSchedule(
+  { region: REGION, schedule: "every 60 minutes" },
+  async () => {
+    try {
+      await sweepAbandonedCheckouts();
+    } catch (err) {
+      logger.error("Shopify abandoned cart sweep failed", {
+        error: err instanceof Error ? err.message : "unknown",
+      });
+    }
+  },
+);
