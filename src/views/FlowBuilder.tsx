@@ -2905,6 +2905,8 @@ const NodeCard = React.memo(function NodeCard({
             <span className="line-clamp-2">
               Shopify {node.shopifyAction.kind === 'cart_recovery' ? 'cart recovery' : 'order update'}: {node.shopifyAction.message}
             </span>
+          </div>
+        )}
         {isAction && node.sheetsAction?.tab && (
           <div className="text-xs bg-emerald-500/10 text-emerald-100 px-2.5 py-1.5 rounded-lg border border-emerald-500/20 flex items-start gap-2 mt-1.5">
             <Table2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
@@ -6347,6 +6349,9 @@ function NodeEditor({
                   ? 'Use {{cart_items}}, {{cart_total}}, {{cart_recovery_url}}, {{customer_first_name}}. Fires when the cart abandoned trigger starts this flow.'
                   : 'Use {{order_name}}, {{order_total}}, {{tracking_number}}, {{tracking_url}}, {{customer_first_name}}. Fires when an order event starts this flow.'}
                 {' '}Sends once per flow run, never retried.
+              </p>
+            </div>
+
             {/* Google Sheets action: append one row to the workspace's connected sheet */}
             <div className="pt-3 border-t border-white/10 space-y-2.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -7067,6 +7072,9 @@ function PhoneSimulator({
             sender: 'bot',
             type: 'text',
             text: rendered,
+          },
+        ]);
+      }
       // Sheets action: simulate the row append (no real Google call from the
       // browser). Production appends fire from the API via sheets_append_row.
       if (node.sheetsAction?.tab) {
