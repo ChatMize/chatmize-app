@@ -114,6 +114,13 @@
           }
         },
         {
+          "source": "/survey-api",
+          "function": {
+            "functionId": "metaWebhook",
+            "region": "us-west2"
+          }
+        },
+        {
           "source": "**",
           "destination": "/index.html"
         }

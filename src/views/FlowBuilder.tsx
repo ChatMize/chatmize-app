@@ -52,6 +52,7 @@ import {
   ShieldAlert,
   AlertTriangle,
   AlertCircle,
+  ClipboardList,
   Instagram,
   Smartphone,
   Layout,
@@ -180,6 +181,8 @@ function BigmarkerWebinarPicker({
     </div>
   );
 }
+import { fetchSurveys } from '../lib/surveys';
+import type { Survey } from '../types/surveys';
 
 export type MessageComponentType = 
   | 'text' 
@@ -307,6 +310,9 @@ export interface FlowNode {
   // connected spreadsheet. mappings pair a column header with the variable
   // name whose captured value fills that column.
   sheetsAction?: { tab: string; mappings: Array<{ column: string; variable: string }> };
+  // Survey action: send the contact a link to this survey. The taker's
+  // answers land in the survey's contact variables automatically.
+  surveyAction?: { surveyId: string; surveyName?: string };
   delayText?: string;
   delayHours?: number;
   conditionText?: string;
@@ -2918,6 +2924,12 @@ const NodeCard = React.memo(function NodeCard({
             <span className="truncate">Sheets: {node.sheetsAction.tab} ({(node.sheetsAction.mappings || []).length} columns)</span>
           </div>
         )}
+        {isAction && node.surveyAction?.surveyId && (
+          <div className="text-xs bg-cyan-500/10 text-cyan-100 px-2.5 py-1.5 rounded-lg border border-cyan-500/20 flex items-start gap-2 mt-1.5">
+            <ClipboardList className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0 mt-0.5" />
+            <span className="truncate">Survey: {node.surveyAction.surveyName || node.surveyAction.surveyId}</span>
+          </div>
+        )}
 
         {isDelay && (
           <div className="text-xs text-purple-200 bg-purple-500/10 border border-purple-500/20 p-2.5 rounded-xl flex items-center gap-2">
@@ -3445,6 +3457,17 @@ function NodeEditor({
   const [expandedTriggerId, setExpandedTriggerId] = useState<string | null>(null);
   const [copiedTriggerId, setCopiedTriggerId] = useState<string | null>(null);
   const [testedWebhookId, setTestedWebhookId] = useState<string | null>(null);
+
+  // Surveys for the survey_completed trigger and the send-survey node action.
+  const [surveyOptions, setSurveyOptions] = useState<Survey[]>([]);
+  useEffect(() => {
+    if (!workspaceId) return;
+    let cancelled = false;
+    fetchSurveys(workspaceId)
+      .then((list) => { if (!cancelled) setSurveyOptions(list); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [workspaceId]);
   const [newKeywordInputs, setNewKeywordInputs] = useState<Record<string, string>>({});
   const [testingTriggerId, setTestingTriggerId] = useState<string | null>(null);
   const [testInputText, setTestInputText] = useState<string>('');
@@ -4729,6 +4752,35 @@ function NodeEditor({
                                   {testedWebhookId === trig.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Zap className="w-3.5 h-3.5" />}
                                   <span>{testedWebhookId === trig.id ? 'Test Event Received Successfully! (HTTP 200)' : 'Simulate Inbound Webhook Event'}</span>
                                 </button>
+                              </div>
+                            )}
+
+                            {/* Survey Completed trigger: pick which survey fires this flow */}
+                            {trig.type === 'survey_completed' && (
+                              <div className="space-y-2.5 p-3 rounded-2xl bg-slate-950/60 border border-white/10">
+                                <div className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                                  <ClipboardList className="w-3.5 h-3.5 text-cyan-400" />
+                                  <span>Survey That Fires This Flow</span>
+                                </div>
+                                <select
+                                  value={trig.surveyId || ''}
+                                  onChange={(e) => {
+                                    const s = surveyOptions.find(x => x.id === e.target.value);
+                                    handleUpdateTrigger(trig.id, { surveyId: s?.id || '', surveyName: s?.title || '' });
+                                  }}
+                                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-cyan-500"
+                                >
+                                  <option value="">Select a survey...</option>
+                                  {surveyOptions.filter(s => s.status === 'active').map((s) => (
+                                    <option key={s.id} value={s.id}>{s.title}</option>
+                                  ))}
+                                </select>
+                                <p className="text-[11px] text-slate-500">
+                                  When a visitor finishes this survey, the flow starts and their answers are already saved to the contact variables you named.
+                                </p>
+                                {surveyOptions.filter(s => s.status === 'active').length === 0 && (
+                                  <p className="text-[11px] text-amber-300">No active surveys yet. Build one in Growth Suite → Surveys and set it to Active.</p>
+                                )}
                               </div>
                             )}
                           </div>
@@ -6425,6 +6477,30 @@ function NodeEditor({
               </p>
             </div>
 
+            {/* Survey action: send the contact a survey link */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <ClipboardList className="w-3 h-3 text-cyan-400" />
+                <span>Send survey</span>
+              </label>
+              <select
+                value={node.surveyAction?.surveyId || ''}
+                onChange={(e) => {
+                  const s = surveyOptions.find(x => x.id === e.target.value);
+                  onAutoUpdate(s ? { surveyAction: { surveyId: s.id, surveyName: s.title } } : { surveyAction: undefined });
+                }}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 transition-colors"
+              >
+                <option value="">No survey (off)</option>
+                {surveyOptions.filter(s => s.status === 'active').map((s) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Sends the contact the survey link. Their answers land in the survey's contact variables, ready for the next steps in this flow.
+              </p>
+            </div>
+
             {/* Active Integrations Cascading Configuration: Connection -> List -> Tags */}
             <div className="pt-3 border-t border-white/10 space-y-2.5">
               <div className="flex items-center justify-between">
@@ -7133,6 +7209,20 @@ function PhoneSimulator({
             sender: 'bot',
             type: 'text',
             text: `Sheets simulated → row appended to "${node.sheetsAction!.tab}"${mappedPairs ? ` (${mappedPairs})` : ''}`,
+          },
+        ]);
+      }
+      // Survey action: simulate sending the survey link (no real send from
+      // the browser). Production sends fire from the API alongside the flow.
+      if (node.surveyAction?.surveyId) {
+        const surveyName = node.surveyAction.surveyName || 'your survey';
+        setChatItems((prev) => [
+          ...prev,
+          {
+            id: `survey-${Date.now()}`,
+            sender: 'bot',
+            type: 'text',
+            text: `Survey sent → ${surveyName} (${window.location.origin}/survey/${node.surveyAction!.surveyId}). Answers land in the survey's contact variables.`,
           },
         ]);
       }

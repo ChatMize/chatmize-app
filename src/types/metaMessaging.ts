@@ -47,7 +47,8 @@ export type TriggerType =
   | 'shopify_order_shipped'
   | 'shopify_order_delivered'
   | 'shopify_product_purchased'
-  | 'lead_form';
+  | 'lead_form'
+  | 'survey_completed';
 
 export interface FlowTrigger {
   id: string;
@@ -78,6 +79,9 @@ export interface FlowTrigger {
   widgetDelaySeconds?: number;
   webhookUrl?: string;
   webhookSource?: string;
+  /** Set when type === 'survey_completed': the survey whose completion fires the flow. */
+  surveyId?: string;
+  surveyName?: string;
   waPhoneNumber?: string;
   waPreFillText?: string;
 }
@@ -596,6 +600,21 @@ export const TRIGGER_CATALOG: TriggerTemplate[] = [
       title: 'Meta Instant Lead Form Submission',
       adCampaignName: 'VIP Masterclass Lead Gen Instant Form',
       keywords: ['LEAD_SUBMITTED', 'VIP_FORM', 'INSTANT_LEAD'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'survey_completed',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Survey Completed',
+    description: 'Trigger flow when a visitor finishes one of your surveys. Their answers are already saved to contact variables.',
+    badge: 'Surveys',
+    icon: 'ClipboardList',
+    defaultConfig: {
+      title: 'Survey Completed',
+      keywords: ['SURVEY_COMPLETED'],
       matchRule: 'contains',
       keywordMode: 'keywords'
     }

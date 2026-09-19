@@ -57,6 +57,7 @@ import { GrowthSuiteHub } from './components/growth/GrowthSuiteHub';
 import { ContestsView } from './components/growth/ContestsView';
 import { KnowledgeBaseView } from './views/KnowledgeBaseView';
 import { ContestEntryPage } from './components/growth/ContestEntryPage';
+import { SurveyTakePage } from './components/growth/SurveyTakePage';
 import { NurtureToolType } from './types/nurture';
 import { OverlayType } from './types/growthTools';
 import { RecurringNotificationBroadcastHub } from './components/RecurringNotificationBroadcastHub';
@@ -365,15 +366,14 @@ export default function App() {
           <FlowBuilder 
             activeBotId={activeBotId}
             activeBotTitle={activeBotTitle}
-            workspaceId={activeWorkspace?.id}
             onUpdateBotTitle={(title) => setActiveBotTitle(title)}
             onBackToBotList={() => setActiveTab('bot-list')}
+            workspaceId={activeWorkspace?.id}
             onNavigateToIntegrations={() => setActiveTab('integrations')} 
             onNavigateToDocs={(docId?: string) => {
               if (docId) setSelectedDocId(docId);
               setActiveTab('docs');
             }} 
-            workspaceId={activeWorkspace?.id}
           />
         );
       case 'agents':
@@ -549,7 +549,6 @@ export default function App() {
               if (docId) setSelectedDocId(docId);
               setActiveTab('docs');
             }} 
-            workspaceId={activeWorkspace?.id}
           />
         );
     }
@@ -597,6 +596,16 @@ export default function App() {
     }
   });
 
+  // Public survey page: /survey/:surveyId renders without auth (same pattern).
+  const [publicSurveyId] = useState<string | null>(() => {
+    try {
+      const m = window.location.pathname.match(/^\/survey\/([A-Za-z0-9_-]+)/);
+      return m ? m[1] : null;
+    } catch {
+      return null;
+    }
+  });
+
   // Onboarding gate: a signed-in user whose workspace hasn't finished onboarding
   // goes through the wizard (connect accounts -> choose DIY/DFU route -> tier).
   if (!authLoading && currentUser && activeWorkspace && !activeWorkspace.onboardingComplete) {
@@ -612,6 +621,10 @@ export default function App() {
 
   if (publicContestId) {
     return <ContestEntryPage contestId={publicContestId} />;
+  }
+
+  if (publicSurveyId) {
+    return <SurveyTakePage surveyId={publicSurveyId} />;
   }
 
   const showGuide = Boolean(

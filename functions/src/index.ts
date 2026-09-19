@@ -140,6 +140,7 @@ import {
   OverlayTrackRes,
 } from "./overlays";
 import { handleContestAdminAction, handleContestPublicRequest } from "./contest.js";
+import { handleSurveyAdminAction, handleSurveyPublicRequest } from "./surveys.js";
 import { handleMigrationAction } from "./migration";
 import {
   resolvePersonalizationTags,
@@ -337,6 +338,18 @@ export const metaWebhook = onRequest(
       await handleContestPublicRequest(
         req as unknown as Parameters<typeof handleContestPublicRequest>[0],
         res as unknown as Parameters<typeof handleContestPublicRequest>[1],
+      );
+      return;
+    }
+
+    // 0a. Survey builder public API (folded in: proxy blocks new function
+    //     creation). Unauthenticated by design — the shareable survey link
+    //     and the overlay SDK iframe hit POST /survey-api (hosting rewrite
+    //     -> this function). Rate limiting runs inside.
+    if (reqPath === "/survey-api" || reqPath.endsWith("/survey-api")) {
+      await handleSurveyPublicRequest(
+        req as unknown as Parameters<typeof handleSurveyPublicRequest>[0],
+        res as unknown as Parameters<typeof handleSurveyPublicRequest>[1],
       );
       return;
     }
@@ -1543,6 +1556,11 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   // creation; logic lives in ./overlays so it can split out later).
   if (action === "overlayList") {
     return overlayList(workspaceId);
+  }
+  // Survey builder admin actions (folded in: proxy blocks new function
+  // creation; logic lives in ./surveys so it can split out later).
+  if (typeof action === "string" && action.startsWith("survey")) {
+    return handleSurveyAdminAction(action, (request.data ?? {}) as Record<string, unknown>, uid);
   }
   if (action === "overlaySave") {
     return overlaySave(workspaceId, uid, (request.data as Record<string, unknown>).overlay);

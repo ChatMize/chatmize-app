@@ -27,7 +27,8 @@ import {
   Trophy,
   Gift,
   Globe,
-  FlaskConical
+  FlaskConical,
+  ClipboardList
 } from 'lucide-react';
 import { WebsiteOverlay, OverlayType, OverlayTrigger, OverlayPosition, OverlayCtaAction, MobileTriggerType, MobileTriggerConfig, ContestStub } from '../../types/growthTools';
 import {
@@ -40,6 +41,8 @@ import {
 import { usePlan } from '../../lib/entitlements';
 import { limitFor } from '../../lib/planModules';
 import { UpgradePromptModal } from '../UpgradePromptModal';
+import { fetchSurveys } from '../../lib/surveys';
+import type { Survey } from '../../types/surveys';
 
 interface WebsiteOverlaysViewProps {
   workspaceId?: string;
@@ -236,6 +239,7 @@ const describeMobileTrigger = (o: WebsiteOverlay): string => {
 const CtaLabel: React.FC<{ overlay: WebsiteOverlay }> = ({ overlay }) => (
   <span className="inline-flex items-center justify-center gap-1.5">
     {overlay.ctaAction === 'enter_contest' && <Trophy className="w-3.5 h-3.5" />}
+    {overlay.ctaAction === 'take_survey' && <ClipboardList className="w-3.5 h-3.5" />}
     <span>{overlay.ctaText}</span>
   </span>
 );
@@ -281,6 +285,17 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
   const [simTriggerStatus, setSimTriggerStatus] = useState<string | null>(null);
   const [leadCapturedNotice, setLeadCapturedNotice] = useState<string | null>(null);
   const [showQuickGuide, setShowQuickGuide] = useState(true);
+
+  // Surveys for the take_survey CTA action. Loaded lazily when the editor opens.
+  const [surveyOptions, setSurveyOptions] = useState<Survey[]>([]);
+  useEffect(() => {
+    if (!workspaceId || activeMode !== 'editor') return;
+    let cancelled = false;
+    fetchSurveys(workspaceId)
+      .then((list) => { if (!cancelled) setSurveyOptions(list); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [workspaceId, activeMode]);
 
   useEffect(() => {
     if (!workspaceId) {
@@ -1355,6 +1370,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                     <option value="open_url">Redirect to URL</option>
                     <option value="copy_code">Copy Voucher Code</option>
                     <option value="enter_contest">Enter Contest / Giveaway</option>
+                    <option value="take_survey">Take Survey</option>
                   </select>
                 </div>
               </div>
@@ -1372,6 +1388,39 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                 </div>
               )}
 
+              {editingOverlay.ctaAction === 'take_survey' && (
+                <div className="space-y-2 pt-1">
+                  <label className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                    <ClipboardList className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Survey to Show</span>
+                  </label>
+                  <select
+                    value={editingOverlay.surveyId || ''}
+                    onChange={(e) => {
+                      const survey = surveyOptions.find(s => s.id === e.target.value);
+                      setEditingOverlay({
+                        ...editingOverlay,
+                        surveyId: survey?.id || '',
+                        surveyName: survey?.title || ''
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                  >
+                    <option value="">Select a survey...</option>
+                    {surveyOptions.filter(s => s.status === 'active').map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.title} ({s.questions.length} questions)
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
+                    <span>The survey opens inside the popup or slide in, and each answer lands in the contact variables you named in the survey builder.</span>
+                  </p>
+                  {surveyOptions.filter(s => s.status === 'active').length === 0 && (
+                    <p className="text-[11px] text-amber-300">No active surveys yet. Build one in Growth Suite → Surveys and set it to Active.</p>
+                  )}
+                </div>
+              )}
               {editingOverlay.ctaAction === 'enter_contest' && (
                 <div className="space-y-2 pt-1">
                   <label className="text-[11px] text-slate-400 flex items-center gap-1.5">
