@@ -182,6 +182,19 @@ export async function persistInboundMessage(
     });
   }
 
+  // Variable capture: if a BotMaps question block armed pendingVariables on
+  // this conversation, treat this inbound message as the answer, validate
+  // it by type, and save it to the named variable on the contact.
+  try {
+    const { handleVariableCapture } = await import("./flowVariables.js");
+    await handleVariableCapture(workspaceId, msg);
+  } catch (err) {
+    logger.warn("Variable capture hook failed", {
+      workspaceId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // Background profile enrichment: never blocks the inbox.
   fetchSenderProfile(workspaceId, msg.senderId, msg.channel)
     .then((profile) => {

@@ -18,6 +18,7 @@ import {
   searchContacts,
   getContact,
   updateContact,
+  sendWebhook,
   createBroadcast,
   type ToolContext,
 } from "./tools";
@@ -106,6 +107,11 @@ export function buildMcpServer(key: VerifiedKey): McpServer {
         .describe("Contact capture: send the text with one-tap phone/email quick replies attached. The reply is validated and saved to the contact."),
       contactCaptureMode: z.enum(["quick_reply", "free_text", "both"]).optional()
         .describe("Capture mode: one-tap quick reply, typed text, or both. Defaults to both."),
+      variableCapture: z.object({
+        variable: z.string().describe("Variable name to save the answer to, e.g. appointment_date."),
+        varType: z.enum(["text", "number", "date"]).optional().describe("Answer type. Dates normalize to YYYY-MM-DD. Defaults to text."),
+      }).optional()
+        .describe("Question block: send the text as a question, then validate the reply and save it to the named variable on the contact."),
     },
     async (args) => {
       try {
@@ -134,7 +140,7 @@ export function buildMcpServer(key: VerifiedKey): McpServer {
 
   server.tool(
     "get_contact",
-    "Get a contact's full record.",
+    "Get a contact's full record, including the variables map (named variables saved by BotMaps question blocks, usable as {{variable}} tags).",
     {
       contactId: z.string().describe("Contact id, e.g. contact_instagram_123456."),
     },
@@ -149,14 +155,34 @@ export function buildMcpServer(key: VerifiedKey): McpServer {
 
   server.tool(
     "update_contact",
-    "Update allowlisted fields on a contact: name, firstName, lastName, email, phone, company, jobTitle, city, state, country, zipCode, notes, tags, status.",
+    "Update allowlisted fields on a contact: name, firstName, lastName, email, phone, company, jobTitle, city, state, country, zipCode, notes, tags, status. Plus a variables object to set any named variable (BotMaps answers, dates, etc.), readable later as {{variable}} tags.",
     {
       contactId: z.string(),
       fields: z.record(z.string(), z.unknown()).describe("Fields to patch."),
+      variables: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional()
+        .describe("Named variables to save on the contact, e.g. { appointment_date: '2027-01-05' }. Usable as {{appointment_date}} in later messages."),
     },
     async (args) => {
       try {
         return textResult(await updateContact(ctx, args));
+      } catch (err) {
+        return toolError(err);
+      }
+    },
+  );
+
+  server.tool(
+    "send_webhook",
+    "POST a contact's collected variables to a third party URL as JSON ({ contactId, workspaceId, variables, sentAt }). HTTPS only; private hosts refused; 10s timeout; no retries.",
+    {
+      contactId: z.string().describe("Contact id, e.g. contact_instagram_123456."),
+      url: z.string().url().describe("HTTPS endpoint that receives the variables."),
+      variableNames: z.array(z.string()).optional()
+        .describe("Only push these variables. Omit to push every variable on the contact."),
+    },
+    async (args) => {
+      try {
+        return textResult(await sendWebhook(ctx, args));
       } catch (err) {
         return toolError(err);
       }
