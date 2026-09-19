@@ -366,7 +366,7 @@ export const BookingSettingsCard: React.FC<{ workspaceId: string }> = ({ workspa
                   <span className="text-xs text-slate-400">minutes before</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {(['email', 'sms', 'chat'] as ReminderChannel[]).map((c) => (
+                  {(['email', 'sms', 'chat', 'push'] as ReminderChannel[]).map((c) => (
                     <button
                       key={c}
                       type="button"

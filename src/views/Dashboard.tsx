@@ -59,7 +59,7 @@ type OverviewResponse = {
   recentRevenue: Array<{ amountCents: number; note: string; loggedAt: string; source: string }>;
 };
 
-const CHANNELS = ["messenger", "instagram", "whatsapp", "sms", "web"] as const;
+const CHANNELS = ["messenger", "instagram", "whatsapp", "sms", "push", "web"] as const;
 type ChannelFilter = "all" | (typeof CHANNELS)[number];
 
 const CHANNEL_LABEL: Record<string, string> = {

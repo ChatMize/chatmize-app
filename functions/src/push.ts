@@ -24,6 +24,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getMessaging } from "firebase-admin/messaging";
 import { logger } from "firebase-functions";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { trackMessageSent, trackMessageDelivered, trackMessageClicked } from "./analytics";
 
 const REGION = "us-west2";
 const db = () => getFirestore("chatmize-prod");
@@ -319,11 +320,16 @@ function todayId(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function trackSent(workspaceId: string, sent: number): Promise<void> {
+function trackSent(workspaceId: string, sent: number): void {
   if (sent <= 0) return;
-  await db().collection("workspaces").doc(workspaceId)
+  // Unified analytics schema: sent.push lives in the daily analytics doc.
+  // The legacy push_analytics collection is still written for backward
+  // compatibility with the channel card.
+  trackMessageSent(workspaceId, "push", sent);
+  db().collection("workspaces").doc(workspaceId)
     .collection("push_analytics").doc(todayId())
-    .set({ sent: FieldValue.increment(sent), updatedAt: new Date().toISOString() }, { merge: true });
+    .set({ sent: FieldValue.increment(sent), updatedAt: new Date().toISOString() }, { merge: true })
+    .catch(() => { /* best effort */ });
 }
 
 /** Public tracking ping from the service worker (delivered / clicked). */
@@ -333,6 +339,8 @@ export const trackPushEvent = onCall({ region: REGION }, async (request) => {
   if (event !== "delivered" && event !== "clicked") {
     throw new HttpsError("invalid-argument", "event must be delivered or clicked.");
   }
+  if (event === "delivered") trackMessageDelivered(workspaceId, "push", 1);
+  else trackMessageClicked(workspaceId, "push", 1);
   await db().collection("workspaces").doc(workspaceId)
     .collection("push_analytics").doc(todayId())
     .set({ [event]: FieldValue.increment(1), updatedAt: new Date().toISOString() }, { merge: true });
@@ -389,7 +397,7 @@ async function fanoutPush(
     failed += resp.failureCount;
     pruned += await pruneDeadTokens(workspaceId, batchTokens, resp.responses as never);
   }
-  await trackSent(workspaceId, sent);
+  trackSent(workspaceId, sent);
   return { sent, failed, pruned };
 }
 
