@@ -25,6 +25,7 @@ import { getMessaging } from "firebase-admin/messaging";
 import { logger } from "firebase-functions";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { trackMessageSent, trackMessageDelivered, trackMessageClicked } from "./analytics";
+import { requireWorkspaceAccess as requirePushWorkspaceAccess } from "./workspaceAuth";
 
 const REGION = "us-west2";
 const db = () => getFirestore("chatmize-prod");
@@ -812,38 +813,8 @@ export async function sendOwnerPushAlert(
 }
 
 /**
- * Workspace membership check (mirrors the one in index.ts; kept local so this
- * module stays self-contained). Super Admins bypass; anyone else must be a
- * workspace member.
- *
- * First-use provisioning: the app's workspaces live in the client's
- * localStorage until the backend first sees them, so the workspace doc itself
- * may not exist yet. The first signed-in caller to touch a workspace id
- * provisions it (creates the workspace doc and grants themselves owner).
- * A caller touching an existing workspace that already has members is added
- * as a member (first member becomes owner).
+ * Workspace membership check — shared hardened implementation in
+ * ./workspaceAuth.ts (imported above as requirePushWorkspaceAccess).
+ * Member doc or Super Admin claim required; a missing workspace doc or a
+ * non-member caller is a hard permission-denied. Zero writes.
  */
-async function requirePushWorkspaceAccess(
-  uid: string,
-  workspaceId: string,
-  token: unknown,
-): Promise<void> {
-  if ((token as { superadmin?: boolean } | undefined)?.superadmin === true) return;
-  const wsRef = db().collection("workspaces").doc(workspaceId);
-  const membersCol = wsRef.collection("members");
-  const member = await membersCol.doc(uid).get();
-  if (member.exists) return;
-  const ws = await wsRef.get();
-  const now = new Date().toISOString();
-  if (!ws.exists) {
-    await wsRef.set({ provisioned: true, createdBy: uid, createdAt: now });
-    await membersCol.doc(uid).set({ uid, role: "owner", createdAt: now });
-    return;
-  }
-  const first = await membersCol.limit(1).get();
-  await membersCol.doc(uid).set({
-    uid,
-    role: first.empty ? "owner" : "member",
-    createdAt: now,
-  });
-}

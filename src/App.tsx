@@ -39,7 +39,7 @@ import {
   Rocket,
   X
 } from 'lucide-react';
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 
 import { ChatMizeLogo } from './components/Logo';
 // Route-level code splitting: every view ships as its own chunk and loads
@@ -88,7 +88,7 @@ import { ManageLinkAuth, parseManageLinkAuth } from './lib/bookings';
 import { NurtureToolType } from './types/nurture';
 import { OverlayType } from './types/growthTools';
 import { AuthGateModal } from './components/AuthGateModal';
-import { subscribeToAuthChanges, signOutUser, AppUser, db } from './lib/firebase';
+import { subscribeToAuthChanges, signOutUser, AppUser } from './lib/firebase';
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
 import { TopNavBar } from './components/navigation/TopNavBar';
 import { CopilotGuide } from './components/CopilotGuide';
@@ -98,7 +98,59 @@ import { BadgeToast } from './components/BadgeToast';
 import { MetaReconnectBanner } from './components/MetaReconnectBanner';
 import { isWorkspaceOwner } from './lib/workspaceAccess';
 import { WorkspaceSilo } from './types/workspace';
-import { DEFAULT_WORKSPACES } from './data/workspaceDefaults';
+import {
+  useWorkspaceMemberships,
+  claimLocalWorkspaces,
+  ensureDemoSandbox,
+  type WorkspaceMembership,
+} from './lib/workspaces';
+
+/** Map a server membership doc to the Workspace shape the views render.
+ * Rich fields (connections, stats, plan) start empty: the server, not the
+ * client, fills them in. This keeps views working without fake demo data. */
+const MEMBERSHIP_COLORS = ['#00d2ff', '#3b82f6', '#a855f7', '#10b981', '#f59e0b', '#ec4899'];
+function colorForMembership(wsId: string): string {
+  let h = 0;
+  for (let i = 0; i < wsId.length; i++) h = (h * 31 + wsId.charCodeAt(i)) >>> 0;
+  return MEMBERSHIP_COLORS[h % MEMBERSHIP_COLORS.length];
+}
+
+function membershipToWorkspace(m: WorkspaceMembership): WorkspaceSilo {
+  const name = m.workspaceName || 'Workspace';
+  const slug =
+    name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || m.wsId;
+  return {
+    id: m.wsId,
+    name,
+    slug,
+    businessType: 'local_business',
+    color: colorForMembership(m.wsId),
+    avatarUrl: undefined,
+    membershipRole: m.role,
+    demo: m.demo,
+    connectedPage: {
+      pageId: '',
+      pageName: '',
+      pageCategory: '',
+      connectedAt: '',
+      serviceStatus: 'deactivated',
+    },
+    planTier: 'standard_page',
+    pricingModel: 'segmate_unlimited_pages',
+    whitelabel: {
+      enabled: false,
+      hideChatMizeWatermark: false,
+      clientRoleAccess: 'campaign_editor',
+    },
+    stats: {
+      subscribers: 0,
+      botsCount: 0,
+      toolsCount: 0,
+      broadcastsCount: 0,
+    },
+    createdAt: new Date().toISOString(),
+  };
+}
 
 export default function App() {
   // Public push signup page: ?push=<workspaceId> renders standalone, no login.
@@ -142,81 +194,117 @@ export default function App() {
     return typeof window !== 'undefined' ? window.innerWidth < 1024 : false;
   });
 
-  // Account Silos / Workspaces State
-  const [workspaces, setWorkspaces] = useState<WorkspaceSilo[]>(() => {
-    try {
-      const saved = localStorage.getItem('chatmize_workspaces');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          let hasLegacyNames = false;
-          const cleaned = parsed.map((ws: WorkspaceSilo) => {
-            let updated = { ...ws };
-            if (updated.name && /segmate|manychat/i.test(updated.name)) {
-              updated.name = updated.name.replace(/segmate|manychat/gi, 'Chatmize');
-              hasLegacyNames = true;
-            }
-            if (updated.connectedPage?.pageName && /segmate|manychat/i.test(updated.connectedPage.pageName)) {
-              updated.connectedPage = {
-                ...updated.connectedPage,
-                pageName: updated.connectedPage.pageName.replace(/segmate|manychat/gi, 'Chatmize')
-              };
-              hasLegacyNames = true;
-            }
-            if (updated.whitelabel?.brandName && /segmate|manychat/i.test(updated.whitelabel.brandName)) {
-              updated.whitelabel = {
-                ...updated.whitelabel,
-                brandName: updated.whitelabel.brandName.replace(/segmate|manychat/gi, 'Chatmize')
-              };
-              hasLegacyNames = true;
-            }
-            return updated;
-          });
-          if (hasLegacyNames) {
-            localStorage.setItem('chatmize_workspaces', JSON.stringify(cleaned));
-          }
-          // Merge in any default workspaces missing from the saved list
-          // (e.g. the live ws-chatmize-hq added after the first seed).
-          const existingIds = new Set(cleaned.map((w: WorkspaceSilo) => w.id));
-          const missing = DEFAULT_WORKSPACES.filter((w) => !existingIds.has(w.id));
-          const merged = missing.length > 0 ? [...missing, ...cleaned] : cleaned;
-          if (missing.length > 0) {
-            localStorage.setItem('chatmize_workspaces', JSON.stringify(merged));
-          }
-          return merged;
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return DEFAULT_WORKSPACES;
-  });
-
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(() => {
-    return localStorage.getItem('chatmize_active_workspace_id') || 'ws-biz-1';
-  });
-
-  const handleUpdateWorkspaces = (newWorkspaces: WorkspaceSilo[]) => {
-    setWorkspaces(newWorkspaces);
-    localStorage.setItem('chatmize_workspaces', JSON.stringify(newWorkspaces));
-  };
-
-  const handleUpdateWorkspace = (updated: WorkspaceSilo) => {
-    handleUpdateWorkspaces(workspaces.map((w) => (w.id === updated.id ? updated : w)));
-  };
-
-  const handleSelectWorkspace = (id: string) => {
-    setActiveWorkspaceId(id);
-    localStorage.setItem('chatmize_active_workspace_id', id);
-  };
-
-  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
-
   // Authentication State & Gating
   // The Firebase Auth session is the single source of truth. There is no
   // localStorage bypass: a signed-out user sees the auth gate, period.
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+
+  // Workspace memberships: the server (users/{uid}/workspaceAccess) is the
+  // source of truth. The list below is display-only; workspace edits go
+  // through the backend. localStorage keeps no workspace data anymore.
+  const { memberships, loading: membershipsLoading } = useWorkspaceMemberships(currentUser);
+  const workspaces = useMemo<WorkspaceSilo[]>(
+    () => memberships.map(membershipToWorkspace),
+    [memberships],
+  );
+
+  // UI preference only: the last-selected workspace, validated against the
+  // real membership list on load. Falls back to the first membership.
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('chatmize_active_workspace_id') || '';
+    } catch {
+      return '';
+    }
+  });
+  useEffect(() => {
+    if (membershipsLoading || memberships.length === 0) return;
+    if (!memberships.some((m) => m.wsId === activeWorkspaceId)) {
+      const fallback = memberships[0].wsId;
+      setActiveWorkspaceId(fallback);
+      try {
+        localStorage.setItem('chatmize_active_workspace_id', fallback);
+      } catch {
+        // storage unavailable; ignore
+      }
+    }
+  }, [membershipsLoading, memberships, activeWorkspaceId]);
+
+  // One-time migration: claim localStorage workspaces into real memberships,
+  // then seed a Demo Sandbox for users who never had any. Never a stuck
+  // loader: migration runs in the background while the app stays usable.
+  const [migrating, setMigrating] = useState(false);
+  useEffect(() => {
+    if (authLoading || !currentUser || membershipsLoading) return;
+    const flag = `chatmize_migration_v1_${currentUser.uid}`;
+    let done = false;
+    try {
+      done = localStorage.getItem(flag) === '1';
+    } catch {
+      // storage unavailable; ignore
+    }
+    if (done) return;
+    setMigrating(true);
+    (async () => {
+      try {
+        await claimLocalWorkspaces();
+      } catch {
+        // Backend idempotency makes re-runs safe; keep going.
+      }
+      try {
+        await ensureDemoSandbox(currentUser, memberships);
+      } catch {
+        // A failed seed must not block the app.
+      }
+      try {
+        localStorage.setItem(flag, '1');
+      } catch {
+        // storage unavailable; ignore
+      }
+      setMigrating(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, currentUser, membershipsLoading]);
+
+  // Workspace edits have no client write path: memberships come from the
+  // server. Callers surface a plain "not available yet" message instead of
+  // pretending to save.
+  const handleUpdateWorkspaces = (_newWorkspaces: WorkspaceSilo[]) => {};
+
+  // The onboarding wizard is the one writer: completion is a per-device UI
+  // dismissal until a backend path exists.
+  const [, setOnboardingTick] = useState(0);
+  const handleUpdateWorkspace = (updated: WorkspaceSilo) => {
+    if (updated.onboardingComplete && updated.id) {
+      try {
+        localStorage.setItem(`chatmize_onboarding_done_${updated.id}`, '1');
+      } catch {
+        // storage unavailable; ignore
+      }
+      setOnboardingTick((t) => t + 1);
+    }
+  };
+  const isOnboardingDismissed = (wsId?: string) => {
+    if (!wsId) return false;
+    try {
+      return localStorage.getItem(`chatmize_onboarding_done_${wsId}`) === '1';
+    } catch {
+      return false;
+    }
+  };
+
+  const handleSelectWorkspace = (id: string) => {
+    setActiveWorkspaceId(id);
+    try {
+      localStorage.setItem('chatmize_active_workspace_id', id);
+    } catch {
+      // storage unavailable; ignore
+    }
+  };
+
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) || workspaces[0];
+
   const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan'>(() => {
     try {
       return (localStorage.getItem('chatmize_settings_tab') as 'general' | 'channels' | 'integrations' | 'docs' | 'api' | 'plan') || 'general';
@@ -239,77 +327,6 @@ export default function App() {
       // storage unavailable; ignore
     }
   }, [activeTab]);
-
-  // Sync real Firestore integration status into the workspace object.
-  // The localStorage workspace data is stale demo data; this pulls the live
-  // connection state (FB Page, Instagram, WhatsApp) from Firestore.
-  useEffect(() => {
-    const syncIntegrations = async () => {
-      try {
-        const { doc, getDoc } = await import('firebase/firestore');
-        // Map UI workspace to Firestore workspace (Dev Sandbox -> ws-chatmize-dev)
-        const ws = workspaces.find(w => w.id === activeWorkspaceId);
-        if (!ws) return;
-        // Sync the active workspace with the real Firestore data (ws-chatmize-dev)
-        // Note: was name-based ('dev sandbox'), now syncs any active workspace since
-        // there's only one real Firestore workspace until multi-workspace is built.
-
-        const firestoreWsId = 'ws-chatmize-dev';
-        const metaSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'meta'));
-        const igSnap = await getDoc(doc(db, 'workspaces', firestoreWsId, 'integrations', 'instagram'));
-
-        let updated = { ...ws };
-        let changed = false;
-
-        if (metaSnap.exists()) {
-          const metaData = metaSnap.data();
-          if (metaData.status === 'connected' && metaData.pageId) {
-            updated.connectedPage = {
-              ...updated.connectedPage,
-              pageId: metaData.pageId,
-              pageName: metaData.pageName || updated.connectedPage.pageName,
-              serviceStatus: 'active',
-            };
-            // Use the Facebook Page profile image as the workspace avatar
-            if (metaData.pagePictureUrl) {
-              updated.avatarUrl = metaData.pagePictureUrl;
-              updated.connectedPage.avatarUrl = metaData.pagePictureUrl;
-            }
-            changed = true;
-          }
-        }
-
-        if (igSnap.exists()) {
-          const igData = igSnap.data();
-          if (igData.status === 'connected' && igData.igUserId) {
-            updated.connectedPage = {
-              ...updated.connectedPage,
-              connectedIg: {
-                username: igData.username || '',
-                igId: igData.igUserId,
-                followersCount: 0,
-                connected: true,
-                status: 'active',
-              },
-            };
-            changed = true;
-          }
-        }
-
-        if (changed) {
-          const newWorkspaces = workspaces.map(w => w.id === ws.id ? updated : w);
-          setWorkspaces(newWorkspaces);
-          try {
-            localStorage.setItem('chatmize_workspaces', JSON.stringify(newWorkspaces));
-          } catch { /* ignore */ }
-        }
-      } catch (e) {
-        console.warn('Failed to sync integrations:', e);
-      }
-    };
-
-    syncIntegrations();
-  }, [activeWorkspaceId]);
 
   // Deep link: ?snapshot=<id> opens the snapshot import view.
   const [deepSnapshotId, setDeepSnapshotId] = useState<string | null>(null);
@@ -678,7 +695,7 @@ export default function App() {
 
   // Onboarding gate: a signed-in user whose workspace hasn't finished onboarding
   // goes through the wizard (connect accounts -> choose DIY/DFU route -> tier).
-  if (!authLoading && currentUser && activeWorkspace && !activeWorkspace.onboardingComplete) {
+  if (!authLoading && currentUser && activeWorkspace && !activeWorkspace.onboardingComplete && !isOnboardingDismissed(activeWorkspace.id)) {
     return (
       <Suspense fallback={<ViewLoadingFallback />}>
         <OnboardingWizard
@@ -1229,6 +1246,12 @@ export default function App() {
 
         {/* View Viewport */}
         <main className={`flex-1 min-w-0 flex flex-col relative ${isFlows || activeTab === 'conversations' ? 'overflow-hidden p-0 h-full' : 'overflow-y-auto p-3.5 sm:p-5 md:p-6 lg:p-8'}`}>
+          {migrating && currentUser && (
+            <div className="mb-4 w-full px-4 py-2.5 rounded-2xl bg-cyan-600/10 border border-cyan-500/25 flex items-center gap-2.5" aria-live="polite">
+              <div className="w-4 h-4 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin shrink-0" />
+              <p className="text-xs text-cyan-200">Setting up your workspaces. This only takes a moment.</p>
+            </div>
+          )}
           {activeWorkspace?.id && (
             <MetaReconnectBanner
               workspaceId={activeWorkspace.id}

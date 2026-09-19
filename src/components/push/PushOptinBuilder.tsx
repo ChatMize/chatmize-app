@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BellRing, Loader2, CheckCircle2, AlertTriangle, Copy, Code2, Link2, Eye } from 'lucide-react';
 import { getPushPromptCopy, setPushPromptCopy } from '../../lib/push';
+import { claimLocalWorkspaces } from '../../lib/workspaces';
 
 interface PushOptinBuilderProps {
   workspaceId: string;
@@ -54,6 +55,10 @@ export const PushOptinBuilder: React.FC<PushOptinBuilderProps> = ({ workspaceId 
   const handleSave = async () => {
     setSaving(true); setError(null); setSaved(false);
     try {
+      // Membership hardening: the push save is member-guarded on the backend
+      // (no auto-provisioning). Make sure the caller's membership exists
+      // before saving so legacy localStorage workspaces keep working.
+      await claimLocalWorkspaces();
       await setPushPromptCopy(workspaceId, copy);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);

@@ -30,21 +30,24 @@ import {
   Sliders,
   CheckCheck,
   AlertCircle,
-  Pencil
+  Pencil,
+  Loader2
 } from 'lucide-react';
 import { 
   Workspace, 
-  BusinessType, 
-  WorkspacePlanTier, 
-  WorkspacePricingModel,
+  BusinessType,
   SmsConnection,
   StandaloneChatbotConnection
 } from '../types/workspace';
+import { createWorkspaceRemote } from '../lib/workspaces';
 
 interface WorkspacesViewProps {
   workspaces: Workspace[];
   activeWorkspaceId: string;
   onSelectWorkspace: (id: string) => void;
+  // Reserved for future backend-backed workspace edits. Currently a no-op:
+  // memberships are the source of truth and there is no rename/delete
+  // callable yet, so nothing here writes through it.
   onUpdateWorkspaces: (workspaces: Workspace[]) => void;
 }
 
@@ -52,7 +55,7 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
   workspaces,
   activeWorkspaceId,
   onSelectWorkspace,
-  onUpdateWorkspaces
+  onUpdateWorkspaces: _onUpdateWorkspaces
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'whitelabeled' | 'active'>('all');
@@ -84,16 +87,6 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
   // New Workspace Form State
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [newBusinessType, setNewBusinessType] = useState<BusinessType>('local_business');
-  const [newFbPageName, setNewFbPageName] = useState('');
-  const [newIgUsername, setNewIgUsername] = useState('');
-  const [newWhatsAppPhone, setNewWhatsAppPhone] = useState('');
-  const [newSmsPhone, setNewSmsPhone] = useState('');
-  const [newEnableChatbot, setNewEnableChatbot] = useState(true);
-  const [newPlanTier, setNewPlanTier] = useState<WorkspacePlanTier>('standard_page');
-  const [newPricingModel, setNewPricingModel] = useState<WorkspacePricingModel>('segmate_unlimited_pages');
-  const [newWhitelabelEnabled, setNewWhitelabelEnabled] = useState(false);
-  const [newCustomDomain, setNewCustomDomain] = useState('');
-  const [newBrandName, setNewBrandName] = useState('');
 
   // Confirmation & Toast Modals (iframe-safe, no window.confirm/alert)
   const [deleteConfirmState, setDeleteConfirmState] = useState<{ id: string; name: string } | null>(null);
@@ -158,119 +151,43 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
     }, 600);
   };
 
-  const handleCreateWorkspace = (e: React.FormEvent) => {
+  // Workspace creation goes through the server (createWorkspace callable).
+  // The membership subscription adds the new workspace to the list on its
+  // own; there is no local-only creation path anymore.
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newWorkspaceName.trim() || !newFbPageName.trim()) return;
-
-    const newId = `ws-biz-${Date.now()}`;
-    const cleanSlug = newWorkspaceName.toLowerCase().replace(/[^a-z0-9]/g, '-');
-
-    const created: Workspace = {
-      id: newId,
-      name: newWorkspaceName.trim(),
-      slug: cleanSlug,
-      ownerName: 'Karl Schuckert',
-      businessType: newBusinessType,
-      color: ['#00d2ff', '#3b82f6', '#a855f7', '#10b981', '#f59e0b', '#ec4899'][Math.floor(Math.random() * 6)],
-      connectedPage: {
-        pageId: `fb_page_${Math.floor(100000000 + Math.random() * 900000000)}`,
-        pageName: newFbPageName.trim(),
-        pageCategory: newBusinessType === 'local_business' 
-          ? 'Local Service & Clinic' 
-          : newBusinessType === 'ecommerce' 
-          ? 'E-Commerce Store' 
-          : 'Marketing & Consulting',
-        connectedAt: new Date().toISOString().split('T')[0],
-        ownerName: 'Karl Schuckert',
-        serviceStatus: 'active',
-        connectedIg: newIgUsername.trim() ? {
-          username: newIgUsername.startsWith('@') ? newIgUsername.trim() : `@${newIgUsername.trim()}`,
-          igId: `ig_${Math.floor(100000000 + Math.random() * 900000000)}`,
-          followersCount: 1500,
-          connected: true,
-          status: 'active'
-        } : undefined,
-        connectedWhatsApp: newWhatsAppPhone.trim() ? {
-          phoneNumber: newWhatsAppPhone.trim(),
-          wabaId: `waba_${Math.floor(100000 + Math.random() * 900000)}`,
-          verified: true,
-          connected: true,
-          status: 'active'
-        } : undefined
-      },
-      connectedSms: newSmsPhone.trim() ? {
-        phoneNumber: newSmsPhone.trim(),
-        provider: 'twilio',
-        status: 'active',
-        connected: true,
-        compliant10dlc: true,
-        monthlyCredits: 10000,
-        autoKeywords: ['STOP', 'START', 'HELP']
-      } : undefined,
-      connectedStandaloneChat: newEnableChatbot ? {
-        enabled: true,
-        status: 'active',
-        botName: `${newWorkspaceName.trim()} Assistant`,
-        welcomeMessage: `Hi there! Welcome to ${newWorkspaceName.trim()}. How can we help?`,
-        primaryColor: '#00d2ff',
-        hostedSlug: cleanSlug,
-        embedSnippet: `<script src="https://chatmize.io/widget.js" data-workspace="${cleanSlug}" async></script>`,
-        allowedDomains: [`${cleanSlug}.com`],
-        businessAssets: ['Main Website', 'Landing Funnel'],
-        bubblePosition: 'bottom-right',
-        autoPopupSeconds: 5
-      } : undefined,
-      planTier: newPlanTier,
-      pricingModel: newPricingModel,
-      whitelabel: {
-        enabled: newWhitelabelEnabled,
-        customDomain: newCustomDomain.trim() || undefined,
-        brandName: newBrandName.trim() || undefined,
-        hideChatMizeWatermark: newWhitelabelEnabled,
-        clientRoleAccess: 'campaign_editor'
-      },
-      stats: {
-        subscribers: 0,
-        botsCount: 1,
-        toolsCount: 1,
-        broadcastsCount: 0
-      },
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-
-    const updated = [created, ...workspaces];
-    onUpdateWorkspaces(updated);
-    setIsCreateModalOpen(false);
-    resetForm();
-    onSelectWorkspace(newId);
+    const name = newWorkspaceName.trim();
+    if (!name || isCreating) return;
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      const workspaceId = await createWorkspaceRemote(name, newBusinessType);
+      setIsCreateModalOpen(false);
+      resetForm();
+      onSelectWorkspace(workspaceId);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Could not create the workspace. Please try again.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const handleSaveWorkspaceName = (wsId: string) => {
-    if (!editingName.trim()) {
-      setEditingWsId(null);
-      return;
-    }
-    const updated = workspaces.map(ws =>
-      ws.id === wsId ? { ...ws, name: editingName.trim() } : ws
-    );
-    onUpdateWorkspaces(updated);
+  const handleSaveWorkspaceName = (_wsId: string) => {
+    // Workspace names live on the server and there is no rename callable
+    // yet, so renaming is not available. Never pretend a local edit saved.
     setEditingWsId(null);
     setEditingName('');
+    setToastMessage('Workspace renaming is not available yet.');
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
   const resetForm = () => {
     setNewWorkspaceName('');
     setNewBusinessType('local_business');
-    setNewFbPageName('');
-    setNewIgUsername('');
-    setNewWhatsAppPhone('');
-    setNewSmsPhone('');
-    setNewEnableChatbot(true);
-    setNewPlanTier('standard_page');
-    setNewPricingModel('segmate_unlimited_pages');
-    setNewWhitelabelEnabled(false);
-    setNewCustomDomain('');
-    setNewBrandName('');
+    setCreateError(null);
   };
 
   const handleDeleteWorkspace = (id: string, name: string) => {
@@ -284,31 +201,16 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
 
   const handleConfirmDelete = () => {
     if (!deleteConfirmState) return;
-    const { id } = deleteConfirmState;
-    // Soft delete: mark as deleted with timestamp, retain for 90 days
-    const updated = workspaces.map(ws =>
-      ws.id === id
-        ? { ...ws, deleted: true, deletedAt: new Date().toISOString() }
-        : ws
-    );
-    onUpdateWorkspaces(updated);
-    const remaining = updated.filter(ws => !ws.deleted);
-    if (activeWorkspaceId === id && remaining.length > 0) {
-      onSelectWorkspace(remaining[0].id);
-    }
+    // There is no workspace-delete callable yet, so deletion is not
+    // available. Never pretend a local soft-delete saved.
     setDeleteConfirmState(null);
-    setToastMessage('Workspace moved to Recently Deleted. You have 90 days to restore it.');
+    setToastMessage('Workspace deletion is not available yet.');
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const handleRestoreWorkspace = (id: string) => {
-    const updated = workspaces.map(ws =>
-      ws.id === id
-        ? { ...ws, deleted: false, deletedAt: undefined }
-        : ws
-    );
-    onUpdateWorkspaces(updated);
-    setToastMessage('Workspace restored successfully.');
+  const handleRestoreWorkspace = (_id: string) => {
+    // No backend path for restore yet; never pretend a local edit saved.
+    setToastMessage('Workspace restore is not available yet.');
     setTimeout(() => setToastMessage(null), 3500);
   };
 
@@ -320,51 +222,28 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
     return Math.max(0, 90 - daysPassed);
   };
 
-  const handleSaveWhitelabel = (wsId: string, wlSettings: Workspace['whitelabel']) => {
-    const updated = workspaces.map(ws => {
-      if (ws.id === wsId) {
-        return { ...ws, whitelabel: wlSettings };
-      }
-      return ws;
-    });
-    onUpdateWorkspaces(updated);
+  const handleSaveWhitelabel = (_wsId: string, _wlSettings: Workspace['whitelabel']) => {
+    // No backend path for workspace settings yet; never pretend a local
+    // edit saved.
     setActiveWhitelabelModalWs(null);
+    setToastMessage('Saving workspace settings is not available yet.');
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleSaveChatbotSettings = (wsId: string, botSettings: StandaloneChatbotConnection) => {
-    const updated = workspaces.map(ws => {
-      if (ws.id === wsId) {
-        return {
-          ...ws,
-          connectedStandaloneChat: botSettings,
-          connectedPage: {
-            ...ws.connectedPage,
-            connectedStandaloneChat: botSettings
-          }
-        };
-      }
-      return ws;
-    });
-    onUpdateWorkspaces(updated);
+  const handleSaveChatbotSettings = (_wsId: string, _botSettings: StandaloneChatbotConnection) => {
+    // No backend path for workspace settings yet; never pretend a local
+    // edit saved.
     setActiveChatbotModalWs(null);
+    setToastMessage('Saving workspace settings is not available yet.');
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleSaveSmsSettings = (wsId: string, smsSettings: SmsConnection) => {
-    const updated = workspaces.map(ws => {
-      if (ws.id === wsId) {
-        return {
-          ...ws,
-          connectedSms: smsSettings,
-          connectedPage: {
-            ...ws.connectedPage,
-            connectedSms: smsSettings
-          }
-        };
-      }
-      return ws;
-    });
-    onUpdateWorkspaces(updated);
+  const handleSaveSmsSettings = (_wsId: string, _smsSettings: SmsConnection) => {
+    // No backend path for workspace settings yet; never pretend a local
+    // edit saved.
     setActiveSmsModalWs(null);
+    setToastMessage('Saving workspace settings is not available yet.');
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
   const whitelabelCount = workspaces.filter(w => w.whitelabel.enabled).length;
@@ -1704,19 +1583,19 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
       {/* MODAL 4: CREATE NEW WORKSPACE MODAL */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-cyan-500/30 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5 my-8">
+          <div className="bg-slate-900 border border-cyan-500/30 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 my-8">
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
                   <Building2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">Create Business Workspace</h3>
-                  <p className="text-xs text-slate-400">Bind a Facebook Page with Instagram, WhatsApp, SMS &amp; Web Bot.</p>
+                  <h3 className="text-lg font-bold text-white">Create Workspace</h3>
+                  <p className="text-xs text-slate-400">Connect your Facebook Page, Instagram, and other channels after creation in Settings.</p>
                 </div>
               </div>
               <button
-                onClick={() => setIsCreateModalOpen(false)}
+                onClick={() => { setIsCreateModalOpen(false); setCreateError(null); }}
                 className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
@@ -1726,174 +1605,62 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
             <form onSubmit={handleCreateWorkspace} className="space-y-4 text-sm">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Workspace Title *
+                  Workspace Name *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Austin Aesthetics (Business 1)"
+                  placeholder="e.g. Austin Aesthetics"
                   value={newWorkspaceName}
                   onChange={(e) => setNewWorkspaceName(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Business Type</label>
-                  <select
-                    value={newBusinessType}
-                    onChange={(e) => setNewBusinessType(e.target.value as BusinessType)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="local_business">Local Business / Clinic</option>
-                    <option value="ecommerce">E-Commerce Brand</option>
-                    <option value="agency_client">Agency Client</option>
-                    <option value="creator">Creator / Influencer</option>
-                    <option value="saas">SaaS / Software</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Pricing Model</label>
-                  <select
-                    value={newPricingModel}
-                    onChange={(e) => setNewPricingModel(e.target.value as WorkspacePricingModel)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="segmate_unlimited_pages">Agency Unlimited Model (Unlimited Pages)</option>
-                    <option value="manychat_per_page">Standard Tiered Model (Per-Page)</option>
-                    <option value="custom_retainer">Agency Custom Retainer</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Business Type</label>
+                <select
+                  value={newBusinessType}
+                  onChange={(e) => setNewBusinessType(e.target.value as BusinessType)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="local_business">Local Business / Clinic</option>
+                  <option value="ecommerce">E-Commerce Brand</option>
+                  <option value="agency_client">Agency Client</option>
+                  <option value="creator">Creator / Influencer</option>
+                  <option value="saas">SaaS / Software</option>
+                </select>
               </div>
 
-              {/* Meta Asset Bindings */}
-              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
-                <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider block">
-                  Meta Anchor Channels (1 FB Page = 1 IG = 1 WhatsApp)
-                </span>
-
-                <div>
-                  <label className="block text-xs text-slate-300 mb-1">Facebook Page Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Austin Aesthetics Center"
-                    value={newFbPageName}
-                    onChange={(e) => setNewFbPageName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 focus:outline-none focus:border-cyan-500"
-                  />
+              {createError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 text-red-300 text-xs flex gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" /> {createError}
                 </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-300 mb-1">Instagram Handle</label>
-                    <input
-                      type="text"
-                      placeholder="@austinaesthetics"
-                      value={newIgUsername}
-                      onChange={(e) => setNewIgUsername(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-300 mb-1">WhatsApp Cloud Number</label>
-                    <input
-                      type="text"
-                      placeholder="+1 (512) 555-0100"
-                      value={newWhatsAppPhone}
-                      onChange={(e) => setNewWhatsAppPhone(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* SMS & Standalone Chatbot Expansion Section */}
-              <div className="p-4 rounded-xl bg-slate-950/70 border border-amber-500/20 space-y-3">
-                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block">
-                  Omnichannel Expansion (SMS &amp; Standalone Web Bot)
-                </span>
-
-                <div>
-                  <label className="block text-xs text-slate-300 mb-1">SMS Phone Line (10DLC)</label>
-                  <input data-no-emoji
-                    type="text"
-                    placeholder="+1 (833) 734-6283 or local number"
-                    value={newSmsPhone}
-                    onChange={(e) => setNewSmsPhone(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between pt-1">
-                  <div>
-                    <span className="text-xs font-semibold text-white block">Deploy Standalone Web Chatbot</span>
-                    <span className="text-[11px] text-slate-400">Generates script embed for on-page assets</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={newEnableChatbot}
-                    onChange={(e) => setNewEnableChatbot(e.target.checked)}
-                    className="w-4 h-4 rounded text-cyan-500"
-                  />
-                </div>
-              </div>
-
-              {/* Whitelabel Toggle */}
-              <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-semibold text-slate-200 block">Enable Whitelabel Client Portal</span>
-                    <span className="text-[11px] text-slate-400">Give client custom domain &amp; hide ChatMize branding.</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={newWhitelabelEnabled}
-                    onChange={(e) => setNewWhitelabelEnabled(e.target.checked)}
-                    className="w-4 h-4 rounded text-cyan-500"
-                  />
-                </div>
-
-                {newWhitelabelEnabled && (
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
-                    <input
-                      type="text"
-                      placeholder="Custom Domain (chat.client.com)"
-                      value={newCustomDomain}
-                      onChange={(e) => setNewCustomDomain(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Brand Name (Client Concierge)"
-                      value={newBrandName}
-                      onChange={(e) => setNewBrandName(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-200"
-                    />
-                  </div>
-                )}
-              </div>
+              )}
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-medium text-xs hover:bg-slate-700 cursor-pointer"
+                  onClick={() => { setIsCreateModalOpen(false); setCreateError(null); }}
+                  disabled={isCreating}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-medium text-xs hover:bg-slate-700 disabled:opacity-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 cursor-pointer"
+                  disabled={isCreating || !newWorkspaceName.trim()}
+                  className="px-5 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-50 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/20 cursor-pointer flex items-center gap-2"
                 >
-                  Create Workspace &amp; Connect Assets
+                  {isCreating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {isCreating ? 'Creating' : 'Create Workspace'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
 
       {/* MODAL 5: WHITELABEL CONFIGURATION MODAL */}
       {activeWhitelabelModalWs && (
