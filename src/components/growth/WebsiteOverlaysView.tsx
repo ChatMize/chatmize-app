@@ -1738,6 +1738,9 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                       {currentOverlay.requireEmailCapture && (
                         <input
                           type="email"
+                          name="email"
+                          autoComplete="email"
+                          inputMode="email"
                           value={simEmail}
                           onChange={(e) => setSimEmail(e.target.value)}
                           placeholder="Enter your email to claim..."

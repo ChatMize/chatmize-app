@@ -331,11 +331,16 @@
         var emailInput = el("input", "cmz-field");
         emailInput.type = "email"; emailInput.required = true; emailInput.placeholder = "Enter your email";
         emailInput.setAttribute("aria-label", "Email address");
+        emailInput.setAttribute("autocomplete", "email");
+        emailInput.setAttribute("name", "email");
+        emailInput.setAttribute("inputmode", "email");
         form.appendChild(emailInput);
         if (ov.requireNameCapture) {
           var nameInput = el("input", "cmz-field");
           nameInput.type = "text"; nameInput.placeholder = "Your name";
           nameInput.setAttribute("aria-label", "Name");
+          nameInput.setAttribute("autocomplete", "name");
+          nameInput.setAttribute("name", "name");
           form.appendChild(nameInput);
         }
         var submit = el("button", "cmz-cta", ov.ctaText || "Claim Offer");
