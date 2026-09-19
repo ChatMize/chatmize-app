@@ -11,6 +11,7 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
 import { createVerify } from "crypto";
+import { trackInbound } from "./analytics";
 import {
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN,
@@ -488,6 +489,9 @@ export async function persistInboundSms(
       recipientId: to,
       lastMessageAt: FieldValue.serverTimestamp(),
       lastMessageText: body,
+      // Fallback sweep: an inbound message with no outbound reply inside
+      // the window counts as unanswered.
+      awaitingReply: true,
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -502,6 +506,8 @@ export async function persistInboundSms(
     createdAt: FieldValue.serverTimestamp(),
   });
   await batch.commit();
+  // Analytics: fold the inbound SMS into today's counters (fire-and-forget).
+  trackInbound(workspaceId, "sms");
 }
 
 /** Persist an outbound SMS into the workspace conversation thread (sms_{phone}). */

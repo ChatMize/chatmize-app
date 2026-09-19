@@ -17,6 +17,7 @@
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
 import { grantCredits } from "./credits";
+import { trackRevenue } from "./analytics";
 
 const db = () => getFirestore("chatmize-prod");
 
@@ -379,6 +380,18 @@ export interface RevenueEntry {
   loggedBy: string;
   loggedAt: string;
   source: "manual" | "flow_action";
+  /** Optional attribution for the analytics dashboard ("this flow earned $X"). */
+  flowId?: string;
+  flowName?: string;
+  campaignId?: string;
+  campaignName?: string;
+}
+
+export interface RevenueAttributionInput {
+  flowId?: string;
+  flowName?: string;
+  campaignId?: string;
+  campaignName?: string;
 }
 
 /** Log revenue (money track v1). Sums per workspace in revenueCents. */
@@ -388,6 +401,7 @@ export async function logRevenue(
   amountCents: number,
   note: string,
   source: "manual" | "flow_action",
+  attribution?: RevenueAttributionInput,
 ): Promise<{ revenueCents: number; newBadges: string[] }> {
   if (!Number.isFinite(amountCents) || amountCents <= 0) {
     throw new Error("amount must be a positive number of cents");
@@ -399,6 +413,10 @@ export async function logRevenue(
     loggedBy: uid,
     loggedAt: new Date().toISOString(),
     source,
+    ...(attribution?.flowId ? { flowId: attribution.flowId.slice(0, 120) } : {}),
+    ...(attribution?.flowName ? { flowName: attribution.flowName.slice(0, 120) } : {}),
+    ...(attribution?.campaignId ? { campaignId: attribution.campaignId.slice(0, 120) } : {}),
+    ...(attribution?.campaignName ? { campaignName: attribution.campaignName.slice(0, 120) } : {}),
   };
   await db()
     .collection("workspaces")
@@ -412,6 +430,9 @@ export async function logRevenue(
   touchStreak(counters);
   counters.updatedAt = new Date().toISOString();
   await countersRef(workspaceId).set(counters, { merge: true });
+  // Analytics mirror: daily revenue counters + flow/campaign attribution
+  // (fire-and-forget; the dashboard reads these instead of scanning entries).
+  trackRevenue(workspaceId, entry.amountCents, attribution);
   const newBadges = await evaluateBadges(workspaceId, uid);
   await maybeGrantOgStamp(workspaceId, uid);
   logger.info("Revenue logged", { workspaceId, uid, amountCents: entry.amountCents, source });

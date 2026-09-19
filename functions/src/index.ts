@@ -76,7 +76,16 @@ import {
 } from "./whatsappOAuth";
 import { handleBigmarkerAction } from "./bigmarker";
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
-import { normalizeEntry } from "./handlers";
+import { normalizeEntry, normalizeReadReceipts, normalizeStatuses } from "./handlers";
+import {
+  trackAnalytics,
+  trackFlowEventInternal,
+  trackHandoffStarted,
+  trackMessageDelivered,
+  trackMessageRead,
+  trackSubscriberRemoved,
+  readDailyAnalytics,
+} from "./analytics";
 import {
   publishKbArticleHandler,
   unpublishKbArticleHandler,
@@ -412,6 +421,15 @@ export const metaWebhook = onRequest(
           await persistInboundMessage(workspaceId, msg);
           received += 1;
         }
+        // Analytics: delivery lifecycle. WhatsApp statuses (sent/delivered/
+        // read) and Messenger/IG read receipts fold into today's counters.
+        for (const st of normalizeStatuses(entry)) {
+          if (st.status === "delivered") trackMessageDelivered(workspaceId, "whatsapp");
+          else if (st.status === "read") trackMessageRead(workspaceId, "whatsapp");
+        }
+        for (const rr of normalizeReadReceipts(entry, object)) {
+          trackMessageRead(workspaceId, rr.channel);
+        }
       }
       logger.info("Webhook processed", { object, received });
       res.sendStatus(200);
@@ -541,6 +559,202 @@ export const onInboundMessageCreated = onDocumentCreated(
       }),
     );
     // TODO(Phase 4): route through the AI agent with credit metering here.
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+
+/**
+ * Authenticated callable: log a flow funnel event (entered / step / completed).
+ * Used by the FlowBuilder simulator today and by the server-side BotMap
+ * runtime when it lands. Simulator runs are tagged sim:true and stored in a
+ * separate namespace so test traffic never pollutes live numbers.
+ */
+export const trackFlowEvent = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, flowId, flowName, type, stepId, stepTitle, sim } =
+    (request.data ?? {}) as {
+      workspaceId?: string;
+      flowId?: string;
+      flowName?: string;
+      type?: "entered" | "step" | "completed";
+      stepId?: string;
+      stepTitle?: string;
+      sim?: boolean;
+    };
+  if (!workspaceId || !flowId || !type) {
+    throw new HttpsError("invalid-argument", "workspaceId, flowId, and type are required.");
+  }
+  if (!["entered", "step", "completed"].includes(type)) {
+    throw new HttpsError("invalid-argument", "type must be entered, step, or completed.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  trackFlowEventInternal(
+    workspaceId,
+    flowId,
+    flowName || "Untitled flow",
+    type,
+    { stepId, stepTitle, sim: !!sim },
+  );
+  return { ok: true };
+});
+
+interface AnalyticsOverviewData {
+  workspaceId?: string;
+  days?: number;
+  includeSim?: boolean;
+}
+
+/**
+ * Authenticated callable: one-shot dashboard payload. Reads N daily counter
+ * docs (one small read per day) plus the gamification counters and the
+ * newest revenue entries. The frontend makes one call instead of dozens
+ * of Firestore reads.
+ */
+export const getAnalyticsOverview = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, days, includeSim } = (request.data ?? {}) as AnalyticsOverviewData;
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  const n = Math.min(Math.max(Number(days) || 30, 1), 90);
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+
+  const [daily, simDaily] = await Promise.all([
+    readDailyAnalytics(workspaceId, n, false),
+    includeSim ? readDailyAnalytics(workspaceId, n, true) : Promise.resolve([]),
+  ]);
+
+  // Gamification counters (lifetime revenue + message totals).
+  let lifetimeRevenueCents = 0;
+  try {
+    const countersSnap = await db()
+      .collection("workspaces").doc(workspaceId)
+      .collection("gamification").doc("counters").get();
+    lifetimeRevenueCents = Number((countersSnap.data() as { revenueCents?: number } | undefined)?.revenueCents ?? 0);
+  } catch {
+    // Dashboard still renders without it.
+  }
+
+  // Newest revenue entries for the "recent money" list (bounded read).
+  let recentRevenue: Array<{ amountCents: number; note: string; loggedAt: string; source: string }> = [];
+  try {
+    const revSnap = await db()
+      .collection("workspaces").doc(workspaceId)
+      .collection("gamification").doc("revenue_log")
+      .collection("entries").orderBy("loggedAt", "desc").limit(8).get();
+    recentRevenue = revSnap.docs.map((d) => {
+      const r = d.data() as { amountCents?: number; note?: string; loggedAt?: string; source?: string };
+      return {
+        amountCents: Number(r.amountCents ?? 0),
+        note: String(r.note ?? ""),
+        loggedAt: String(r.loggedAt ?? ""),
+        source: String(r.source ?? "manual"),
+      };
+    });
+  } catch {
+    // Dashboard still renders without it.
+  }
+
+  return { ok: true, days: n, daily, simDaily, lifetimeRevenueCents, recentRevenue };
+});
+
+/**
+ * Authenticated callable: persist the bot/human mode toggle for a
+ * conversation and track handoff events for the analytics dashboard.
+ */
+export const setConversationBotMode = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, convoId, botEnabled } = (request.data ?? {}) as {
+    workspaceId?: string;
+    convoId?: string;
+    botEnabled?: boolean;
+  };
+  if (!workspaceId || !convoId || typeof botEnabled !== "boolean") {
+    throw new HttpsError("invalid-argument", "workspaceId, convoId, and botEnabled are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const convoRef = db()
+    .collection("workspaces").doc(workspaceId)
+    .collection("conversations").doc(convoId);
+  const snap = await convoRef.get();
+  const prev = (snap.data() as { botEnabled?: boolean } | undefined)?.botEnabled;
+  const channel = ((snap.data() as { channel?: string } | undefined)?.channel ?? "messenger") as
+    "messenger" | "instagram" | "whatsapp";
+  const update: Record<string, unknown> = {
+    botEnabled,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (botEnabled === false && prev !== false) {
+    // Takeover: start the response-time clock.
+    update.handoffStartedAt = new Date().toISOString();
+    update.handoffFirstReplyAt = FieldValue.delete();
+    trackHandoffStarted(workspaceId, channel);
+  }
+  await convoRef.set(update, { merge: true });
+  return { ok: true, botEnabled };
+});
+
+/**
+ * Fallback sweep (every 15 min): conversations still flagged awaitingReply
+ * whose last inbound message is older than the window count as unanswered.
+ * The flag is cleared so each conversation counts once. The query only
+ * touches conversations still waiting, so cost stays flat.
+ */
+const FALLBACK_WINDOW_MINUTES = 15;
+
+export const analyticsFallbackSweep = onSchedule(
+  { region: REGION, schedule: "every 15 minutes", timeZone: "UTC" },
+  async () => {
+    const cutoff = new Date(Date.now() - FALLBACK_WINDOW_MINUTES * 60000);
+    // Workspaces with analytics activity: scan the small set via
+    // collectionGroup on analytics docs from today is expensive; instead
+    // iterate workspaces touched recently. Bound the scan.
+    const wsSnap = await db().collection("workspaces").limit(200).get();
+    for (const ws of wsSnap.docs) {
+      const workspaceId = ws.id;
+      try {
+        const q = await db()
+          .collection("workspaces").doc(workspaceId)
+          .collection("conversations")
+          .where("awaitingReply", "==", true)
+          .limit(100)
+          .get();
+        if (q.empty) continue;
+        const batch = db().batch();
+        const counts: Record<string, number> = {};
+        let counted = 0;
+        for (const docSnap of q.docs) {
+          const d = docSnap.data() as {
+            lastMessageAt?: { toDate?: () => Date };
+            channel?: string;
+          };
+          const lastAt = d.lastMessageAt?.toDate?.() ?? new Date(0);
+          if (lastAt >= cutoff) continue; // still inside the reply window
+          const channel = (d.channel ?? "messenger") as string;
+          counts[channel] = (counts[channel] ?? 0) + 1;
+          counted += 1;
+          batch.set(docSnap.ref, { awaitingReply: false, fallbackCountedAt: new Date().toISOString() }, { merge: true });
+        }
+        if (counted > 0) {
+          await batch.commit();
+          const inc: Record<string, number> = {};
+          for (const [ch, c] of Object.entries(counts)) inc[`fallback.${ch}`] = c;
+          trackAnalytics(workspaceId, inc);
+          logger.info("Fallback sweep counted unanswered conversations", {
+            workspaceId, counted, counts,
+          });
+        }
+      } catch (err) {
+        logger.warn("Fallback sweep failed for workspace", {
+          workspaceId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   },
 );
 
@@ -1061,8 +1275,12 @@ export const smsWebhook = onRequest(
         const conn = await getSmsConnection(workspaceId);
         if (keyword === "opt_out") {
           await setOptIn(workspaceId, from, false, "keyword_stop");
+          // Analytics: STOP unsubscribes the number (fire-and-forget).
+          trackSubscriberRemoved(workspaceId, "sms");
         } else if (keyword === "opt_in") {
           await setOptIn(workspaceId, from, true, "keyword_start");
+          // Analytics: START re-subscribes the number (fire-and-forget).
+          trackAnalytics(workspaceId, { "subsNew.sms": 1 });
         }
         if (conn && throttle.complianceDue) {
           // Compliance replies are carrier-required and free to the workspace.
@@ -1330,11 +1548,16 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     return { ok: true, newBadges };
   }
   if (action === "logRevenue") {
-    const { amountDollars, note, source } = (request.data ?? {}) as {
-      amountDollars?: number;
-      note?: string;
-      source?: string;
-    };
+    const { amountDollars, note, source, flowId, flowName, campaignId, campaignName } =
+      (request.data ?? {}) as {
+        amountDollars?: number;
+        note?: string;
+        source?: string;
+        flowId?: string;
+        flowName?: string;
+        campaignId?: string;
+        campaignName?: string;
+      };
     if (!Number.isFinite(amountDollars) || (amountDollars as number) <= 0) {
       throw new HttpsError("invalid-argument", "A positive dollar amount is required.");
     }
@@ -1344,6 +1567,7 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
       Math.round((amountDollars as number) * 100),
       note ?? "",
       source === "flow_action" ? "flow_action" : "manual",
+      { flowId, flowName, campaignId, campaignName },
     );
     return { ok: true, ...result };
   }

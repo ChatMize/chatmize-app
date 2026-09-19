@@ -25,6 +25,7 @@ import {
   persistOutboundSms,
 } from "./sms";
 import { smsPlanAllowance } from "./smsSend";
+import { trackBroadcastSent } from "./analytics";
 
 const db = () => getFirestore("chatmize-prod");
 
@@ -241,6 +242,19 @@ export async function runSmsBroadcastInternal(
   if (complete) {
     await bcastRef.update({ status: "complete", updatedAt: new Date().toISOString() });
   }
+  // Analytics: fold the broadcast run into today's counters (fire-and-forget).
+  // Per-recipient SMS sends inside the run carry broadcastId and skip the
+  // single-send counter, so this is the one place broadcast volume lands.
+  trackBroadcastSent(
+    workspaceId,
+    {
+      campaignId: broadcastId,
+      name: body.length > 60 ? `SMS broadcast: ${body.slice(0, 57)}...` : `SMS broadcast: ${body}`,
+      channel: "sms",
+    },
+    state.sent,
+    state.failed,
+  );
   logger.info("SMS broadcast finished", {
     workspaceId, broadcastId,
     sent: state.sent, failed: state.failed, skipped: state.skipped, complete,
