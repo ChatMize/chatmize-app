@@ -103,7 +103,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
       const bonuses = await listStarterBonuses();
       let total = 0;
       for (const b of bonuses) {
-        const counts = importSnapshotPayload(b.payload);
+        const counts = await importSnapshotPayload(b.payload, { workspaceSlug: workspace.slug });
         total += Object.values(counts).reduce((a, n) => a + n, 0);
       }
       setBonusCount(total);

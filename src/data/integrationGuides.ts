@@ -477,6 +477,46 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
       'If verification fails, regenerate the key in Moosend and paste the new one.',
     ],
   },
+  whatsapp: {
+    appId: 'whatsapp',
+    appName: 'WhatsApp Business',
+    category: 'Channels',
+    channel: 'whatsapp',
+    authMethod: 'Facebook Login (OAuth)',
+    summary: 'Connect your own WhatsApp Business number so customers can message you on WhatsApp and you can reply from the Chatmize inbox. Meta bills your WhatsApp Business Account directly for message charges; Chatmize never sees that bill.',
+    steps: [
+      {
+        title: 'Step 1: Start the connection in Chatmize',
+        description: 'Go to Settings > Channels > WhatsApp Business and click Connect. You will be sent to Facebook to approve the connection.',
+      },
+      {
+        title: 'Step 2: Approve all permissions',
+        description: 'On the Facebook permission screen, accept everything, including business_management. This permission lets Chatmize find your WhatsApp Business Accounts. If you skip it, the connection will fail.',
+        tip: 'business_management is required. Without it you will see: Graph request failed (#200) Requires business_management permission.',
+      },
+      {
+        title: 'Fix: re-grant permissions if you see error #200',
+        description: 'If connecting fails with (#200) Requires business_management permission, your old Facebook grant is missing the permission. Remove the Chatmize app from your Facebook Business integrations, then reconnect in Chatmize and accept all permissions.',
+        url: 'https://www.facebook.com/settings?tab=business_tools',
+        linkLabel: 'Open Facebook Business integrations',
+      },
+      {
+        title: 'Step 3: Pick your number',
+        description: 'Back in Chatmize, choose which WhatsApp Business number to connect from the list of accounts and phone numbers found on your Business portfolio.',
+      },
+      {
+        title: 'Step 4: Test it',
+        description: 'Send a WhatsApp message to your connected number and confirm it appears in the Chatmize inbox, then reply from the inbox and confirm it arrives on your phone.',
+      },
+    ],
+    howItWorksInFlows: 'WhatsApp works as a channel in the inbox and in Flow Builder. Inbound WhatsApp messages create conversations you can reply to live; use Send Message actions with the WhatsApp channel for outbound follow-ups.',
+    troubleshooting: [
+      'Error (#200) Requires business_management permission: your Facebook grant was made before Chatmize requested that permission, and Meta freezes permissions at grant time. Fix: remove the Chatmize app and reconnect so a fresh grant is issued.',
+      'To remove the old grant, open Facebook Business integrations, find Chatmize, and click Remove. Then reconnect in Chatmize and accept all permissions.',
+      'If your WhatsApp Business Accounts do not appear, make sure you are logging in with a Facebook user who is an admin of the Business portfolio that owns the WhatsApp accounts.',
+      'WhatsApp message charges are billed by Meta directly to your WhatsApp Business Account. Set up your payment method in WhatsApp Manager; Chatmize cannot see or pay that bill.',
+    ],
+  },
 };
 
 // Merged knowledge base combining all Flow Triggers & Entry Points with 3rd-party integration guides

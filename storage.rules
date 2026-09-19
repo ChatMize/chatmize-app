@@ -1,0 +1,83 @@
+rules_version = '2';
+
+// ChatMize user uploaded images. Bucket: chatmize-uploads-246164058141.
+// Images live under workspaces/{workspaceId}/images/ so each workspace's
+// files stay organized and the path can be tightened to membership checks
+// later without moving data.
+//
+// Current posture: any signed-in user can read and write images. Workspace
+// membership is enforced at the app layer today (team ownership is not fully
+// built yet); this rule blocks anonymous access and caps abuse via file size
+// and content type. Tighten to per workspace membership when the backend
+// ownership model lands.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.superadmin == true;
+    }
+
+    // Workspace membership is stored in Firestore (chatmize-prod):
+    // workspaces/{workspaceId}/members/{uid}
+    function isWorkspaceMember(workspaceId) {
+      return isSignedIn() &&
+        firestore.exists(/databases/chatmize-prod/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+    }
+
+    match /workspaces/{workspaceId}/images/{fileName} {
+      allow read: if request.auth != null;
+
+      allow create, update: if request.auth != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|gif|webp)');
+
+      allow delete: if request.auth != null;
+    }
+
+    // Knowledge Base step and cover images and videos. Restricted to
+    // workspace members (tightened 2026-09-19 per Karl — was signed-in-user
+    // only). Stored under workspaces/{workspaceId}/kb_media/{articleId}/
+    // {fileName} so each article's media stays together and can age out
+    // with lifecycle rules. Images stay capped at 5 MB; videos (MP4, WebM)
+    // are stored raw and capped at 100 MB.
+    match /workspaces/{workspaceId}/kb_media/{articleId}/{fileName} {
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+
+      allow create, update: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
+        && (
+          (request.resource.size < 5 * 1024 * 1024
+            && request.resource.contentType.matches('image/(jpeg|png|gif|webp)'))
+          || (request.resource.size < 100 * 1024 * 1024
+            && request.resource.contentType.matches('video/(mp4|webm)'))
+        );
+
+      allow delete: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+    }
+
+    // Bot builder video and audio attachments. Restricted to workspace
+    // members (same posture as kb_media). Stored under
+    // Bot builder media attachments (video, audio, images) live under
+    // workspaces/{workspaceId}/bot_media/{fileName}. Capped at 25 MB to
+    // match Meta's attachment limit for Messenger and Instagram DMs.
+    // Note: Meta fetches the file via the Firebase Storage download URL
+    // (unguessable token), which works regardless of these rules.
+    match /workspaces/{workspaceId}/bot_media/{fileName} {
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+
+      allow create, update: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
+        && request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType.matches(
+          'video/(mp4|webm|ogg|quicktime)|audio/(mpeg|mp3|wav|x-wav|vnd.wave|mp4|x-m4a|aac)|image/(jpeg|png|webp|gif)');
+
+      allow delete: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+    }
+
+    // Deny everything outside the workspace image folders.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -88,3 +88,36 @@ Messenger unlocks too.
   the backend routes by login state).
 - App secret stored as `META_INSTAGRAM_APP_SECRET` in Google Secret Manager;
   the IG token per workspace lives in its own `IG_TOKEN_WS_<id>` secret.
+
+## Troubleshooting log (2026-09-17)
+
+### Facebook page picture not showing
+Root cause: `metaOAuthStatus` backfill calls `resolvePageToken`, which got
+HTTP 403 reading the workspace token secret from Secret Manager. The runtime
+service account (`<project-number>-compute@developer.gserviceaccount.com`)
+had no `secretmanager.secretAccessor` on the per-workspace token secrets.
+Fix: granted `roles/secretmanager.secretAccessor` at project level (all
+secrets are ChatMize operational secrets). Also fixed the backfill condition
+to retry when `pagePictureUrl` is null, not just undefined.
+
+### Instagram DM webhook never arrived
+Three backend gaps found and fixed:
+1. `metaWebhook` verified `X-Hub-Signature-256` only against the main app's
+   `META_APP_SECRET`. Events from the ChatMize-IG app are signed with its own
+   secret -> 401. Fixed: accept a signature valid against either secret.
+2. `instagramOAuth.ts` used bare `getFirestore()` (the project's DEFAULT
+   database) while everything else uses `chatmize-prod`. IG connection docs
+   were invisible to the webhook router's collectionGroup query. Fixed the
+   database and migrated the doc to `chatmize-prod`.
+3. The IG account itself was never subscribed: call
+   `POST /{ig-user-id}/subscribed_apps?subscribed_fields=messages,messaging_postbacks`
+   on `graph.instagram.com` with the IG user token after connect. (Added
+   manually for tester555121; should run automatically on every IG connect.)
+
+### IG app (4588030554806270) not manageable via Graph API
+The ChatMize-IG app's ID is not resolvable via `graph.facebook.com`
+("does not exist") and its `{id}|{secret}` app token is rejected on
+`graph.instagram.com` ("Access token does not contain a valid app ID").
+Instagram Login OAuth itself works fine. Consequence: the app-level webhook
+subscription (callback URL for the `instagram` object) must be configured in
+the Meta App Dashboard by hand, not via API.

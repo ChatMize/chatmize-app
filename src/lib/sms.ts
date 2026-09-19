@@ -13,15 +13,25 @@ export async function getSmsStatus(workspaceId: string): Promise<SmsStatus> {
   return res.data;
 }
 
+export type SmsProviderId = 'twilio' | 'telnyx' | 'bandwidth';
+
+export const SMS_PROVIDER_OPTIONS: Array<{ id: SmsProviderId; label: string; blurb: string }> = [
+  { id: 'twilio', label: 'Twilio', blurb: 'Auto-provisioned number, handled for you' },
+  { id: 'telnyx', label: 'Telnyx', blurb: 'Connect your Telnyx number' },
+  { id: 'bandwidth', label: 'Bandwidth', blurb: 'Connect your Bandwidth number' },
+];
+
 export async function provisionSmsNumber(
   workspaceId: string,
   areaCode?: string,
-): Promise<{ phoneNumber: string; alreadyProvisioned: boolean }> {
+  provider: SmsProviderId = 'twilio',
+  phoneNumber?: string,
+): Promise<{ phoneNumber: string; alreadyProvisioned: boolean; webhookUrl?: string; provider?: string }> {
   const fn = httpsCallable<
-    { workspaceId: string; areaCode?: string },
-    { phoneNumber: string; alreadyProvisioned: boolean }
+    { workspaceId: string; areaCode?: string; provider?: string; phoneNumber?: string },
+    { phoneNumber: string; alreadyProvisioned: boolean; webhookUrl?: string; provider?: string }
   >(functions, "provisionSmsNumber");
-  const res = await fn({ workspaceId, areaCode });
+  const res = await fn({ workspaceId, areaCode, provider, phoneNumber });
   return res.data;
 }
 
@@ -41,7 +51,8 @@ export async function setSmsOptIn(
 
 export interface SendSmsResult {
   ok: boolean;
-  twilioSid: string;
+  /** Provider message id (Twilio SID, Telnyx id, Bandwidth id). */
+  messageId: string;
   segments: number;
   chargedTo: "allowance" | "credits";
 }

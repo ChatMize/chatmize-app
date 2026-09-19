@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { createHmac, timingSafeEqual } from "crypto";
 import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
@@ -14,7 +14,22 @@ import {
   resetAllMonthlyCredits,
   CreditReason,
 } from "./credits";
+import {
+  recordMessageHandled,
+  recordClientEvent,
+  logRevenue as logGamificationRevenue,
+  getGamificationState,
+  getReferralCode,
+  applyReferral,
+} from "./gamification";
 import { aiComplete, projectTestCost, AI_SECRETS, ModelTier, ChatMessage } from "./ai/router";
+import {
+  DEFAULT_PLAN_MODULES,
+  moduleValueFor,
+  canUse,
+  limitFor,
+  type PlanModule as PlanModuleDef,
+} from "./planModules";
 import {
   META_APP_SECRET,
   META_VERIFY_TOKEN,
@@ -28,9 +43,11 @@ import {
   buildLoginUrl,
   consumeOAuthState,
   exchangeCodeForPages,
+  getPriorConnectedPageId,
   storePendingPages,
   selectWorkspacePage,
   resolvePageToken,
+  ensureFreshPageToken,
   getPageSocialProfile,
   appReturnUrl,
 } from "./metaOAuth";
@@ -42,19 +59,129 @@ import {
   connectInstagramAccount,
   getInstagramConnection,
   instagramAppReturnUrl,
+  getIgToken,
+  ensureFreshIgToken,
+  markIgTokenInvalid,
 } from "./instagramOAuth";
+import {
+  buildWhatsAppLoginUrl,
+  isWhatsAppOAuthState,
+  consumeWhatsAppOAuthState,
+  exchangeWhatsAppCode,
+  storePendingWhatsAppAccounts,
+  getWhatsAppConnection,
+  listPendingWhatsAppAccounts,
+  selectWhatsAppNumber,
+  whatsappAppReturnUrl,
+} from "./whatsappOAuth";
+import {
+  SHOPIFY_CLIENT_ID,
+  SHOPIFY_CLIENT_SECRET,
+} from "./secrets";
+import {
+  buildShopifyLoginUrl,
+  consumeShopifyOAuthState,
+  exchangeShopifyCode,
+  fetchShopInfo,
+  connectShopifyStore,
+  getShopifyConnection,
+  updateShopifySettings,
+  disconnectShopify,
+  normalizeShopDomain,
+  verifyShopifyHmac,
+  routeShopifyWebhook,
+  sweepAbandonedCheckouts,
+  shopifyAppReturnUrl,
+} from "./shopify";
+import { handleBigmarkerAction } from "./bigmarker";
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
-import { normalizeEntry } from "./handlers";
+import { normalizeEntry, normalizeReadReceipts, normalizeStatuses } from "./handlers";
+import {
+  trackAnalytics,
+  trackFlowEventInternal,
+  trackHandoffStarted,
+  trackMessageDelivered,
+  trackMessageRead,
+  trackSubscriberRemoved,
+  readDailyAnalytics,
+} from "./analytics";
+import {
+  publishKbArticleHandler,
+  unpublishKbArticleHandler,
+  kbFeedbackHandler,
+  PublishKbInput,
+  KbFeedbackKind,
+} from "./kb";
+import { handleCloakerRequest, CloakerReq, CloakerRes } from "./cloaker";
+import { isWaitlistRequest, handleWaitlistRequest } from "./waitlist";
+import {
+  GOOGLE_OAUTH_CLIENT_ID,
+  GOOGLE_OAUTH_CLIENT_SECRET,
+  buildGoogleSheetsLoginUrl,
+  consumeGoogleSheetsOAuthState,
+  exchangeGoogleSheetsCode,
+  connectGoogleSheetsAccount,
+  googleSheetsReturnUrl,
+  getGoogleSheetsStatus,
+  disconnectGoogleSheets,
+  setGoogleSheetsSpreadsheet,
+  listSheetsTabs,
+  appendSheetsRow,
+  readSheetsRows,
+  resolveSpreadsheetId,
+} from "./googleSheets";
+import {
+  overlayList,
+  overlaySave,
+  overlayDelete,
+  overlaySetStatus,
+  handleOverlayTrackRequest,
+  OverlayTrackReq,
+  OverlayTrackRes,
+} from "./overlays";
+import { handleContestAdminAction, handleContestPublicRequest } from "./contest.js";
+import { handleSurveyAdminAction, handleSurveyPublicRequest } from "./surveys.js";
+import {
+  getBookingSettings as bookingGetSettings,
+  saveBookingSettings as bookingSaveSettings,
+  listBookings as bookingListAll,
+  createBooking as bookingCreateOne,
+  setBookingStatus as bookingSetStatusOne,
+  cancelBookingById as bookingCancelOne,
+  handleBookingPublicRequest,
+  runBookingReminderSweep,
+  clientSafeSettings,
+} from "./bookings.js";
+import { handleMigrationAction } from "./migration";
+
+import { handleBuildCatalogAction } from "./buildCatalog";
+import {
+  resolvePersonalizationTags,
+  getContactForRecipient,
+  getContactForPhone,
+} from "./personalization";
 import {
   persistInboundMessage,
   parkGlobalDeadLetter,
   recordOutboundMessage,
   Channel,
 } from "./store";
-import { CHANNEL_SENDERS } from "./send";
+import {
+  CHANNEL_SENDERS,
+  sendInstagramMessage,
+  sendInstagramDirectMessage,
+} from "./send";
+import { sendChannelMessageInternal, ChannelSendError } from "./channelSend";
+import { sendSmsInternal, SmsSendError, smsPlanAllowance } from "./smsSend";
+import { runSmsBroadcastInternal, SmsBroadcastError } from "./smsBroadcast";
 import {
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN,
+  TELNYX_API_KEY,
+  TELNYX_PUBLIC_KEY,
+  BANDWIDTH_ACCOUNT_ID,
+  BANDWIDTH_API_TOKEN,
+  BANDWIDTH_API_SECRET,
 } from "./secrets";
 import {
   normalizePhone,
@@ -62,7 +189,11 @@ import {
   classifyKeyword,
   complianceReply,
   provisionTwilioNumber,
-  twilioSendSms,
+  sendSmsViaProvider,
+  providerOf,
+  parseTelnyxWebhook,
+  parseBandwidthWebhook,
+  verifyTelnyxSignature,
   getSmsConnection,
   saveSmsConnection,
   ensureAllowanceMonth,
@@ -76,8 +207,22 @@ import {
   checkInboundThrottle,
   markComplianceReplySent,
   SMS_CREDITS_PER_SEGMENT,
+  SMS_PROVIDERS,
   SmsConnection,
+  SmsProvider,
+  ParsedInboundSms,
 } from "./sms";
+
+/** All SMS provider secrets, for functions that may send via any provider. */
+const SMS_SECRETS = [
+  TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN,
+  TELNYX_API_KEY,
+  TELNYX_PUBLIC_KEY,
+  BANDWIDTH_ACCOUNT_ID,
+  BANDWIDTH_API_TOKEN,
+  BANDWIDTH_API_SECRET,
+];
 
 initializeApp();
 
@@ -95,16 +240,24 @@ async function resolveWorkspace(workspaceId: unknown): Promise<string | null> {
  * Route a webhook entry to its workspace by the receiving Meta account id.
  * Meta allows exactly one callback URL per app, so with many workspaces the
  * event itself must say where it belongs: entry.id is the Page id for
- * `page` events and the IG business account id for `instagram` events.
- * Matches only connections with status "connected".
+ * `page` events, the IG business account id for `instagram` events, and the
+ * phone number id (from the change metadata) for `whatsapp_business_account`
+ * events. Matches only connections with status "connected".
  */
 async function resolveWorkspaceByAccount(
   object: string,
   accountId: string,
+  fallbackAccountId?: string,
 ): Promise<string | null> {
   if (!accountId) return null;
   const field =
-    object === "instagram" ? "igUserId" : object === "page" ? "pageId" : null;
+    object === "instagram"
+      ? "igUserId"
+      : object === "page"
+        ? "pageId"
+        : object === "whatsapp_business_account"
+          ? "phoneNumberId"
+          : null;
   if (!field) return null;
   const snap = await db()
     .collectionGroup("integrations")
@@ -115,6 +268,34 @@ async function resolveWorkspaceByAccount(
     if ((doc.data() as { status?: string }).status === "connected") {
       return doc.ref.parent.parent?.id ?? null;
     }
+  }
+  // WhatsApp: entry.id is the WABA id, which we also store on the doc, so a
+  // phone-number-id miss falls back to the WABA id.
+  if (object === "whatsapp_business_account" && fallbackAccountId && fallbackAccountId !== accountId) {
+    const wabaSnap = await db()
+      .collectionGroup("integrations")
+      .where("wabaId", "==", fallbackAccountId)
+      .limit(5)
+      .get();
+    for (const doc of wabaSnap.docs) {
+      if ((doc.data() as { status?: string }).status === "connected") {
+        return doc.ref.parent.parent?.id ?? null;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * For whatsapp_business_account events, entry.id is the WABA id; the phone
+ * number that received the message lives in each change's metadata.
+ */
+function whatsAppPhoneNumberId(entry: Record<string, unknown>): string | null {
+  const changes = (entry as { changes?: Array<{ value?: { metadata?: { phone_number_id?: unknown } } }> })
+    .changes;
+  for (const change of changes ?? []) {
+    const id = change?.value?.metadata?.phone_number_id;
+    if (typeof id === "string" && id.length > 0) return id;
   }
   return null;
 }
@@ -159,8 +340,70 @@ async function requireWorkspaceAccess(
  *   https://us-west2-<project>.cloudfunctions.net/metaWebhook?workspace=<workspaceId>
  */
 export const metaWebhook = onRequest(
-  { region: REGION, secrets: [META_APP_SECRET, META_VERIFY_TOKEN] },
+  { region: REGION, secrets: [META_APP_SECRET, META_INSTAGRAM_APP_SECRET, META_VERIFY_TOKEN] },
   async (req, res) => {
+    // 0. Contest engine public API (folded in: proxy blocks new function
+    //    creation). Unauthenticated by design — the entry page and referral
+    //    links hit POST /contest-api (hosting rewrite -> this function).
+    //    Anti-fraud (dedupe, rate limits, velocity flags) runs inside.
+    const reqPath = (req.path || "") as string;
+    if (reqPath === "/contest-api" || reqPath.endsWith("/contest-api")) {
+      await handleContestPublicRequest(
+        req as unknown as Parameters<typeof handleContestPublicRequest>[0],
+        res as unknown as Parameters<typeof handleContestPublicRequest>[1],
+      );
+      return;
+    }
+
+    // 0a. Survey builder public API (folded in: proxy blocks new function
+    //     creation). Unauthenticated by design — the shareable survey link
+    //     and the overlay SDK iframe hit POST /survey-api (hosting rewrite
+    //     -> this function). Rate limiting runs inside.
+    if (reqPath === "/survey-api" || reqPath.endsWith("/survey-api")) {
+      await handleSurveyPublicRequest(
+        req as unknown as Parameters<typeof handleSurveyPublicRequest>[0],
+        res as unknown as Parameters<typeof handleSurveyPublicRequest>[1],
+      );
+      return;
+    }
+    // 0b. Bookings public API (folded in: proxy blocks new function creation).
+    //     Unauthenticated by design — the booking widget, embed, and manage
+    //     links hit POST /booking-api (hosting rewrite -> this function).
+    //     Rate limits and slot double-booking guards run inside.
+    if (reqPath === "/booking-api" || reqPath.endsWith("/booking-api")) {
+      await handleBookingPublicRequest(
+        req as unknown as Parameters<typeof handleBookingPublicRequest>[0],
+        res as unknown as Parameters<typeof handleBookingPublicRequest>[1],
+      );
+      return;
+    }
+
+    // 0b. send.chat link cloaker: host-based routing takes precedence over
+    //    the Meta webhook logic. Non-send.chat hosts fall through untouched.
+    if (await handleCloakerRequest(req as unknown as CloakerReq, res as unknown as CloakerRes)) {
+      return;
+    }
+
+    // 0b. Public waitlist capture: folded into this function because creating
+    //     new Cloud Functions via the API is blocked through this VM's egress
+    //     proxy. Routed on the ?wl= query param (or a /waitlist path prefix).
+    if (isWaitlistRequest(req)) {
+      await handleWaitlistRequest(
+        req as unknown as Parameters<typeof handleWaitlistRequest>[0],
+        res as unknown as Parameters<typeof handleWaitlistRequest>[1],
+      );
+      return;
+    }
+
+    // 0c. Website Overlays SDK tracking: POST /__overlay/track (batched
+    //     impression/click/lead events from overlays.js). Folded in here
+    //     because creating new functions fails through the egress proxy.
+    if (
+      await handleOverlayTrackRequest(req as unknown as OverlayTrackReq, res as unknown as OverlayTrackRes)
+    ) {
+      return;
+    }
+
     // 1. Verification handshake
     if (req.method === "GET") {
       const { ok, challenge } = verifyHandshake(
@@ -183,10 +426,15 @@ export const metaWebhook = onRequest(
       return;
     }
 
-    // 2. Signature check: reject anything Meta did not sign.
+    // 2. Signature check: reject anything Meta did not sign. Events may be
+    //    signed by either the main Meta app or the ChatMize-IG app (Instagram
+    //    Login), so a signature valid against either secret is accepted.
     const rawBody: Buffer = (req as unknown as { rawBody?: Buffer }).rawBody ?? Buffer.from("");
     const signature = req.header("X-Hub-Signature-256");
-    if (!verifyMetaSignature(rawBody, signature, META_APP_SECRET.value())) {
+    const signatureOk =
+      verifyMetaSignature(rawBody, signature, META_APP_SECRET.value()) ||
+      verifyMetaSignature(rawBody, signature, META_INSTAGRAM_APP_SECRET.value());
+    if (!signatureOk) {
       logger.warn("Webhook rejected: invalid signature");
       res.sendStatus(401);
       return;
@@ -204,9 +452,15 @@ export const metaWebhook = onRequest(
       const object = body.object ?? "page";
       let received = 0;
       for (const entry of body.entry ?? []) {
-        const accountId = typeof entry.id === "string" ? entry.id : "";
+        const entryId = typeof entry.id === "string" ? entry.id : "";
+        // WhatsApp events carry the WABA id in entry.id; route by the phone
+        // number id in the change metadata (WABA id as fallback).
+        const phoneNumberId =
+          object === "whatsapp_business_account" ? whatsAppPhoneNumberId(entry) : null;
+        const accountId = phoneNumberId ?? entryId;
         const workspaceId =
-          overrideWorkspaceId ?? (await resolveWorkspaceByAccount(object, accountId));
+          overrideWorkspaceId ??
+          (await resolveWorkspaceByAccount(object, accountId, entryId));
         if (!workspaceId) {
           logger.warn("Webhook entry unroutable: no workspace for account", {
             object,
@@ -222,6 +476,15 @@ export const metaWebhook = onRequest(
         for (const msg of normalizeEntry(entry, object)) {
           await persistInboundMessage(workspaceId, msg);
           received += 1;
+        }
+        // Analytics: delivery lifecycle. WhatsApp statuses (sent/delivered/
+        // read) and Messenger/IG read receipts fold into today's counters.
+        for (const st of normalizeStatuses(entry)) {
+          if (st.status === "delivered") trackMessageDelivered(workspaceId, "whatsapp");
+          else if (st.status === "read") trackMessageRead(workspaceId, "whatsapp");
+        }
+        for (const rr of normalizeReadReceipts(entry, object)) {
+          trackMessageRead(workspaceId, rr.channel);
         }
       }
       logger.info("Webhook processed", { object, received });
@@ -239,60 +502,81 @@ interface SendMessageData {
   channel?: Channel;
   recipientId?: string;
   text?: string;
+  /** Optional media attachment (bot builder video/audio/image). */
+  mediaUrl?: string;
+  mediaType?: "video" | "audio" | "image";
+    /** Optional quick replies. Meta text-first rule: always sent with the text message, never the media. */
+    quickReplies?: string[];
+    /** Contact capture (BotMaps block): one-tap phone/email quick replies. */
+    contactCaptureFields?: Array<"phone" | "email">;
+    contactCaptureMode?: "quick_reply" | "free_text" | "both";
+    /** Variable capture (BotMaps question block): ask and save the answer. */
+    variableCapture?: { variable: string; varType: "text" | "number" | "date" };
+    /** Frontend's optimistic message id, echoed back as clientId on the
+     * persisted doc so the UI can reconcile instead of duplicating. */
+    clientMessageId?: string;
 }
-
 /**
  * Authenticated callable: send a message on Messenger, Instagram, or WhatsApp.
  * The caller must be a member of the workspace (or Super Admin). Tokens come
  * from Secret Manager; the client never sees them.
  */
 export const sendChannelMessage = onCall(
-  { region: REGION, secrets: [WHATSAPP_TOKEN_DEFAULT, WHATSAPP_PHONE_NUMBER_ID, META_PAGE_TOKEN_DEFAULT] },
+  { region: REGION, secrets: [WHATSAPP_TOKEN_DEFAULT, WHATSAPP_PHONE_NUMBER_ID, META_PAGE_TOKEN_DEFAULT, META_APP_SECRET] },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
       throw new HttpsError("unauthenticated", "Sign in required.");
     }
-    const { workspaceId, channel, recipientId, text } = (request.data ?? {}) as SendMessageData;
-    if (!workspaceId || !channel || !recipientId || !text) {
-      throw new HttpsError("invalid-argument", "workspaceId, channel, recipientId, and text are required.");
+    const { workspaceId, channel, recipientId, text, mediaUrl, mediaType, quickReplies, contactCaptureFields, contactCaptureMode, variableCapture, clientMessageId } = (request.data ?? {}) as SendMessageData;
+    if (!workspaceId || !channel || !recipientId) {
+      throw new HttpsError("invalid-argument", "workspaceId, channel, and recipientId are required.");
     }
-    if (!["messenger", "instagram", "whatsapp"].includes(channel)) {
-      throw new HttpsError("invalid-argument", `Unsupported channel: ${channel}`);
+    const hasCapture = !!contactCaptureFields?.length;
+    const hasVariableCapture = !!variableCapture?.variable;
+    if (!text && !mediaUrl && !hasCapture && !hasVariableCapture && !(quickReplies?.length)) {
+      throw new HttpsError("invalid-argument", "Provide message text, a media attachment, quick replies, a contact capture, or a variable capture.");
+    }
+    if (mediaUrl && !["video", "audio", "image"].includes(mediaType ?? "")) {
+      throw new HttpsError("invalid-argument", "mediaType must be video, audio, or image.");
+    }
+    if (quickReplies !== undefined && (!Array.isArray(quickReplies) || quickReplies.some((q) => typeof q !== "string"))) {
+      throw new HttpsError("invalid-argument", "quickReplies must be an array of strings.");
     }
 
     // Membership check (Super Admin claim bypasses).
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
 
-    const sender = CHANNEL_SENDERS[channel];
-    let result;
-    if (channel === "whatsapp") {
-      result = await sender(
-        WHATSAPP_TOKEN_DEFAULT.value(),
+    // The shared send pipeline (channelSend.ts) also serves the MCP server.
+    try {
+      const sendResult = await sendChannelMessageInternal(
+        workspaceId,
+        channel,
         recipientId,
-        text,
-        WHATSAPP_PHONE_NUMBER_ID.value(),
+        text ?? "",
+        clientMessageId ?? null,
+        mediaUrl ? { url: mediaUrl, type: mediaType as "video" | "audio" | "image" } : null,
+        {
+          quickReplies: quickReplies ?? null,
+          contactCapture: contactCaptureFields?.length
+            ? { fields: contactCaptureFields, mode: contactCaptureMode ?? "both" }
+            : null,
+          variableCapture: hasVariableCapture
+            ? { variable: variableCapture!.variable, varType: variableCapture!.varType ?? "text" }
+            : null,
+        },
       );
-    } else {
-      result = await sender(await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value()), recipientId, text);
+      // Gamification: count the handled outbound message (fire-and-forget).
+      recordMessageHandled(workspaceId, uid).catch((err) =>
+        logger.error("Gamification record failed (outbound)", { workspaceId, err }),
+      );
+      return sendResult;
+    } catch (err) {
+      if (err instanceof ChannelSendError) {
+        throw new HttpsError(err.code, err.message);
+      }
+      throw err;
     }
-
-    await recordOutboundMessage(
-      workspaceId,
-      channel,
-      recipientId,
-      text,
-      result.metaMessageId,
-      result.ok,
-      result.error,
-    );
-
-    if (!result.ok) {
-      logger.error("Outbound send failed", { workspaceId, channel, error: result.error });
-      throw new HttpsError("internal", result.error ?? "Send failed.");
-    }
-    logger.info("Outbound send ok", { workspaceId, channel, metaMessageId: result.metaMessageId });
-    return { ok: true, metaMessageId: result.metaMessageId };
   },
 );
 
@@ -322,7 +606,211 @@ export const onInboundMessageCreated = onDocumentCreated(
       channel: data.channel,
       textLength: data.text?.length ?? 0,
     });
+    // Gamification: count the handled message + touch the streak. Never
+    // breaks the pipeline; badge evaluation rides on this write.
+    recordMessageHandled(event.params.workspaceId).catch((err) =>
+      logger.error("Gamification record failed (inbound)", {
+        workspaceId: event.params.workspaceId,
+        err,
+      }),
+    );
     // TODO(Phase 4): route through the AI agent with credit metering here.
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+
+/**
+ * Authenticated callable: log a flow funnel event (entered / step / completed).
+ * Used by the FlowBuilder simulator today and by the server-side BotMap
+ * runtime when it lands. Simulator runs are tagged sim:true and stored in a
+ * separate namespace so test traffic never pollutes live numbers.
+ */
+export const trackFlowEvent = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, flowId, flowName, type, stepId, stepTitle, sim } =
+    (request.data ?? {}) as {
+      workspaceId?: string;
+      flowId?: string;
+      flowName?: string;
+      type?: "entered" | "step" | "completed";
+      stepId?: string;
+      stepTitle?: string;
+      sim?: boolean;
+    };
+  if (!workspaceId || !flowId || !type) {
+    throw new HttpsError("invalid-argument", "workspaceId, flowId, and type are required.");
+  }
+  if (!["entered", "step", "completed"].includes(type)) {
+    throw new HttpsError("invalid-argument", "type must be entered, step, or completed.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  trackFlowEventInternal(
+    workspaceId,
+    flowId,
+    flowName || "Untitled flow",
+    type,
+    { stepId, stepTitle, sim: !!sim },
+  );
+  return { ok: true };
+});
+
+interface AnalyticsOverviewData {
+  workspaceId?: string;
+  days?: number;
+  includeSim?: boolean;
+}
+
+/**
+ * Authenticated callable: one-shot dashboard payload. Reads N daily counter
+ * docs (one small read per day) plus the gamification counters and the
+ * newest revenue entries. The frontend makes one call instead of dozens
+ * of Firestore reads.
+ */
+export const getAnalyticsOverview = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, days, includeSim } = (request.data ?? {}) as AnalyticsOverviewData;
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  const n = Math.min(Math.max(Number(days) || 30, 1), 90);
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+
+  const [daily, simDaily] = await Promise.all([
+    readDailyAnalytics(workspaceId, n, false),
+    includeSim ? readDailyAnalytics(workspaceId, n, true) : Promise.resolve([]),
+  ]);
+
+  // Gamification counters (lifetime revenue + message totals).
+  let lifetimeRevenueCents = 0;
+  try {
+    const countersSnap = await db()
+      .collection("workspaces").doc(workspaceId)
+      .collection("gamification").doc("counters").get();
+    lifetimeRevenueCents = Number((countersSnap.data() as { revenueCents?: number } | undefined)?.revenueCents ?? 0);
+  } catch {
+    // Dashboard still renders without it.
+  }
+
+  // Newest revenue entries for the "recent money" list (bounded read).
+  let recentRevenue: Array<{ amountCents: number; note: string; loggedAt: string; source: string }> = [];
+  try {
+    const revSnap = await db()
+      .collection("workspaces").doc(workspaceId)
+      .collection("gamification").doc("revenue_log")
+      .collection("entries").orderBy("loggedAt", "desc").limit(8).get();
+    recentRevenue = revSnap.docs.map((d) => {
+      const r = d.data() as { amountCents?: number; note?: string; loggedAt?: string; source?: string };
+      return {
+        amountCents: Number(r.amountCents ?? 0),
+        note: String(r.note ?? ""),
+        loggedAt: String(r.loggedAt ?? ""),
+        source: String(r.source ?? "manual"),
+      };
+    });
+  } catch {
+    // Dashboard still renders without it.
+  }
+
+  return { ok: true, days: n, daily, simDaily, lifetimeRevenueCents, recentRevenue };
+});
+
+/**
+ * Authenticated callable: persist the bot/human mode toggle for a
+ * conversation and track handoff events for the analytics dashboard.
+ */
+export const setConversationBotMode = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, convoId, botEnabled } = (request.data ?? {}) as {
+    workspaceId?: string;
+    convoId?: string;
+    botEnabled?: boolean;
+  };
+  if (!workspaceId || !convoId || typeof botEnabled !== "boolean") {
+    throw new HttpsError("invalid-argument", "workspaceId, convoId, and botEnabled are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const convoRef = db()
+    .collection("workspaces").doc(workspaceId)
+    .collection("conversations").doc(convoId);
+  const snap = await convoRef.get();
+  const prev = (snap.data() as { botEnabled?: boolean } | undefined)?.botEnabled;
+  const channel = ((snap.data() as { channel?: string } | undefined)?.channel ?? "messenger") as
+    "messenger" | "instagram" | "whatsapp";
+  const update: Record<string, unknown> = {
+    botEnabled,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (botEnabled === false && prev !== false) {
+    // Takeover: start the response-time clock.
+    update.handoffStartedAt = new Date().toISOString();
+    update.handoffFirstReplyAt = FieldValue.delete();
+    trackHandoffStarted(workspaceId, channel);
+  }
+  await convoRef.set(update, { merge: true });
+  return { ok: true, botEnabled };
+});
+
+/**
+ * Fallback sweep (every 15 min): conversations still flagged awaitingReply
+ * whose last inbound message is older than the window count as unanswered.
+ * The flag is cleared so each conversation counts once. The query only
+ * touches conversations still waiting, so cost stays flat.
+ */
+const FALLBACK_WINDOW_MINUTES = 15;
+
+export const analyticsFallbackSweep = onSchedule(
+  { region: REGION, schedule: "every 15 minutes", timeZone: "UTC" },
+  async () => {
+    const cutoff = new Date(Date.now() - FALLBACK_WINDOW_MINUTES * 60000);
+    // Workspaces with analytics activity: scan the small set via
+    // collectionGroup on analytics docs from today is expensive; instead
+    // iterate workspaces touched recently. Bound the scan.
+    const wsSnap = await db().collection("workspaces").limit(200).get();
+    for (const ws of wsSnap.docs) {
+      const workspaceId = ws.id;
+      try {
+        const q = await db()
+          .collection("workspaces").doc(workspaceId)
+          .collection("conversations")
+          .where("awaitingReply", "==", true)
+          .limit(100)
+          .get();
+        if (q.empty) continue;
+        const batch = db().batch();
+        const counts: Record<string, number> = {};
+        let counted = 0;
+        for (const docSnap of q.docs) {
+          const d = docSnap.data() as {
+            lastMessageAt?: { toDate?: () => Date };
+            channel?: string;
+          };
+          const lastAt = d.lastMessageAt?.toDate?.() ?? new Date(0);
+          if (lastAt >= cutoff) continue; // still inside the reply window
+          const channel = (d.channel ?? "messenger") as string;
+          counts[channel] = (counts[channel] ?? 0) + 1;
+          counted += 1;
+          batch.set(docSnap.ref, { awaitingReply: false, fallbackCountedAt: new Date().toISOString() }, { merge: true });
+        }
+        if (counted > 0) {
+          await batch.commit();
+          const inc: Record<string, number> = {};
+          for (const [ch, c] of Object.entries(counts)) inc[`fallback.${ch}`] = c;
+          trackAnalytics(workspaceId, inc);
+          logger.info("Fallback sweep counted unanswered conversations", {
+            workspaceId, counted, counts,
+          });
+        }
+      } catch (err) {
+        logger.warn("Fallback sweep failed for workspace", {
+          workspaceId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   },
 );
 
@@ -399,7 +887,14 @@ export const adjustCredits = onCall(
       throw new HttpsError("invalid-argument", "workspaceId and a non-zero delta are required.");
     }
     if (delta > 0) {
-      if (reason !== "topup_purchase" && reason !== "admin_adjust" && reason !== "monthly_grant") {
+      if (
+        reason !== "topup_purchase" &&
+        reason !== "admin_adjust" &&
+        reason !== "monthly_grant" &&
+        reason !== "badge_reward" &&
+        reason !== "referral_reward" &&
+        reason !== "contest_reward"
+      ) {
         throw new HttpsError("invalid-argument", "Invalid grant reason.");
       }
       return grantCredits(workspaceId, delta, reason, note);
@@ -422,28 +917,93 @@ export const resetMonthlyCredits = onSchedule(
 );
 
 // ---------------------------------------------------------------------------
-// SMS via Twilio (ChatMize-owned account; billed via allowance then credits)
+// Modular plan builder (system_settings/plan_modules + plan.modules)
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the workspace's SMS plan entitlement. Workspaces without an
- * assigned plan are grandfathered in (allowed, zero allowance, pay per
- * segment in credits). A plan without the `sms` feature is denied.
+ * Super Admin only: seed the module registry with the canonical catalog.
+ * Idempotent: only writes when the registry doc does not exist.
  */
-async function smsPlanAllowance(workspaceId: string): Promise<number> {
+export const seedPlanModules = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  if (request.auth?.token?.superadmin !== true) {
+    throw new HttpsError("permission-denied", "Super Admin only.");
+  }
+  const ref = db().collection("system_settings").doc("plan_modules");
+  const snap = await ref.get();
+  if (snap.exists) return { ok: true, seeded: false };
+  const modules: Record<string, PlanModuleDef> = {};
+  for (const m of DEFAULT_PLAN_MODULES) modules[m.id] = m;
+  await ref.set({ modules, updatedAt: new Date().toISOString() });
+  return { ok: true, seeded: true, count: DEFAULT_PLAN_MODULES.length };
+});
+
+/**
+ * Resolve a workspace's plan and return the effective module value.
+ * Workspace members and Super Admin only. Used by feature code that runs
+ * server-side (bookings, surveys, analytics) to enforce plan modules.
+ */
+export const getModuleValue = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, moduleId } = (request.data ?? {}) as {
+    workspaceId?: string;
+    moduleId?: string;
+  };
+  if (!workspaceId || !moduleId) {
+    throw new HttpsError("invalid-argument", "workspaceId and moduleId are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+
   const ws = await db().collection("workspaces").doc(workspaceId).get();
   const planId = ws.data()?.planId as string | undefined;
-  if (!planId) {
-    logger.info("SMS: workspace has no plan; grandfathered with zero allowance", { workspaceId });
-    return 0;
+
+  let planModules: Record<string, boolean | number> | undefined;
+  if (planId) {
+    const planSnap = await db().collection("plans").doc(planId).get();
+    planModules = (planSnap.data() as { modules?: Record<string, boolean | number> } | undefined)?.modules;
   }
-  const plan = await db().collection("plans").doc(planId).get();
-  const data = plan.data() as { features?: string[]; smsAllowanceMonthly?: number } | undefined;
-  if (!data?.features?.includes("sms")) {
-    throw new HttpsError("permission-denied", "Your plan does not include SMS.");
-  }
-  return data.smsAllowanceMonthly ?? 0;
-}
+
+  const regSnap = await db().collection("system_settings").doc("plan_modules").get();
+  const registry: PlanModuleDef[] = regSnap.exists
+    ? Object.values((regSnap.data() as { modules?: Record<string, PlanModuleDef> }).modules || {})
+    : DEFAULT_PLAN_MODULES;
+
+  const value = moduleValueFor({ modules: planModules }, moduleId, registry);
+  return {
+    moduleId,
+    value,
+    allowed: canUse({ modules: planModules }, moduleId, registry),
+    limit: limitFor({ modules: planModules }, moduleId, registry),
+  };
+});
+
+// Bookings: reminder + no-show sweep (the no-show killer)
+// ---------------------------------------------------------------------------
+
+/**
+ * Every 15 minutes: send due booking reminders (email/SMS/chat per the
+ * workspace's reminder rules) and auto mark no-shows past the grace period.
+ * One collection-group query per run; cost stays flat as workspaces grow.
+ * NOTE: new function — the deploy coordinator must create it via the CLI or
+ * the API create path; it cannot ride an existing export.
+ */
+export const bookingReminderSweep = onSchedule(
+  {
+    region: REGION,
+    schedule: "*/15 * * * *",
+    timeZone: "America/Phoenix",
+    timeoutSeconds: 540,
+  },
+  async () => {
+    await runBookingReminderSweep();
+  },
+);
+
+// ---------------------------------------------------------------------------
+// SMS via Twilio (ChatMize-owned account; billed via allowance then credits)
+// ---------------------------------------------------------------------------
 
 /** Authenticated callable: real SMS connection state for the Settings UI. */
 export const getSmsStatus = onCall({ region: REGION }, async (request) => {
@@ -460,6 +1020,7 @@ export const getSmsStatus = onCall({ region: REGION }, async (request) => {
   return {
     connected: true as const,
     phoneNumber: conn.phoneNumber,
+    provider: providerOf(conn),
     status: conn.status,
     tenDlc: conn.compliance.tenDlc,
     complianceNote: conn.compliance.note,
@@ -473,6 +1034,10 @@ interface ProvisionSmsData {
   workspaceId?: string;
   /** Optional NANP area code for a local long-code number. Omit for toll-free. */
   areaCode?: string;
+  /** SMS provider. Defaults to twilio. For telnyx/bandwidth, phoneNumber is required. */
+  provider?: string;
+  /** E.164 number to connect (telnyx/bandwidth only; twilio auto-provisions). */
+  phoneNumber?: string;
 }
 
 /**
@@ -480,11 +1045,11 @@ interface ProvisionSmsData {
  * One number per workspace; re-running returns the existing one.
  */
 export const provisionSmsNumber = onCall(
-  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN] },
+  { region: REGION, secrets: SMS_SECRETS },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
-    const { workspaceId, areaCode } = (request.data ?? {}) as ProvisionSmsData;
+    const { workspaceId, areaCode, provider, phoneNumber } = (request.data ?? {}) as ProvisionSmsData;
     if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
 
@@ -493,34 +1058,69 @@ export const provisionSmsNumber = onCall(
       return { phoneNumber: existing.phoneNumber, alreadyProvisioned: true };
     }
 
+    const chosen: SmsProvider = provider === "telnyx" || provider === "bandwidth" ? provider : "twilio";
     const allowance = await smsPlanAllowance(workspaceId);
     const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT ?? "";
     const webhookUrl = `https://us-west2-${projectId}.cloudfunctions.net/smsWebhook?workspace=${workspaceId}`;
-    const { phoneNumber, sid } = await provisionTwilioNumber(workspaceId, webhookUrl, areaCode);
+    const now = new Date().toISOString();
 
-    const conn: SmsConnection = {
-      workspaceId,
-      phoneNumber,
-      twilioSid: sid,
-      status: "active",
-      compliance: areaCode
-        ? {
-            tenDlc: "pending",
-            note: "Number active. 10DLC brand/campaign registration is completed by the ChatMize team before high-volume sending.",
-          }
-        : {
-            tenDlc: "not_required",
-            note: "Toll-free number: no 10DLC registration required. Toll-free verification is handled by the ChatMize team.",
-          },
-      monthlyAllowance: allowance,
-      usedThisMonth: 0,
-      usageMonth: new Date().toISOString().slice(0, 7),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    let conn: SmsConnection;
+    if (chosen === "twilio") {
+      const { phoneNumber: num, sid } = await provisionTwilioNumber(workspaceId, webhookUrl, areaCode);
+      conn = {
+        workspaceId,
+        phoneNumber: num,
+        provider: "twilio",
+        twilioSid: sid,
+        status: "active",
+        compliance: areaCode
+          ? {
+              tenDlc: "pending",
+              note: "Number active. 10DLC brand/campaign registration is completed by the ChatMize team before high-volume sending.",
+            }
+          : {
+              tenDlc: "not_required",
+              note: "Toll-free number: no 10DLC registration required. Toll-free verification is handled by the ChatMize team.",
+            },
+        monthlyAllowance: allowance,
+        usedThisMonth: 0,
+        usageMonth: now.slice(0, 7),
+        createdAt: now,
+        updatedAt: now,
+      };
+    } else {
+      // Telnyx/Bandwidth: workspace connects their own number. They configure
+      // the webhook URL in their provider dashboard (returned to the UI).
+      const e164 = phoneNumber ? normalizePhone(phoneNumber) : null;
+      if (!e164) {
+        throw new HttpsError(
+          "invalid-argument",
+          `A valid phone number is required to connect ${chosen}.`,
+        );
+      }
+      conn = {
+        workspaceId,
+        phoneNumber: e164,
+        provider: chosen,
+        status: "active",
+        compliance: {
+          tenDlc: "not_required",
+          note: `Connected via ${chosen}. Carrier registration and compliance are managed in your ${chosen} account. Point your number's inbound webhook at the URL shown.`,
+        },
+        monthlyAllowance: allowance,
+        usedThisMonth: 0,
+        usageMonth: now.slice(0, 7),
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
     await saveSmsConnection(conn);
-    logger.info("SMS number provisioned for workspace", { workspaceId, phoneNumber });
-    return { phoneNumber, alreadyProvisioned: false };
+    logger.info("SMS number provisioned for workspace", {
+      workspaceId,
+      phoneNumber: conn.phoneNumber,
+      provider: chosen,
+    });
+    return { phoneNumber: conn.phoneNumber, alreadyProvisioned: false, webhookUrl, provider: chosen };
   },
 );
 
@@ -558,7 +1158,7 @@ interface SendSmsData {
  * opted-in recipient, and either allowance or credits to cover the segments.
  */
 export const sendSms = onCall(
-  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN] },
+  { region: REGION, secrets: SMS_SECRETS },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
@@ -566,88 +1166,20 @@ export const sendSms = onCall(
     if (!workspaceId || !to || !body) {
       throw new HttpsError("invalid-argument", "workspaceId, to, and body are required.");
     }
-    if (body.length > 1600) {
-      throw new HttpsError("invalid-argument", "Message is too long (max 1600 characters).");
-    }
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
-    await smsPlanAllowance(workspaceId);
-
-    const conn = await ensureAllowanceMonth(workspaceId);
-    if (!conn || conn.status !== "active") {
-      throw new HttpsError("failed-precondition", "SMS is not enabled for this workspace yet.");
-    }
-    const e164 = normalizePhone(to);
-    if (!e164) throw new HttpsError("invalid-argument", "That recipient number is not valid.");
-    const optIn = await getOptIn(workspaceId, e164);
-    if (!optIn?.optedIn) {
-      throw new HttpsError(
-        "failed-precondition",
-        "This contact has not opted in to SMS. Collect consent before sending.",
-      );
-    }
-
-    const segments = calculateSegments(body);
-    let charged: { chargedTo: "allowance" | "credits"; creditsCharged: number } =
-      { chargedTo: "allowance", creditsCharged: 0 };
+    // The shared SMS runner (smsSend.ts) also serves the MCP server.
     try {
-      charged = await chargeForSend(workspaceId, segments, broadcastId ? `sms broadcast ${broadcastId}` : "sms send");
-    } catch (err) {
-      throw new HttpsError(
-        "resource-exhausted",
-        "SMS allowance and credits are exhausted. Top up credits to keep sending.",
+      const smsResult = await sendSmsInternal(workspaceId, to, body, broadcastId);
+      // Gamification: count the handled outbound message (fire-and-forget).
+      recordMessageHandled(workspaceId, uid).catch((err) =>
+        logger.error("Gamification record failed (sms)", { workspaceId, err }),
       );
-    }
-
-    try {
-      const twilioSid = await twilioSendSms(conn.phoneNumber, e164, body);
-      await persistOutboundSms(workspaceId, conn.phoneNumber, e164, body, twilioSid);
-      await logSms({
-        workspaceId,
-        direction: "outbound",
-        to: e164,
-        from: conn.phoneNumber,
-        body,
-        segments,
-        creditsCharged: charged.creditsCharged,
-        twilioSid,
-        status: "sent",
-        broadcastId,
-      });
-      return { ok: true, twilioSid, segments, chargedTo: charged.chargedTo };
+      return smsResult;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Twilio send failed.";
-      // Compensating refund: the workspace was charged before Twilio sent,
-      // and Twilio never billed for this message, so give the charge back.
-      if (charged.chargedTo === "credits" && charged.creditsCharged > 0) {
-        await grantCredits(
-          workspaceId,
-          charged.creditsCharged,
-          "admin_adjust",
-          `refund: twilio send failed (${message})`,
-        ).catch((refundErr) =>
-          logger.error("SMS refund failed", { workspaceId, refundErr }),
-        );
-      } else if (charged.chargedTo === "allowance") {
-        const conn = await getSmsConnection(workspaceId);
-        if (conn) {
-          conn.usedThisMonth = Math.max(0, conn.usedThisMonth - segments);
-          await saveSmsConnection(conn);
-        }
+      if (err instanceof SmsSendError) {
+        throw new HttpsError(err.code, err.message);
       }
-      await logSms({
-        workspaceId,
-        direction: "outbound",
-        to: e164,
-        from: conn.phoneNumber,
-        body,
-        segments,
-        creditsCharged: 0,
-        status: "failed",
-        error: message,
-        broadcastId,
-      });
-      logger.error("SMS send failed", { workspaceId, error: message });
-      throw new HttpsError("internal", message);
+      throw err;
     }
   },
 );
@@ -671,28 +1203,15 @@ interface SendSmsBroadcastData {
  * off instead of re-sending. Per-recipient opt-in is re-checked at send
  * time; returns a delivery report.
  */
-/** Max recipients per broadcast run: sized so sequential sends fit the 540s timeout. */
-const BROADCAST_MAX_RECIPIENTS = 500;
-/** Progress is persisted to the broadcast doc after each chunk (resumable). */
-const BROADCAST_CHUNK_SIZE = 50;
-
-interface BroadcastState {
-  workspaceId: string;
-  recipients: string[];
-  status: "running" | "complete";
-  processed: number;
-  sent: number;
-  failed: number;
-  skipped: number;
-  creditsCharged: number;
-  errors: string[];
-  stoppedEarly: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
+/**
+ * Authenticated callable: broadcast to opted-in numbers. Idempotent on a
+ * client-generated key and resumable in chunks: progress is persisted after
+ * every chunk, so a client retry (or a timeout) resumes where the run left
+ * off instead of re-sending. Per-recipient opt-in is re-checked at send
+ * time; returns a delivery report.
+ */
 export const sendSmsBroadcast = onCall(
-  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN], timeoutSeconds: 540 },
+  { region: REGION, secrets: SMS_SECRETS, timeoutSeconds: 540 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
@@ -700,159 +1219,17 @@ export const sendSmsBroadcast = onCall(
     if (!workspaceId || !body) {
       throw new HttpsError("invalid-argument", "workspaceId and body are required.");
     }
-    if (body.length > 1600) {
-      throw new HttpsError("invalid-argument", "Message is too long (max 1600 characters).");
-    }
     await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
-    await smsPlanAllowance(workspaceId);
-
-    const conn = await ensureAllowanceMonth(workspaceId);
-    if (!conn || conn.status !== "active") {
-      throw new HttpsError("failed-precondition", "SMS is not enabled for this workspace yet.");
+    // The shared broadcast runner (smsBroadcast.ts) also serves the MCP server.
+    try {
+      return await runSmsBroadcastInternal(workspaceId, body, phones, idempotencyKey);
+    } catch (err) {
+      if (err instanceof SmsBroadcastError) {
+        throw new HttpsError(err.code, err.message);
+      }
+      throw err;
     }
 
-    // Idempotency: retries with the same key resume (or replay the stored
-    // result) instead of re-sending the broadcast.
-    const key = (idempotencyKey ?? "").trim() || `bc_${Date.now().toString(36)}`;
-    const bcastRef = db().collection("sms_broadcasts").doc(key);
-    const broadcastId = key;
-
-    let state: BroadcastState;
-    const existing = await bcastRef.get();
-    if (existing.exists) {
-      const d = existing.data() as BroadcastState;
-      if (d.status === "complete") {
-        logger.info("SMS broadcast replayed from idempotency key", { workspaceId, broadcastId });
-        return {
-          ok: true, broadcastId, replayed: true, complete: true,
-          sent: d.sent, failed: d.failed, skipped: d.skipped,
-          creditsCharged: d.creditsCharged, errors: d.errors,
-        };
-      }
-      if (d.workspaceId !== workspaceId) {
-        throw new HttpsError("invalid-argument", "This idempotency key is already in use.");
-      }
-      state = d;
-      logger.info("SMS broadcast resuming", { workspaceId, broadcastId, processed: d.processed });
-    } else {
-      let recipients: string[];
-      if (phones && phones.length > 0) {
-        recipients = [...new Set(phones.map((p) => normalizePhone(p)).filter((p): p is string => !!p))];
-      } else {
-        // Requires the composite index on sms_optins(workspaceId, optedIn);
-        // see firestore.indexes.json.
-        const snap = await db()
-          .collection("sms_optins")
-          .where("workspaceId", "==", workspaceId)
-          .where("optedIn", "==", true)
-          .get();
-        recipients = snap.docs.map((d) => (d.data() as { phone: string }).phone);
-      }
-      if (recipients.length === 0) {
-        throw new HttpsError("failed-precondition", "No opted-in recipients to send to.");
-      }
-      if (recipients.length > BROADCAST_MAX_RECIPIENTS) {
-        throw new HttpsError(
-          "invalid-argument",
-          `Broadcasts are limited to ${BROADCAST_MAX_RECIPIENTS} recipients per run; split larger lists.`,
-        );
-      }
-      const now = new Date().toISOString();
-      state = {
-        workspaceId,
-        recipients,
-        status: "running",
-        processed: 0,
-        sent: 0,
-        failed: 0,
-        skipped: 0,
-        creditsCharged: 0,
-        errors: [],
-        stoppedEarly: false,
-        createdAt: now,
-        updatedAt: now,
-      };
-      try {
-        // create() is atomic: it throws when the key already exists, so a
-        // racing retry falls through to the resume path below.
-        await bcastRef.create(state);
-      } catch (e) {
-        const code = (e as { code?: number }).code;
-        const msg = e instanceof Error ? e.message : String(e);
-        if (code !== 6 && !/already exists/i.test(msg)) throw e;
-        const raced = await bcastRef.get();
-        state = raced.data() as BroadcastState;
-        if (state.workspaceId !== workspaceId) {
-          throw new HttpsError("invalid-argument", "This idempotency key is already in use.");
-        }
-        logger.info("SMS broadcast lost create race; resuming", { workspaceId, broadcastId });
-      }
-    }
-
-    const segments = calculateSegments(body);
-    let stoppedEarly = state.stoppedEarly;
-
-    for (let i = state.processed; i < state.recipients.length; i += BROADCAST_CHUNK_SIZE) {
-      const chunk = state.recipients.slice(i, i + BROADCAST_CHUNK_SIZE);
-      for (const to of chunk) {
-        const optIn = await getOptIn(workspaceId, to);
-        if (!optIn?.optedIn) {
-          state.skipped += 1;
-          continue;
-        }
-        try {
-          const charged = await chargeForSend(workspaceId, segments, `sms broadcast ${broadcastId}`);
-          const twilioSid = await twilioSendSms(conn.phoneNumber, to, body);
-          state.creditsCharged += charged.creditsCharged;
-          state.sent += 1;
-          await persistOutboundSms(workspaceId, conn.phoneNumber, to, body, twilioSid);
-          await logSms({
-            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
-            segments, creditsCharged: charged.creditsCharged, twilioSid, status: "sent", broadcastId,
-          });
-        } catch (err) {
-          state.failed += 1;
-          const message = err instanceof Error ? err.message : "send failed";
-          if (state.errors.length < 5) state.errors.push(`${to}: ${message}`);
-          await logSms({
-            workspaceId, direction: "outbound", to, from: conn.phoneNumber, body,
-            segments, creditsCharged: 0, status: "failed", error: message, broadcastId,
-          });
-          if (message.includes("exhausted") || message.includes("insufficient credits")) {
-            stoppedEarly = true;
-            break; // stop burning through the list when billing is the problem
-          }
-        }
-      }
-      state.processed = Math.min(i + BROADCAST_CHUNK_SIZE, state.recipients.length);
-      state.stoppedEarly = stoppedEarly;
-      state.updatedAt = new Date().toISOString();
-      await bcastRef.update({
-        processed: state.processed,
-        sent: state.sent,
-        failed: state.failed,
-        skipped: state.skipped,
-        creditsCharged: state.creditsCharged,
-        errors: state.errors,
-        stoppedEarly,
-        updatedAt: state.updatedAt,
-      });
-      if (stoppedEarly) break;
-    }
-
-    const complete = !stoppedEarly;
-    if (complete) {
-      await bcastRef.update({ status: "complete", updatedAt: new Date().toISOString() });
-    }
-    logger.info("SMS broadcast finished", {
-      workspaceId, broadcastId,
-      sent: state.sent, failed: state.failed, skipped: state.skipped, complete,
-    });
-    return {
-      ok: true, broadcastId, complete,
-      sent: state.sent, failed: state.failed, skipped: state.skipped,
-      creditsCharged: state.creditsCharged, errors: state.errors,
-    };
   },
 );
 
@@ -880,14 +1257,19 @@ function verifyTwilioSignature(req: {
 }
 
 /**
- * Twilio inbound webhook: replies land in the conversation thread;
+ * Multi-provider inbound SMS webhook: replies land in the conversation thread;
  * STOP/START/HELP keywords are handled for TCPA compliance.
  *
- * Configure as the number's SmsUrl:
+ * Provider detection:
+ * - Twilio: application/x-www-form-urlencoded body with MessageSid
+ * - Telnyx: JSON body with data.event_type (verified via Ed25519 signature)
+ * - Bandwidth: JSON body with type field
+ *
+ * Configure as the number's webhook URL:
  *   https://us-west2-<project>.cloudfunctions.net/smsWebhook?workspace=<workspaceId>
  */
 export const smsWebhook = onRequest(
-  { region: REGION, secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN] },
+  { region: REGION, secrets: SMS_SECRETS },
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method not allowed");
@@ -898,20 +1280,57 @@ export const smsWebhook = onRequest(
       res.status(400).send("Unknown workspace");
       return;
     }
-    if (!verifyTwilioSignature(req as any)) {
-      logger.warn("SMS webhook: invalid Twilio signature", { workspaceId });
-      res.status(403).send("Forbidden");
+
+    const contentType = String(req.headers["content-type"] ?? "");
+    const isFormEncoded = contentType.includes("application/x-www-form-urlencoded");
+    let parsed: ParsedInboundSms | null = null;
+    let isTwilio = false;
+
+    if (isFormEncoded || req.body?.MessageSid) {
+      // ---- Twilio ----
+      isTwilio = true;
+      if (!verifyTwilioSignature(req as any)) {
+        logger.warn("SMS webhook: invalid Twilio signature", { workspaceId });
+        res.status(403).send("Forbidden");
+        return;
+      }
+      const from = normalizePhone(String(req.body.From ?? ""));
+      const to = String(req.body.To ?? "");
+      const body = String(req.body.Body ?? "");
+      const sid = String(req.body.MessageSid ?? "");
+      if (from) {
+        parsed = { from, to, body, externalId: sid || `in_${Date.now()}` };
+      }
+    } else {
+      // ---- Telnyx / Bandwidth (JSON) ----
+      const rawBody =
+        typeof (req as any).rawBody === "string"
+          ? (req as any).rawBody
+          : JSON.stringify(req.body ?? {});
+      const telnyxSig = req.headers["telnyx-signature-ed25519"];
+      const telnyxTs = req.headers["telnyx-timestamp"];
+      if (typeof telnyxSig === "string" && typeof telnyxTs === "string") {
+        if (!verifyTelnyxSignature(rawBody, telnyxSig, telnyxTs)) {
+          logger.warn("SMS webhook: invalid Telnyx signature", { workspaceId });
+          res.status(403).send("Forbidden");
+          return;
+        }
+        parsed = parseTelnyxWebhook(req.body);
+      } else {
+        // Bandwidth (no signature scheme; workspace-scoped URL + id dedup).
+        // For production hardening, configure HTTP basic auth on the
+        // Bandwidth webhook and check it here.
+        parsed = parseTelnyxWebhook(req.body) ?? parseBandwidthWebhook(req.body);
+      }
+    }
+
+    if (!parsed) {
+      // Not a message event we handle (e.g. delivery receipts) — ack quietly.
+      res.status(200).send(isTwilio ? "<Response/>" : "ok");
       return;
     }
 
-    const from = normalizePhone(String(req.body.From ?? ""));
-    const to = String(req.body.To ?? "");
-    const body = String(req.body.Body ?? "");
-    const twilioSid = String(req.body.MessageSid ?? "");
-    if (!from) {
-      res.status(200).send("<Response/>");
-      return;
-    }
+    const { from, to, body, externalId } = parsed;
 
     try {
       // Throttle before doing any paid work: >20 inbound/hour from one
@@ -920,26 +1339,30 @@ export const smsWebhook = onRequest(
       const keyword = classifyKeyword(body);
       const throttle = await checkInboundThrottle(workspaceId, from, keyword);
       if (!throttle.allowed) {
-        res.status(200).set("Content-Type", "text/xml").send("<Response/>");
+        res.status(200).send(isTwilio ? "<Response/>" : "ok");
         return;
       }
 
-      await persistInboundSms(workspaceId, from, to, body, twilioSid || `in_${Date.now()}`);
+      await persistInboundSms(workspaceId, from, to, body, externalId);
       await logSms({
         workspaceId, direction: "inbound", to: from, from: to, body,
-        segments: calculateSegments(body), creditsCharged: 0, twilioSid, status: "received",
+        segments: calculateSegments(body), creditsCharged: 0, messageId: externalId, status: "received",
       });
 
       if (keyword) {
         const conn = await getSmsConnection(workspaceId);
         if (keyword === "opt_out") {
           await setOptIn(workspaceId, from, false, "keyword_stop");
+          // Analytics: STOP unsubscribes the number (fire-and-forget).
+          trackSubscriberRemoved(workspaceId, "sms");
         } else if (keyword === "opt_in") {
           await setOptIn(workspaceId, from, true, "keyword_start");
+          // Analytics: START re-subscribes the number (fire-and-forget).
+          trackAnalytics(workspaceId, { "subsNew.sms": 1 });
         }
         if (conn && throttle.complianceDue) {
           // Compliance replies are carrier-required and free to the workspace.
-          await twilioSendSms(conn.phoneNumber, from, complianceReply(keyword));
+          await sendSmsViaProvider(providerOf(conn), conn.phoneNumber, from, complianceReply(keyword));
           await markComplianceReplySent(workspaceId, from);
         }
       }
@@ -949,7 +1372,7 @@ export const smsWebhook = onRequest(
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    res.status(200).set("Content-Type", "text/xml").send("<Response/>");
+    res.status(200).send(isTwilio ? "<Response/>" : "ok");
   },
 );
 
@@ -1041,6 +1464,12 @@ export const metaOAuthStart = onCall({ region: REGION }, async (request) => {
     logger.info("Instagram OAuth started", { workspaceId, uid });
     return { url };
   }
+  // WhatsApp path: Facebook Login for Business on the main ChatMize app.
+  if (provider === "whatsapp") {
+    const url = await buildWhatsAppLoginUrl(workspaceId, uid, returnTo);
+    logger.info("WhatsApp OAuth started", { workspaceId, uid });
+    return { url };
+  }
   const url = await buildLoginUrl(workspaceId, uid, returnTo);
   logger.info("Meta OAuth started", { workspaceId, uid });
   return { url };
@@ -1052,53 +1481,81 @@ export const metaOAuthCallback = onRequest(
   async (req, res) => {
     const code = req.query["code"];
     const state = req.query["state"];
+    // Capture routing info before the one-time state is consumed, so the
+    // error path below can still route back to the right place afterwards.
+    let isIg = false;
+    let isWa = false;
+    let returnTo: string | undefined;
     try {
       if (typeof code !== "string" || typeof state !== "string") {
         throw new Error("Missing code or state.");
       }
       // Route by state: Instagram Login states live in their own collection.
       if (await isInstagramOAuthState(state)) {
-        const { workspaceId, uid, returnTo } = await consumeInstagramOAuthState(state);
+        isIg = true;
+        const consumed = await consumeInstagramOAuthState(state);
+        returnTo = consumed.returnTo;
         const profile = await exchangeInstagramCode(code);
-        await connectInstagramAccount(workspaceId, uid, profile);
+        await connectInstagramAccount(consumed.workspaceId, consumed.uid, profile);
         logger.info("Instagram OAuth callback ok", {
-          workspaceId,
+          workspaceId: consumed.workspaceId,
           igUserId: profile.id,
           username: profile.username,
         });
         res.redirect(302, instagramAppReturnUrl("success", undefined, returnTo));
         return;
       }
-      const { workspaceId, uid, returnTo } = await consumeOAuthState(state);
+      // WhatsApp states live in their own collection.
+      if (await isWhatsAppOAuthState(state)) {
+        isWa = true;
+        const consumed = await consumeWhatsAppOAuthState(state);
+        returnTo = consumed.returnTo;
+        const result = await exchangeWhatsAppCode(code);
+        await storePendingWhatsAppAccounts(consumed.workspaceId, consumed.uid, result);
+        logger.info("WhatsApp OAuth callback ok", {
+          workspaceId: consumed.workspaceId,
+          accountCount: result.accounts.length,
+        });
+        res.redirect(302, whatsappAppReturnUrl("success", undefined, returnTo));
+        return;
+      }
+      const fb = await consumeOAuthState(state);
+      const workspaceId = fb.workspaceId;
+      const uid = fb.uid;
+      returnTo = fb.returnTo;
       const result = await exchangeCodeForPages(code);
       if (result.pages.length === 0) {
         throw new Error("No Facebook Pages found on this account.");
       }
+      // Reconnect shortcut: if this workspace already had a page connected
+      // and the fresh OAuth grant still includes it, reselect it
+      // automatically so the owner isn't asked to pick the page twice.
+      const priorPageId = await getPriorConnectedPageId(workspaceId);
       await storePendingPages(workspaceId, uid, result);
-      logger.info("Meta OAuth callback ok", {
-        workspaceId,
-        pageCount: result.pages.length,
-        fbUser: result.user.name || result.user.id,
-      });
+      if (priorPageId && result.pages.some((p) => p.id === priorPageId)) {
+        await selectWorkspacePage(workspaceId, uid, priorPageId);
+        logger.info("Meta OAuth reconnect auto-reselected prior page", {
+          workspaceId,
+          pageId: priorPageId,
+        });
+      } else {
+        logger.info("Meta OAuth callback ok", {
+          workspaceId,
+          pageCount: result.pages.length,
+          fbUser: result.user.name || result.user.id,
+        });
+      }
       res.redirect(302, appReturnUrl("success", undefined, returnTo));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed.";
       logger.warn("Meta OAuth callback failed", { message });
-      // On failure the state was already consumed, so returnTo may be unknown;
-      // try to read it without consuming (best effort, never throws).
-      let returnTo: string | undefined;
-      let isIg = false;
-      try {
-        if (typeof state === "string") {
-          isIg = await isInstagramOAuthState(state);
-          const coll = isIg ? "instagram_oauth_states" : "meta_oauth_states";
-          const snap = await db().collection(coll).doc(state).get();
-          returnTo = snap.data()?.returnTo;
-        }
-      } catch { /* ignore */ }
+      // isIg/isWa and returnTo were captured before the one-time state was
+      // consumed, so the error still routes back to the right place afterwards.
       const url = isIg
         ? instagramAppReturnUrl("error", message, returnTo)
-        : appReturnUrl("error", message, returnTo);
+        : isWa
+          ? whatsappAppReturnUrl("error", message, returnTo)
+          : appReturnUrl("error", message, returnTo);
       res.redirect(302, url);
     }
   },
@@ -1108,9 +1565,169 @@ export const metaOAuthCallback = onRequest(
 export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
-  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  const { workspaceId, action, phoneNumberId } = (request.data ?? {}) as {
+    workspaceId?: string;
+    action?: string;
+    phoneNumberId?: string;
+  };
+  // SegMate migration importer (folded in: proxy blocks new function
+  // creation). Super Admin only, not workspace-scoped — routed before the
+  // workspaceId requirement. Logic lives in ./migration so it can split out.
+  if (typeof action === "string" && action.startsWith("migration")) {
+    return handleMigrationAction(action, (request.data ?? {}) as Record<string, unknown>, uid, request.auth?.token);
+  }
+
+  // Build catalog (release notes feed) admin actions (folded in: proxy
+  // blocks new function creation). Super Admin only, not workspace-scoped.
+  // Deploy coordinators call buildCatalogLog after every deploy so each
+  // release appears in the bell dropdown and the catalog page.
+  if (typeof action === "string" && action.startsWith("buildCatalog")) {
+    return handleBuildCatalogAction(action, (request.data ?? {}) as Record<string, unknown>, request.auth?.token);
+  }
   if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
   await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  // Contest engine admin actions (folded in: proxy blocks new function
+  // creation). All contest mutations go through ./contest.js; reads happen
+  // client-side via Firestore security rules.
+  if (typeof action === "string" && action.startsWith("contest")) {
+    return handleContestAdminAction(action, (request.data ?? {}) as Record<string, unknown>, uid);
+  }
+  // Bookings app admin actions (folded in: proxy blocks new function
+  // creation). All booking mutations and reads go through ./bookings.js;
+  // Firestore rules deny client reads/writes on booking collections, and the
+  // settings signing key is stripped before anything crosses to the client.
+  if (typeof action === "string" && action.startsWith("booking")) {
+    const data = (request.data ?? {}) as Record<string, unknown>;
+    if (action === "bookingGetSettings") {
+      const settings = await bookingGetSettings(workspaceId);
+      return { ok: true, settings: clientSafeSettings(settings) };
+    }
+    if (action === "bookingSaveSettings") {
+      const settings = await bookingSaveSettings(workspaceId, (data.settings || {}) as Record<string, unknown>);
+      return { ok: true, settings: clientSafeSettings(settings) };
+    }
+    if (action === "bookingList") {
+      const rows = await bookingListAll(workspaceId, {
+        fromIso: data.fromIso as string | undefined,
+        toIso: data.toIso as string | undefined,
+        status: data.status as "confirmed" | "completed" | "cancelled" | "no_show" | undefined,
+        limit: Number(data.limit) || 50,
+      });
+      return {
+        ok: true,
+        bookings: rows.map((r) => ({
+          id: r.id,
+          name: r.booking.name,
+          email: r.booking.email,
+          phone: r.booking.phone || "",
+          startUtc: r.booking.startUtc.toDate().toISOString(),
+          endUtc: r.booking.endUtc.toDate().toISOString(),
+          status: r.booking.status,
+          source: r.booking.source,
+          remindersSent: r.booking.remindersSent,
+        })),
+      };
+    }
+    if (action === "bookingCreate") {
+      const { id, booking, manageLink } = await bookingCreateOne({
+        workspaceId,
+        name: String(data.name || ""),
+        email: String(data.email || ""),
+        phone: data.phone ? String(data.phone) : undefined,
+        startUtc: String(data.startUtc || ""),
+        contactId: data.contactId ? String(data.contactId) : undefined,
+        source: "admin",
+        notes: data.notes ? String(data.notes) : undefined,
+      });
+      return { ok: true, bookingId: id, manageLink, startUtc: booking.startUtc.toDate().toISOString() };
+    }
+    if (action === "bookingSetStatus") {
+      await bookingSetStatusOne(workspaceId, String(data.bookingId || ""), data.status as "confirmed" | "completed" | "cancelled" | "no_show");
+      return { ok: true };
+    }
+    if (action === "bookingCancel") {
+      await bookingCancelOne(workspaceId, String(data.bookingId || ""), "cancelled by workspace admin");
+      return { ok: true };
+    }
+    throw new HttpsError("invalid-argument", `Unknown booking action: ${action}`);
+  }
+  // WhatsApp actions (folded in: proxy blocks new function creation)
+  if (action === "listWhatsAppAccounts") {
+    return listPendingWhatsAppAccounts(workspaceId);
+  }
+  if (action === "selectWhatsAppNumber") {
+    if (!phoneNumberId) throw new HttpsError("invalid-argument", "phoneNumberId is required.");
+    const result = await selectWhatsAppNumber(workspaceId, uid, phoneNumberId);
+    logger.info("WhatsApp number connected", { workspaceId, phoneNumberId: result.phoneNumberId });
+    return result;
+  }
+  // BigMarker actions (folded in: proxy blocks new function creation)
+  if (typeof action === "string" && action.startsWith("bigmarker")) {
+    return handleBigmarkerAction(action, (request.data ?? {}) as Record<string, unknown>, workspaceId);
+  }
+  // Website Overlays SDK actions (folded in: proxy blocks new function
+  // creation; logic lives in ./overlays so it can split out later).
+  if (action === "overlayList") {
+    return overlayList(workspaceId);
+  }
+  // Survey builder admin actions (folded in: proxy blocks new function
+  // creation; logic lives in ./surveys so it can split out later).
+  if (typeof action === "string" && action.startsWith("survey")) {
+    return handleSurveyAdminAction(action, (request.data ?? {}) as Record<string, unknown>, uid);
+  }
+  if (action === "overlaySave") {
+    return overlaySave(workspaceId, uid, (request.data as Record<string, unknown>).overlay);
+  }
+  if (action === "overlayDelete") {
+    return overlayDelete(workspaceId, (request.data as Record<string, unknown>).overlayId);
+  }
+  if (action === "overlaySetStatus") {
+    const data = request.data as Record<string, unknown>;
+    return overlaySetStatus(workspaceId, data.overlayId, data.status);
+  }
+  // Gamification actions (folded in: proxy blocks new function creation)
+  if (action === "gamificationGet") {
+    return getGamificationState(workspaceId, uid);
+  }
+  if (action === "gamificationEvent") {
+    const { event } = (request.data ?? {}) as { event?: string };
+    if (event !== "flow_published" && event !== "broadcast_sent") {
+      throw new HttpsError("invalid-argument", "event must be flow_published or broadcast_sent.");
+    }
+    const newBadges = await recordClientEvent(workspaceId, uid, event);
+    return { ok: true, newBadges };
+  }
+  if (action === "logRevenue") {
+    const { amountDollars, note, source, flowId, flowName, campaignId, campaignName } =
+      (request.data ?? {}) as {
+        amountDollars?: number;
+        note?: string;
+        source?: string;
+        flowId?: string;
+        flowName?: string;
+        campaignId?: string;
+        campaignName?: string;
+      };
+    if (!Number.isFinite(amountDollars) || (amountDollars as number) <= 0) {
+      throw new HttpsError("invalid-argument", "A positive dollar amount is required.");
+    }
+    const result = await logGamificationRevenue(
+      workspaceId,
+      uid,
+      Math.round((amountDollars as number) * 100),
+      note ?? "",
+      source === "flow_action" ? "flow_action" : "manual",
+      { flowId, flowName, campaignId, campaignName },
+    );
+    return { ok: true, ...result };
+  }
+  if (action === "getReferralCode") {
+    return { code: await getReferralCode(uid) };
+  }
+  if (action === "applyReferral") {
+    const { code } = (request.data ?? {}) as { code?: string };
+    return applyReferral(uid, code ?? "", workspaceId);
+  }
   const snap = await db()
     .collection("workspaces")
     .doc(workspaceId)
@@ -1130,9 +1747,11 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   if (
     conn.status === "connected" &&
     conn.pageId &&
-    (conn.instagram === undefined || conn.pagePictureUrl === undefined)
+    (conn.instagram === undefined || conn.pagePictureUrl == null)
   ) {
-    // Backfill for pages connected before social-profile detection shipped.
+    // Backfill for pages connected before social-profile detection shipped,
+    // or where the picture lookup failed at connect time (a null picture is
+    // retried; a page with genuinely no picture just resolves null again).
     const token = await resolvePageToken(workspaceId, "");
     if (token) {
       const social = await getPageSocialProfile(conn.pageId, token);
@@ -1144,12 +1763,17 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   return {
     connected: conn.status === "connected",
     pending: conn.status === "pending",
+    /** The page token died (Meta error 190). Nothing auto-revives it; the
+     * owner must reconnect. Surfaces as a "session expired" flag in Settings. */
+    tokenInvalid: conn.status === "token_invalid",
     pageId: conn.pageId ?? null,
     pageName: conn.pageName ?? null,
     pagePictureUrl,
     instagram,
     // IG-only anchor (Instagram Login, no Facebook Page required).
     instagramOnly: await getInstagramConnection(workspaceId),
+    // WhatsApp anchor (Facebook Login for Business, customer's own number).
+    whatsappOnly: await getWhatsAppConnection(workspaceId),
   };
 });
 
@@ -1197,6 +1821,361 @@ export const metaOAuthSelectPage = onCall({ region: REGION }, async (request) =>
   logger.info("Meta page connected", { workspaceId, pageId: result.pageId });
   return result;
 });
+
+// ---------------------------------------------------------------------------
+// WhatsApp connection (customer's own number)
+// ---------------------------------------------------------------------------
+
+/** WhatsApp Business Accounts awaiting number selection (no tokens reach the client). */
+export const whatsappOAuthListAccounts = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  return listPendingWhatsAppAccounts(workspaceId);
+});
+
+/** Persist the chosen WhatsApp phone number for this workspace. */
+export const whatsappOAuthSelectNumber = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, phoneNumberId } = (request.data ?? {}) as {
+    workspaceId?: string;
+    phoneNumberId?: string;
+  };
+  if (!workspaceId || !phoneNumberId) {
+    throw new HttpsError("invalid-argument", "workspaceId and phoneNumberId are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const result = await selectWhatsAppNumber(workspaceId, uid, phoneNumberId);
+  logger.info("WhatsApp number connected", { workspaceId, phoneNumberId: result.phoneNumberId });
+  return result;
+});
+
+// ---------------------------------------------------------------------------
+// Google Sheets integration (OAuth + row append / read). One onCall
+// dispatcher keeps the function count small; the OAuth callback rides a
+// public onRequest behind the /googleOAuthCallback hosting rewrite.
+// ---------------------------------------------------------------------------
+
+/**
+ * Google Sheets dispatcher. Actions: start, status, disconnect,
+ * setSpreadsheet, listTabs, appendRow, readRows.
+ */
+export const googleSheets = onCall(
+  { region: REGION, secrets: [GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET] },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    const { workspaceId, action, ...rest } = (request.data ?? {}) as {
+      workspaceId?: string;
+      action?: string;
+      [key: string]: unknown;
+    };
+    if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+    await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+    switch (action) {
+      case "start": {
+        const url = await buildGoogleSheetsLoginUrl(workspaceId, uid, rest.returnTo);
+        logger.info("Google Sheets OAuth started", { workspaceId, uid });
+        return { url };
+      }
+      case "status":
+        return getGoogleSheetsStatus(workspaceId);
+      case "disconnect":
+        return disconnectGoogleSheets(workspaceId);
+      case "setSpreadsheet": {
+        if (typeof rest.spreadsheet !== "string" || !rest.spreadsheet.trim()) {
+          throw new HttpsError("invalid-argument", "Paste a Google Sheet link or id.");
+        }
+        return setGoogleSheetsSpreadsheet(workspaceId, rest.spreadsheet);
+      }
+      case "listTabs": {
+        const spreadsheetId = await resolveSpreadsheetId(
+          workspaceId,
+          typeof rest.spreadsheetId === "string" ? rest.spreadsheetId : undefined,
+        );
+        return { tabs: await listSheetsTabs(workspaceId, spreadsheetId) };
+      }
+      case "appendRow": {
+        const { tab, values, spreadsheetId } = rest as {
+          tab?: string;
+          values?: Record<string, string>;
+          spreadsheetId?: string;
+        };
+        if (!tab || typeof values !== "object" || values === null) {
+          throw new HttpsError("invalid-argument", "tab and values are required.");
+        }
+        return appendSheetsRow(workspaceId, {
+          tab,
+          values,
+          spreadsheetId: typeof spreadsheetId === "string" ? spreadsheetId : undefined,
+        });
+      }
+      case "readRows": {
+        const { tab, matchHeader, matchValue, limit, spreadsheetId } = rest as {
+          tab?: string;
+          matchHeader?: string;
+          matchValue?: string;
+          limit?: number;
+          spreadsheetId?: string;
+        };
+        if (!tab) throw new HttpsError("invalid-argument", "tab is required.");
+        return readSheetsRows(workspaceId, {
+          tab,
+          matchHeader: typeof matchHeader === "string" ? matchHeader : undefined,
+          matchValue: typeof matchValue === "string" ? matchValue : undefined,
+          limit: typeof limit === "number" ? limit : undefined,
+          spreadsheetId: typeof spreadsheetId === "string" ? spreadsheetId : undefined,
+        });
+      }
+      default:
+        throw new HttpsError("invalid-argument", "Unknown Google Sheets action.");
+    }
+  },
+);
+
+/** Step 2: Google redirects here with ?code&state. Public; state is single-use. */
+export const googleOAuthCallback = onRequest(
+  { region: REGION, secrets: [GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET] },
+  async (req, res) => {
+    const code = req.query["code"];
+    const state = req.query["state"];
+    let returnTo: string | undefined;
+    try {
+      if (typeof code !== "string" || typeof state !== "string") {
+        throw new Error("Missing code or state.");
+      }
+      const consumed = await consumeGoogleSheetsOAuthState(state);
+      returnTo = consumed.returnTo;
+      const tokens = await exchangeGoogleSheetsCode(code);
+      const { email } = await connectGoogleSheetsAccount(consumed.workspaceId, consumed.uid, tokens);
+      logger.info("Google Sheets OAuth callback ok", {
+        workspaceId: consumed.workspaceId,
+        email,
+      });
+      res.redirect(302, googleSheetsReturnUrl("success", undefined, returnTo));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Login failed.";
+      logger.warn("Google Sheets OAuth callback failed", { message });
+      res.redirect(302, googleSheetsReturnUrl("error", message, returnTo));
+    }
+  },
+);
+
+/**
+ * Phase 1 SES notification triggers (see notifications.ts): owner reconnect
+ * emails on token invalidation, and human handoff emails.
+ */
+export { onIntegrationInvalidated, onHandoffCreated } from "./notifications";
+
+// ---------------------------------------------------------------------------
+// ChatMize MCP API server (v1, BETA) — "bring your own bots".
+//
+// Standard MCP over Streamable HTTP, authenticated with per-workspace API
+// keys (one key per workspace, managed in the agency dashboard). Stateless
+// transport: scales to zero between calls. OAuth-based auth is planned
+// for a later version.
+// ---------------------------------------------------------------------------
+export const mcpApi = onRequest(
+  {
+    region: REGION,
+    timeoutSeconds: 540,
+    secrets: [
+      WHATSAPP_TOKEN_DEFAULT,
+      WHATSAPP_PHONE_NUMBER_ID,
+      META_PAGE_TOKEN_DEFAULT,
+      META_APP_SECRET,
+      ...SMS_SECRETS,
+    ],
+  },
+  async (req, res) => {
+    const { handleMcpRequest } = await import("./mcp/handler.js");
+    await handleMcpRequest(req, res);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Knowledge Base (Phase 1: Builder MVP)
+// ---------------------------------------------------------------------------
+
+/** Publish a KB draft: validates, snapshots a revision, marks published. */
+export const publishKbArticle = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const { workspaceId, articleId, note } = (request.data ?? {}) as PublishKbInput;
+  if (!workspaceId || !articleId) {
+    throw new HttpsError("invalid-argument", "workspaceId and articleId are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  return publishKbArticleHandler(workspaceId, articleId, uid, note);
+});
+
+/** Send a published KB article back to draft. Revisions are kept as history. */
+export const unpublishKbArticle = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const { workspaceId, articleId } = (request.data ?? {}) as PublishKbInput;
+  if (!workspaceId || !articleId) {
+    throw new HttpsError("invalid-argument", "workspaceId and articleId are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  return unpublishKbArticleHandler(workspaceId, articleId);
+});
+
+/** Record a KB article view or a helpful / not helpful vote. */
+export const kbFeedback = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError("unauthenticated", "Sign in required.");
+  }
+  const { workspaceId, articleId, kind } = (request.data ?? {}) as {
+    workspaceId: string;
+    articleId: string;
+    kind: KbFeedbackKind;
+  };
+  if (!workspaceId || !articleId || !kind) {
+    throw new HttpsError("invalid-argument", "workspaceId, articleId, and kind are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  return kbFeedbackHandler(workspaceId, articleId, kind);
+});
+
+// ---------------------------------------------------------------------------
+// Shopify integration: OAuth connect, webhook receiver, abandoned cart sweep
+// ---------------------------------------------------------------------------
+
+/** Step 1: validate the shop domain and return the Shopify authorize URL. */
+export const shopifyOAuthStart = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, shop, returnTo } = (request.data ?? {}) as {
+    workspaceId?: string;
+    shop?: string;
+    returnTo?: string;
+  };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  const shopDomain = normalizeShopDomain(shop ?? "");
+  if (!shopDomain) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Enter your store domain like mystore.myshopify.com.",
+    );
+  }
+  const url = await buildShopifyLoginUrl(workspaceId, uid, shopDomain, returnTo);
+  logger.info("Shopify OAuth started", { workspaceId, shop: shopDomain });
+  return { url };
+});
+
+/** Step 2: Shopify redirects here with ?code&state. Public; state is single-use. */
+export const shopifyOAuthCallback = onRequest(
+  { region: REGION, secrets: [SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET] },
+  async (req, res) => {
+    const code = req.query["code"];
+    const state = req.query["state"];
+    let returnTo: string | undefined;
+    try {
+      if (typeof code !== "string" || typeof state !== "string") {
+        throw new Error("Missing code or state.");
+      }
+      const consumed = await consumeShopifyOAuthState(state);
+      returnTo = consumed.returnTo;
+      const token = await exchangeShopifyCode(consumed.shop, code);
+      const info = await fetchShopInfo(consumed.shop, token);
+      await connectShopifyStore(consumed.workspaceId, consumed.uid, consumed.shop, token, info);
+      logger.info("Shopify OAuth callback ok", {
+        workspaceId: consumed.workspaceId,
+        shop: consumed.shop,
+      });
+      res.redirect(302, shopifyAppReturnUrl("success", undefined, returnTo));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Shopify login failed.";
+      logger.warn("Shopify OAuth callback failed", { message });
+      res.redirect(302, shopifyAppReturnUrl("error", message, returnTo));
+    }
+  },
+);
+
+/** Connection status + settings for the client (no tokens leave the server). */
+export const shopifyOAuthStatus = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, action, abandonedCartMinutes } = (request.data ?? {}) as {
+    workspaceId?: string;
+    action?: string;
+    abandonedCartMinutes?: number;
+  };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  if (action === "updateSettings") {
+    await updateShopifySettings(workspaceId, { abandonedCartMinutes });
+    logger.info("Shopify settings updated", { workspaceId, abandonedCartMinutes });
+    return getShopifyConnection(workspaceId);
+  }
+  if (action === "disconnect") {
+    await disconnectShopify(workspaceId);
+    logger.info("Shopify disconnected by owner", { workspaceId });
+    return getShopifyConnection(workspaceId);
+  }
+  return getShopifyConnection(workspaceId);
+});
+
+/**
+ * Public webhook receiver. Verifies the Shopify HMAC signature, then routes
+ * the event. The 200 goes back immediately; routing failures are logged and
+ * never retried by us (Shopify redelivers on non-2xx, deduped by event id).
+ */
+export const shopifyWebhook = onRequest(
+  { region: REGION, secrets: [SHOPIFY_CLIENT_SECRET] },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.sendStatus(405);
+      return;
+    }
+    const rawBody: Buffer =
+      (req as unknown as { rawBody?: Buffer }).rawBody ?? Buffer.from("");
+    const topic = req.header("x-shopify-topic") ?? "";
+    const shop = req.header("x-shopify-shop-domain") ?? "";
+    const signature = req.header("x-shopify-hmac-sha256");
+    if (!verifyShopifyHmac(rawBody, signature, SHOPIFY_CLIENT_SECRET.value())) {
+      logger.warn("Shopify webhook rejected: bad signature", { shop, topic });
+      res.sendStatus(401);
+      return;
+    }
+    res.sendStatus(200);
+    // Process after the 200 so Shopify never waits on us.
+    try {
+      const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;
+      await routeShopifyWebhook(shop, topic, payload);
+    } catch (err) {
+      logger.error("Shopify webhook payload handling failed", {
+        shop,
+        topic,
+        error: err instanceof Error ? err.message : "unknown",
+      });
+    }
+  },
+);
+
+/** Hourly: turn stale open checkouts into abandoned cart events. */
+export const shopifyAbandonedCartSweep = onSchedule(
+  { region: REGION, schedule: "every 60 minutes" },
+  async () => {
+    try {
+      await sweepAbandonedCheckouts();
+    } catch (err) {
+      logger.error("Shopify abandoned cart sweep failed", {
+        error: err instanceof Error ? err.message : "unknown",
+      });
+    }
+  },
+);
 
 /** Web push notification channel (FCM). See functions/src/push.ts. */
 export {

@@ -311,6 +311,8 @@ export const NurtureSimulator: React.FC<NurtureSimulatorProps> = ({
                           {tool.requireNameCapture && (
                             <input 
                               type="text" 
+                              name="name"
+                              autoComplete="name"
                               placeholder="Your Name"
                               value={leadName}
                               onChange={(e) => setLeadName(e.target.value)}
@@ -320,6 +322,9 @@ export const NurtureSimulator: React.FC<NurtureSimulatorProps> = ({
                           <input 
                             type="email" 
                             required
+                            name="email"
+                            autoComplete="email"
+                            inputMode="email"
                             placeholder="Email address"
                             value={leadEmail}
                             onChange={(e) => setLeadEmail(e.target.value)}

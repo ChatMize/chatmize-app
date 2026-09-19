@@ -2,6 +2,7 @@ import { Channel } from "./store";
 
 const GRAPH_VERSION = "v21.0";
 const GRAPH_BASE = `https://graph.facebook.com/${GRAPH_VERSION}`;
+const IG_GRAPH_BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
 
 export interface SendResult {
   ok: boolean;
@@ -49,15 +50,72 @@ async function postJson(
 }
 
 /** Send a Messenger message via the page access token. */
+export interface QuickReply {
+  content_type: "text";
+  title: string;
+  payload: string;
+}
+
+/**
+ * Sanitize raw quick reply titles into Meta quick_reply objects.
+ * Meta limits: max 13 replies, 20 chars per title. Quick replies are a
+ * Meta-channel feature and must ride on a text message (Messenger docs:
+ * "add the quick_replies array to a text message"; Instagram docs:
+ * "Quick replies only support plain text").
+ */
+export function toQuickReplies(titles: string[] | undefined | null): QuickReply[] {
+  if (!titles || titles.length === 0) return [];
+  return titles
+    .map((t) => (typeof t === "string" ? t.trim() : ""))
+    .filter((t) => t.length > 0)
+    .slice(0, 13)
+    .map((t) => ({
+      content_type: "text" as const,
+      title: t.slice(0, 20),
+      payload: t.slice(0, 1000),
+    }));
+}
+
+/** Send a Messenger text message via the page access token. */
 export function sendMessengerMessage(
   pageAccessToken: string,
   psid: string,
   text: string,
+  quickReplies?: QuickReply[],
 ): Promise<SendResult> {
   return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
     recipient: { id: psid },
     messaging_type: "RESPONSE",
-    message: { text },
+    message: {
+      text,
+      ...(quickReplies && quickReplies.length > 0 ? { quick_replies: quickReplies } : {}),
+    },
+  });
+}
+
+/** Attachment types Meta accepts for Messenger and Instagram DMs. */
+export type MediaAttachmentType = "video" | "audio" | "image";
+
+/**
+ * Send a Messenger media attachment (video, audio, or image) via the page
+ * access token. The URL must be publicly fetchable by Meta's servers —
+ * Firebase Storage download URLs (with their unguessable token) qualify.
+ */
+export function sendMessengerMedia(
+  pageAccessToken: string,
+  psid: string,
+  mediaUrl: string,
+  mediaType: MediaAttachmentType,
+): Promise<SendResult> {
+  return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
+    recipient: { id: psid },
+    messaging_type: "RESPONSE",
+    message: {
+      attachment: {
+        type: mediaType,
+        payload: { url: mediaUrl, is_reusable: true },
+      },
+    },
   });
 }
 
@@ -66,10 +124,147 @@ export function sendInstagramMessage(
   pageAccessToken: string,
   igsid: string,
   text: string,
+  quickReplies?: QuickReply[],
 ): Promise<SendResult> {
   return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
     recipient: { id: igsid },
-    message: { text },
+    message: {
+      text,
+      ...(quickReplies && quickReplies.length > 0 ? { quick_replies: quickReplies } : {}),
+    },
+  });
+}
+
+/**
+ * Send an Instagram media attachment (video or audio, per Meta's Messaging
+ * API) via the linked page access token on graph.facebook.com.
+ */
+export function sendInstagramMedia(
+  pageAccessToken: string,
+  igsid: string,
+  mediaUrl: string,
+  mediaType: MediaAttachmentType,
+): Promise<SendResult> {
+  return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
+    recipient: { id: igsid },
+    message: {
+      attachment: {
+        type: mediaType,
+        payload: { url: mediaUrl, is_reusable: true },
+      },
+    },
+  });
+}
+
+/**
+ * Send an Instagram DM via an Instagram Login (IG-only) user token.
+ * IGSIDs are scoped to the app that received them, so a conversation that
+ * arrived through the standalone Instagram connection can only be answered
+ * with that connection's token. Never log the token.
+ */
+export function sendInstagramDirectMessage(
+  igAccessToken: string,
+  igsid: string,
+  text: string,
+  quickReplies?: QuickReply[],
+): Promise<SendResult> {
+  return postJson(`${IG_GRAPH_BASE}/me/messages`, igAccessToken, {
+    recipient: { id: igsid },
+    message: {
+      text,
+      ...(quickReplies && quickReplies.length > 0 ? { quick_replies: quickReplies } : {}),
+    },
+  });
+}
+
+/**
+ * Send an Instagram media attachment via an Instagram Login (IG-only) user
+ * token on graph.instagram.com. Same attachment shape as the page-anchored
+ * path; IGSIDs stay scoped to the connection that received them.
+ */
+export function sendInstagramDirectMedia(
+  igAccessToken: string,
+  igsid: string,
+  mediaUrl: string,
+  mediaType: MediaAttachmentType,
+): Promise<SendResult> {
+  return postJson(`${IG_GRAPH_BASE}/me/messages`, igAccessToken, {
+    recipient: { id: igsid },
+    message: {
+      attachment: {
+        type: mediaType,
+        payload: { url: mediaUrl, is_reusable: true },
+      },
+    },
+  });
+}
+
+/** Contact fields a BotMaps contact-capture block can collect. */
+export type ContactCaptureField = "phone" | "email";
+
+/**
+ * Build the one-tap quick replies for a contact capture.
+ * Meta fills the button with the phone/email from the user's own profile;
+ * tapping it sends the value back in message.quick_reply.payload.
+ * Per Meta's docs these carry no title or payload of their own.
+ */
+function contactCaptureQuickReplies(
+  fields: ContactCaptureField[],
+): Array<Record<string, string>> {
+  const out: Array<Record<string, string>> = [];
+  if (fields.includes("phone")) out.push({ content_type: "user_phone_number" });
+  if (fields.includes("email")) out.push({ content_type: "user_email" });
+  return out;
+}
+
+/**
+ * Send a Messenger text message with one-tap phone/email quick replies.
+ * Quick replies MUST ride on text (Meta rule) — never on an attachment.
+ * If the user's profile has no phone/email, Meta simply hides that chip.
+ */
+export function sendMessengerContactCapture(
+  pageAccessToken: string,
+  psid: string,
+  text: string,
+  fields: ContactCaptureField[],
+): Promise<SendResult> {
+  return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
+    recipient: { id: psid },
+    messaging_type: "RESPONSE",
+    message: { text, quick_replies: contactCaptureQuickReplies(fields) },
+  });
+}
+
+/**
+ * Send an Instagram DM with one-tap phone/email quick replies via the
+ * linked page access token. Meta's Instagram Messaging docs confirm the
+ * user_phone_number quick reply on Instagram; email rides the same shape.
+ */
+export function sendInstagramContactCapture(
+  pageAccessToken: string,
+  igsid: string,
+  text: string,
+  fields: ContactCaptureField[],
+): Promise<SendResult> {
+  return postJson(`${GRAPH_BASE}/me/messages`, pageAccessToken, {
+    recipient: { id: igsid },
+    message: { text, quick_replies: contactCaptureQuickReplies(fields) },
+  });
+}
+
+/**
+ * Send an Instagram DM with one-tap phone/email quick replies via an
+ * Instagram Login (IG-only) user token on graph.instagram.com.
+ */
+export function sendInstagramDirectContactCapture(
+  igAccessToken: string,
+  igsid: string,
+  text: string,
+  fields: ContactCaptureField[],
+): Promise<SendResult> {
+  return postJson(`${IG_GRAPH_BASE}/me/messages`, igAccessToken, {
+    recipient: { id: igsid },
+    message: { text, quick_replies: contactCaptureQuickReplies(fields) },
   });
 }
 

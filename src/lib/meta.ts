@@ -6,6 +6,9 @@ const functions = getFunctions(getApp(), 'us-west2');
 export interface MetaOAuthStatus {
   connected: boolean;
   pending: boolean;
+  /** True when the stored page token was killed by Meta (error 190). The owner
+   * must reconnect; shows as a "session expired" flag in Settings. */
+  tokenInvalid: boolean;
   pageId: string | null;
   pageName: string | null;
   /** Facebook Page profile picture URL; null when unavailable. */
@@ -19,6 +22,15 @@ export interface MetaOAuthStatus {
     username: string | null;
     pictureUrl: string | null;
     expiresAtMs: number | null;
+  };
+  /** WhatsApp anchor (customer's own number). Present when the backend ships it. */
+  whatsappOnly?: {
+    connected: boolean;
+    pending: boolean;
+    phoneNumberId: string | null;
+    wabaId: string | null;
+    displayName: string | null;
+    verifiedName: string | null;
   };
 }
 

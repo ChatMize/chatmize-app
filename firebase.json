@@ -25,19 +25,41 @@
         {
           "source": "/",
           "headers": [
-            { "key": "Cache-Control", "value": "no-store, must-revalidate" }
+            {
+              "key": "Cache-Control",
+              "value": "no-store, must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/overlays.js",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=3600, must-revalidate"
+            },
+            {
+              "key": "Access-Control-Allow-Origin",
+              "value": "*"
+            }
           ]
         },
         {
           "source": "**/*.html",
           "headers": [
-            { "key": "Cache-Control", "value": "no-store, must-revalidate" }
+            {
+              "key": "Cache-Control",
+              "value": "no-store, must-revalidate"
+            }
           ]
         },
         {
           "source": "/assets/**",
           "headers": [
-            { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
           ]
         }
       ],
@@ -50,7 +72,56 @@
           }
         },
         {
+          "source": "/shopifyOAuthCallback",
+          "function": {
+            "functionId": "shopifyOAuthCallback",
+            "region": "us-west2"
+          }
+        },
+        {
+          "source": "/shopifyWebhook",
+          "function": {
+            "functionId": "shopifyWebhook",
+            "region": "us-west2"
+          }
+        },
+        {
+          "source": "/googleOAuthCallback",
+          "function": {
+            "functionId": "googleOAuthCallback",
+            "region": "us-west2"
+          }
+        },
+        {
+          "source": "/__overlay/track",
+          "function": {
+            "functionId": "metaWebhook",
+            "region": "us-west2"
+          }
+        },
+        {
           "source": "/metawebhook",
+          "function": {
+            "functionId": "metaWebhook",
+            "region": "us-west2"
+          }
+        },
+        {
+          "source": "/contest-api",
+          "function": {
+            "functionId": "metaWebhook",
+            "region": "us-west2"
+          }
+        },
+        {
+          "source": "/survey-api",
+          "function": {
+            "functionId": "metaWebhook",
+            "region": "us-west2"
+          }
+        },
+        {
+          "source": "/booking-api",
           "function": {
             "functionId": "metaWebhook",
             "region": "us-west2"
@@ -69,7 +140,10 @@
         {
           "source": "/index.html",
           "headers": [
-            { "key": "Cache-Control", "value": "no-store, must-revalidate" }
+            {
+              "key": "Cache-Control",
+              "value": "no-store, must-revalidate"
+            }
           ]
         }
       ],
@@ -89,6 +163,26 @@
         {
           "source": "**",
           "destination": "/index.html"
+        }
+      ]
+    },
+    {
+      "target": "links",
+      "public": "links-dist",
+      "redirects": [
+        {
+          "source": "/",
+          "destination": "https://chatmize.com",
+          "type": 301
+        }
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "function": {
+            "functionId": "metaWebhook",
+            "region": "us-west2"
+          }
         }
       ]
     }

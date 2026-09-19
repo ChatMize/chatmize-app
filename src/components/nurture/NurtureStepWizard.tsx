@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from '../emoji';
 import { 
   Sparkles, 
   MessageSquare, 
@@ -38,6 +39,7 @@ import {
   NurturePosition, 
   NurturePlan 
 } from '../../types/nurture';
+import { ImageUpload } from '../ImageUpload';
 
 export interface NurtureStepWizardProps {
   initialArchetype?: NurtureToolType;
@@ -307,6 +309,7 @@ export const NurtureStepWizard: React.FC<NurtureStepWizardProps> = ({
   const [currentStep, setCurrentStep] = useState<number>(editingTool ? 2 : 1);
   const [copiedEmbed, setCopiedEmbed] = useState<boolean>(false);
   const [newReplyLabel, setNewReplyLabel] = useState<string>('');
+  const wizardEmoji = useEmojiTarget<HTMLTextAreaElement>();
 
   // Initial tool state
   const [form, setForm] = useState<NurtureTool>(() => {
@@ -739,7 +742,7 @@ export const NurtureStepWizard: React.FC<NurtureStepWizardProps> = ({
                   <Globe className="w-3.5 h-3.5 text-blue-400" />
                   Whitelisted Domains (Comma Separated)
                 </label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={form.whitelistedDomains.join(', ')}
                   onChange={(e) => setForm({ 
@@ -799,21 +802,24 @@ export const NurtureStepWizard: React.FC<NurtureStepWizardProps> = ({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-300">Avatar Image URL</label>
-                  <input
-                    type="text"
+                  <ImageUpload
+                    label="Avatar Image"
                     value={form.avatarUrl}
-                    onChange={(e) => setForm({ ...form, avatarUrl: e.target.value })}
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400 text-ellipsis"
+                    onChange={(url) => setForm({ ...form, avatarUrl: url })}
+                    accentClass="focus-within:border-cyan-400"
                   />
                 </div>
               </div>
 
               {/* Welcome Message */}
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-slate-300">First Bot Greeting Message</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300">First Bot Greeting Message</label>
+                  <EmojiPickerButton onPick={(e) => wizardEmoji.insert(e, form.welcomeMessage, (v) => setForm({ ...form, welcomeMessage: v }))} placement="down" />
+                </div>
                 <textarea
                   rows={2}
+                  ref={wizardEmoji.ref}
                   value={form.welcomeMessage}
                   onChange={(e) => setForm({ ...form, welcomeMessage: e.target.value })}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-400"

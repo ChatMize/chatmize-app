@@ -7,7 +7,18 @@ interface MetaEntry {
     sender?: { id?: string };
     recipient?: { id?: string };
     timestamp?: number;
-    message?: { mid?: string; text?: string; is_echo?: boolean };
+    message?: {
+      mid?: string;
+      text?: string;
+      is_echo?: boolean;
+      // One-tap quick replies (user_phone_number / user_email): Meta puts
+      // the captured value in quick_reply.payload.
+      quick_reply?: { payload?: string };
+    };
+    // Button / persistent-menu taps arrive as postback events.
+    postback?: { title?: string; payload?: string };
+    // Read receipts (needs the message_reads webhook field subscribed).
+    read?: { watermark?: number };
   }>;
   changes?: Array<{
     field?: string;
@@ -16,6 +27,23 @@ interface MetaEntry {
       id?: string;
       text?: string;
       timestamp?: string;
+      // WhatsApp Cloud API: value.messages[] + value.metadata.phone_number_id
+      metadata?: { phone_number_id?: string; display_phone_number?: string };
+      messages?: Array<{
+        from?: string;
+        id?: string;
+        timestamp?: string;
+        type?: string;
+        text?: { body?: string };
+      }>;
+      // WhatsApp delivery lifecycle: value.statuses[] with status
+      // sent | delivered | read | failed and the recipient phone.
+      statuses?: Array<{
+        id?: string;
+        status?: string;
+        timestamp?: string;
+        recipient_id?: string;
+      }>;
     };
   }>;
   messages?: Array<{
@@ -25,6 +53,20 @@ interface MetaEntry {
     type?: string;
     text?: { body?: string };
   }>;
+}
+
+export interface NormalizedReadReceipt {
+  channel: "messenger" | "instagram";
+  senderId: string;
+  watermarkMs: number;
+}
+
+export interface NormalizedStatus {
+  channel: "whatsapp";
+  /** sent | delivered | read | failed */
+  status: string;
+  recipientId: string;
+  messageId: string;
 }
 
 /**
@@ -44,6 +86,21 @@ export function normalizeEntry(entry: MetaEntry, object: string): NormalizedMess
     // back in the inbox as a new inbound message.
     if (m.message?.is_echo) continue;
     const senderId = m.sender?.id;
+    // Button / persistent-menu taps: track as clicks, not text messages.
+    // Postbacks carry no mid, so synthesize a stable external id.
+    if (m.postback && senderId) {
+      out.push({
+        channel,
+        senderId,
+        recipientId: m.recipient?.id ?? "",
+        externalId: `postback_${m.timestamp ?? Date.now()}_${senderId}`,
+        text: m.postback.title ?? "",
+        postbackPayload: m.postback.payload,
+        timestampMs: m.timestamp ?? Date.now(),
+        raw: m,
+      });
+      continue;
+    }
     const mid = m.message?.mid;
     if (!senderId || !mid) continue;
     out.push({
@@ -52,6 +109,7 @@ export function normalizeEntry(entry: MetaEntry, object: string): NormalizedMess
       recipientId: m.recipient?.id ?? "",
       externalId: mid,
       text: m.message?.text,
+      quickReplyPayload: m.message?.quick_reply?.payload,
       timestampMs: m.timestamp ?? Date.now(),
       raw: m,
     });
@@ -60,6 +118,24 @@ export function normalizeEntry(entry: MetaEntry, object: string): NormalizedMess
   for (const c of entry.changes ?? []) {
     if (c.field !== "messages") continue;
     const v = c.value;
+    // WhatsApp Cloud API: messages live in value.messages[] with the phone
+    // number id in value.metadata (entry.id is the WABA id).
+    if (object === "whatsapp_business_account") {
+      const phoneNumberId = v?.metadata?.phone_number_id ?? entry.id ?? "";
+      for (const w of v?.messages ?? []) {
+        if (!w.from || !w.id) continue;
+        out.push({
+          channel: "whatsapp",
+          senderId: w.from,
+          recipientId: phoneNumberId,
+          externalId: w.id,
+          text: w.text?.body,
+          timestampMs: w.timestamp ? Number(w.timestamp) * 1000 : Date.now(),
+          raw: w,
+        });
+      }
+      continue;
+    }
     const from = v?.from?.id;
     const id = v?.id;
     if (!from || !id) continue;
@@ -89,5 +165,47 @@ export function normalizeEntry(entry: MetaEntry, object: string): NormalizedMess
     });
   }
 
+  return out;
+}
+
+/**
+ * Normalize Messenger/Instagram read receipts (message_reads webhook
+ * field). Each receipt marks everything the user saw up to the watermark.
+ */
+export function normalizeReadReceipts(
+  entry: MetaEntry,
+  object: string,
+): NormalizedReadReceipt[] {
+  const out: NormalizedReadReceipt[] = [];
+  const channel = object === "instagram" ? "instagram" : "messenger";
+  for (const m of entry.messaging ?? []) {
+    if (!m.read || !m.sender?.id) continue;
+    out.push({
+      channel,
+      senderId: m.sender.id,
+      watermarkMs: m.read.watermark ?? Date.now(),
+    });
+  }
+  return out;
+}
+
+/**
+ * Normalize WhatsApp message status updates (sent/delivered/read/failed).
+ * These arrive in value.statuses[] alongside value.messages[].
+ */
+export function normalizeStatuses(entry: MetaEntry): NormalizedStatus[] {
+  const out: NormalizedStatus[] = [];
+  for (const c of entry.changes ?? []) {
+    if (c.field !== "messages") continue;
+    for (const s of c.value?.statuses ?? []) {
+      if (!s.status || !s.recipient_id) continue;
+      out.push({
+        channel: "whatsapp",
+        status: s.status,
+        recipientId: s.recipient_id,
+        messageId: s.id ?? "",
+      });
+    }
+  }
   return out;
 }

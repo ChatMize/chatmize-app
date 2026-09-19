@@ -57,15 +57,17 @@ export const SnapshotLibraryView: React.FC<SnapshotLibraryViewProps> = ({
     );
   };
 
-  const handleImport = (snap: SnapshotDoc) => {
+  const handleImport = async (snap: SnapshotDoc) => {
     setImportingId(snap.id);
     try {
-      importSnapshotPayload(snap.payload);
+      await importSnapshotPayload(snap.payload, { workspaceSlug: workspace?.slug });
       setImportedId(snap.id);
       setTimeout(() => {
         setImportedId(null);
         onImported();
       }, 1200);
+    } catch {
+      // Firestore unavailable: unblock the UI without marking success.
     } finally {
       setImportingId(null);
     }

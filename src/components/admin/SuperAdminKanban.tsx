@@ -12,7 +12,7 @@ import { EditKanbanCardModal } from './EditKanbanCardModal';
 import { KanbanPricingModal } from './KanbanPricingModal';
 import { CardQaNoteModal } from './CardQaNoteModal';
 import { db } from '../../lib/firebase';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { 
   Plus, 
   Search, 
@@ -49,16 +49,12 @@ import {
 } from 'lucide-react';
 
 export const SuperAdminKanban: React.FC = () => {
-  // Main Cards State (initialized from localStorage with fallback to INITIAL_KANBAN_CARDS)
-  const [cards, setCards] = useState<KanbanCard[]>(() => {
-    try {
-      const saved = localStorage.getItem('chatmize_admin_kanban_cards');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.error(e);
-    }
-    return INITIAL_KANBAN_CARDS;
-  });
+  // Main Cards State — starts empty; the Firestore subscription below resolves the
+  // real board (Firestore -> localStorage cache -> seed cards) and clears the loading flag.
+  const [cards, setCards] = useState<KanbanCard[]>([]);
+  const [isBoardLoading, setIsBoardLoading] = useState(true);
+  // Ref mirror of cards so async handlers (e.g. the undo toast) always see the latest board.
+  const cardsRef = useRef<KanbanCard[]>([]);
 
   const [syncStatus, setSyncStatus] = useState<'synced' | 'saving' | 'offline'>('synced');
 
@@ -82,8 +78,7 @@ export const SuperAdminKanban: React.FC = () => {
   const [draggedCardId, setDraggedCardId] = useState<string | null>(null);
   const [dragOverColId, setDragOverColId] = useState<KanbanColumnId | null>(null);
 
-  // Undo Delete State & Toast
-  const [deletedCardBackup, setDeletedCardBackup] = useState<{ card: KanbanCard; index: number } | null>(null);
+  // Undo Delete Toast (the undo action itself restores via saveCards -> Firestore)
   const [toastMessage, setToastMessage] = useState<{ text: string; action?: { label: string; onClick: () => void } } | null>(null);
   const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -106,47 +101,68 @@ export const SuperAdminKanban: React.FC = () => {
     let isMounted = true;
     const kanbanDocRef = doc(db, 'system_settings', 'admin_kanban');
 
+    // Local fallback: cached board, else the seed cards. Used when Firestore is
+    // unreachable or holds no cards, so the board never renders empty or flashes
+    // seed data over a curated board.
+    const resolveLocalCards = (): KanbanCard[] => {
+      try {
+        const saved = localStorage.getItem('chatmize_admin_kanban_cards');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (e) {
+        console.warn('Could not parse cached kanban cards', e);
+      }
+      return INITIAL_KANBAN_CARDS;
+    };
+
+    const finishLoading = (resolved: KanbanCard[]) => {
+      if (!isMounted) return;
+      setCards(resolved);
+      setSyncStatus('synced');
+      setIsBoardLoading(false);
+    };
+
     // Subscribe to real-time changes
     const unsubscribe = onSnapshot(kanbanDocRef, async (snap) => {
       if (!isMounted) return;
       if (snap.exists()) {
         const data = snap.data();
         if (Array.isArray(data?.cards) && data.cards.length > 0) {
-          setCards(data.cards);
           try {
             localStorage.setItem('chatmize_admin_kanban_cards', JSON.stringify(data.cards));
           } catch (e) {
             console.error(e);
           }
-          setSyncStatus('synced');
+          finishLoading(data.cards);
+          return;
         }
-      } else {
-        // Document does not exist yet; seed it
-        const localStr = typeof window !== 'undefined' ? localStorage.getItem('chatmize_admin_kanban_cards') : null;
-        let cardsToSeed = cards;
-        if (localStr) {
-          try {
-            const parsed = JSON.parse(localStr);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              cardsToSeed = parsed;
-            }
-          } catch (err) {
-            console.warn('Could not parse local cards for seeding', err);
-          }
-        }
-        try {
-          await setDoc(kanbanDocRef, {
-            cards: cardsToSeed,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-          if (isMounted) setSyncStatus('synced');
-        } catch (err) {
-          console.warn('Could not seed initial kanban doc', err);
-        }
+        // Document exists but holds no cards: fall back locally without overwriting it.
+        finishLoading(resolveLocalCards());
+        return;
+      }
+      // Document does not exist yet; seed it with the local/seed cards.
+      const cardsToSeed = resolveLocalCards();
+      try {
+        await setDoc(kanbanDocRef, {
+          cards: cardsToSeed,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Could not seed initial kanban doc', err);
+      }
+      if (isMounted) {
+        setCards(cardsToSeed);
+        setSyncStatus('synced');
+        setIsBoardLoading(false);
       }
     }, (err) => {
       console.warn('Firestore real-time sync notice:', err);
-      if (isMounted) setSyncStatus('offline');
+      if (!isMounted) return;
+      setCards(resolveLocalCards());
+      setSyncStatus('offline');
+      setIsBoardLoading(false);
     });
 
     return () => {
@@ -165,6 +181,7 @@ export const SuperAdminKanban: React.FC = () => {
 
   const saveCards = (newCards: KanbanCard[]) => {
     setCards(newCards);
+    cardsRef.current = newCards;
     try {
       localStorage.setItem('chatmize_admin_kanban_cards', JSON.stringify(newCards));
     } catch (e) {
@@ -254,18 +271,15 @@ export const SuperAdminKanban: React.FC = () => {
     const updated = cards.filter(c => c.id !== cardId);
     saveCards(updated);
 
-    // Provide Undo option
-    setDeletedCardBackup({ card: cardToDelete, index: cardIndex });
+    // Provide Undo option — restores through saveCards so Firestore stays in sync
     showToast(`Card "${cardToDelete.title.substring(0, 24)}..." deleted`, {
       label: 'Undo',
       onClick: () => {
-        setCards(prev => {
-          const restored = [...prev];
-          restored.splice(cardIndex, 0, cardToDelete);
-          localStorage.setItem('chatmize_admin_kanban_cards', JSON.stringify(restored));
-          return restored;
-        });
-        setDeletedCardBackup(null);
+        const restored = [...cardsRef.current];
+        if (!restored.some(c => c.id === cardToDelete.id)) {
+          restored.splice(Math.min(cardIndex, restored.length), 0, cardToDelete);
+        }
+        saveCards(restored);
         showToast('Card restored successfully');
       }
     });
@@ -365,11 +379,20 @@ export const SuperAdminKanban: React.FC = () => {
     showToast('Roadmap exported to JSON file');
   };
 
-  // Reset to default cards
+  // Reset to default cards — always downloads a timestamped backup of the current
+  // board first, so a reset can never silently destroy curated planning notes.
   const handleResetToDefaults = () => {
+    const backupStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(cards, null, 2));
+    const backupAnchor = document.createElement('a');
+    backupAnchor.setAttribute("href", backupStr);
+    backupAnchor.setAttribute("download", `chatmize_kanban_BACKUP_${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    document.body.appendChild(backupAnchor);
+    backupAnchor.click();
+    backupAnchor.remove();
+
     saveCards(INITIAL_KANBAN_CARDS);
     setIsResetConfirmOpen(false);
-    showToast('Reset to default strategic roadmap');
+    showToast('Backup downloaded. Reset to default strategic roadmap');
   };
 
   const toggleColumnCollapse = (colId: KanbanColumnId) => {
@@ -425,7 +448,7 @@ export const SuperAdminKanban: React.FC = () => {
   const isFiltersActive = searchQuery !== '' || selectedCategory !== 'all' || selectedPriority !== 'all' || quickFilter !== 'all';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-no-emoji>
       {/* Top Banner with Architecture Planning Context & Pricing Simulator Trigger */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/20 rounded-2xl p-5 sm:p-6 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
@@ -666,6 +689,24 @@ export const SuperAdminKanban: React.FC = () => {
       </div>
 
       {/* KANBAN BOARD COLUMNS WITH HTML5 DRAG & DROP */}
+      {isBoardLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3.5 items-start" aria-label="Loading roadmap board">
+          {KANBAN_COLUMNS.map((col) => (
+            <div key={col.id} className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-3 min-h-[550px] animate-pulse">
+              <div className="h-4 w-2/3 bg-slate-800 rounded mb-4" />
+              <div className="space-y-3">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2">
+                    <div className="h-3 w-3/4 bg-slate-800 rounded" />
+                    <div className="h-3 w-full bg-slate-800/60 rounded" />
+                    <div className="h-3 w-1/2 bg-slate-800/60 rounded" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3.5 items-start">
         {KANBAN_COLUMNS.map((col) => {
           const colCards = filteredCards.filter(c => c.columnId === col.id);
@@ -1051,6 +1092,7 @@ export const SuperAdminKanban: React.FC = () => {
           );
         })}
       </div>
+      )}
 
       {/* EDIT CARD MODAL */}
       <EditKanbanCardModal
@@ -1091,6 +1133,7 @@ export const SuperAdminKanban: React.FC = () => {
 
             <p className="text-xs text-slate-300 bg-slate-950 p-3 rounded-xl border border-slate-800 leading-relaxed">
               This will reset the roadmap board back to the official default architecture cards (including Facebook Silo bindings, Commercial Tier comparisons, and Multi-tenant Workspaces).
+              A timestamped JSON backup of your current board downloads automatically first, so nothing is lost.
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-2">

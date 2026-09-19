@@ -189,7 +189,7 @@ export const CardQaNoteModal: React.FC<CardQaNoteModalProps> = ({
               )}
             </div>
 
-            <textarea
+            <textarea data-no-emoji
               rows={5}
               value={qaNotes}
               onChange={(e) => setQaNotes(e.target.value)}

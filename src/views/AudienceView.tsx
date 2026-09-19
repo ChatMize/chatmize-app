@@ -24,6 +24,7 @@ import {
   ChevronRight,
   Info,
   RefreshCw,
+  Video,
   Mail,
   Phone,
   Radio,
@@ -65,6 +66,7 @@ import {
 } from '../lib/firebase';
 import { MetaFollowUpModal } from '../components/MetaFollowUpModal';
 import { RecurringNotificationBroadcastHub } from '../components/RecurringNotificationBroadcastHub';
+import { syncBigmarkerStatus, bigmarkerStatusLabel, type BigmarkerRegistrantStatus } from '../lib/bigmarker';
 
 interface DynamicVarEntry {
   key: string;
@@ -76,6 +78,9 @@ export function AudienceView({ workspaceId }: { workspaceId?: string }) {
   const [loading, setLoading] = useState<boolean>(true);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [selectedContact, setSelectedContact] = useState<ContactRecord | null>(null);
+  // BigMarker webinar status refresh, keyed by conference id while a sync is in flight.
+  const [refreshingWebinar, setRefreshingWebinar] = useState<string | null>(null);
+  const [webinarRefreshError, setWebinarRefreshError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [channelFilter, setChannelFilter] = useState<'all' | 'messenger' | 'instagram' | 'whatsapp'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'lead' | 'subscriber' | 'customer' | 'unsubscribed'>('all');
@@ -1209,7 +1214,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
 
                   <div>
                     <label className="text-[10px] text-slate-400 block mb-0.5">Mobile Phone</label>
-                    <input
+                    <input data-no-emoji
                       type="text"
                       value={editPhone}
                       onChange={(e) => setEditPhone(e.target.value)}
@@ -1438,6 +1443,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
                 </span>
                 <div className="flex gap-1.5">
                   <input
+                    data-no-emoji
                     type="text"
                     placeholder="Key (e.g. budget)"
                     value={newVarKey}
@@ -1445,6 +1451,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
                     className="w-1/2 bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-500 font-mono"
                   />
                   <input
+                    data-no-emoji
                     type="text"
                     placeholder="Value (e.g. $10,000)"
                     value={newVarVal}
@@ -1554,7 +1561,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
 
               {/* Add Tag Input */}
               <div className="flex gap-1.5 pt-1">
-                <input
+                <input data-no-emoji
                   type="text"
                   placeholder="Add tag (e.g. VIP-Lead)..."
                   value={newTagInput}
@@ -1569,6 +1576,68 @@ data subject, Meta Developer Compliance, and regulatory authorities.
                 >
                   Add
                 </button>
+              </div>
+            </div>
+
+            {/* BigMarker Webinars */}
+            <div className="space-y-2 pt-2 border-t border-white/10">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Video className="w-3.5 h-3.5 text-sky-400" />
+                  Webinars
+                </span>
+                <span className="text-[10px] text-sky-400 font-mono">
+                  {Object.keys(selectedContact.bigmarker || {}).length} registered
+                </span>
+              </div>
+              {webinarRefreshError && (
+                <p className="text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-1.5">
+                  {webinarRefreshError}
+                </p>
+              )}
+              <div className="space-y-1.5">
+                {Object.entries(selectedContact.bigmarker || {}).map(([confId, entry]) => (
+                  <div
+                    key={confId}
+                    className="p-2.5 rounded-xl bg-slate-950 border border-white/10 flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs text-white font-medium truncate">
+                        {entry.conferenceTitle || 'Webinar'}
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {bigmarkerStatusLabel((entry.status as BigmarkerRegistrantStatus) || 'registered')}
+                        {entry.syncedAtMs ? `, checked ${new Date(entry.syncedAtMs).toLocaleDateString()}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!workspaceId || refreshingWebinar) return;
+                        setRefreshingWebinar(confId);
+                        setWebinarRefreshError(null);
+                        try {
+                          await syncBigmarkerStatus(workspaceId, confId, selectedContact.id, entry.conferenceTitle);
+                        } catch (e) {
+                          setWebinarRefreshError(e instanceof Error ? e.message : 'Could not refresh the webinar status.');
+                        } finally {
+                          setRefreshingWebinar(null);
+                        }
+                      }}
+                      disabled={refreshingWebinar === confId}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-sky-600/20 border border-sky-500/30 text-sky-300 text-[11px] font-bold hover:bg-sky-600/30 disabled:opacity-50 transition-colors cursor-pointer flex-shrink-0"
+                      title="Check BigMarker for the latest status"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${refreshingWebinar === confId ? 'animate-spin' : ''}`} />
+                      {refreshingWebinar === confId ? 'Checking' : 'Refresh'}
+                    </button>
+                  </div>
+                ))}
+                {Object.keys(selectedContact.bigmarker || {}).length === 0 && (
+                  <div className="p-3 rounded-xl bg-slate-950 border border-dashed border-white/10 text-center text-slate-500 text-xs">
+                    Not registered for any webinars yet. Add the Webinar block to a BotMap to register this contact.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2155,7 +2224,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
 
                 {/* Add variable row */}
                 <div className="flex gap-1.5 pt-1">
-                  <input
+                  <input data-no-emoji
                     type="text"
                     placeholder="Var key (e.g. budget)"
                     value={newModalVarKey}

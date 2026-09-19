@@ -1,21 +1,49 @@
 /**
- * SMS via Twilio: sending, provisioning, opt-in compliance, and logging.
+ * SMS via Twilio, Telnyx, and Bandwidth: sending, provisioning, opt-in
+ * compliance, and logging.
  *
- * ChatMize owns the Twilio account. Each workspace gets its own provisioned
- * phone number; message costs are covered by the plan's monthly SMS allowance
- * first, then by AI credits (8 credits per segment at face value).
+ * Twilio: ChatMize owns the account; each workspace gets a provisioned number.
+ * Telnyx/Bandwidth: workspaces connect their own number from a ChatMize-owned
+ * account (or their own account in a future BYOC phase); the provider choice
+ * is stored per workspace. Message costs are covered by the plan's monthly
+ * SMS allowance first, then by AI credits (8 credits per segment at face value).
  */
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
-import { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } from "./secrets";
+import { createVerify } from "crypto";
+import { trackInbound } from "./analytics";
+import {
+  TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN,
+  TELNYX_API_KEY,
+  TELNYX_PUBLIC_KEY,
+  BANDWIDTH_ACCOUNT_ID,
+  BANDWIDTH_API_TOKEN,
+  BANDWIDTH_API_SECRET,
+} from "./secrets";
 import { spendCredits } from "./credits";
 
 export const SMS_CREDITS_PER_SEGMENT = 8;
 
+/** Supported SMS providers. Twilio numbers are auto-provisioned; Telnyx and
+ * Bandwidth numbers are connected manually (workspace provides the number,
+ * ChatMize shows the webhook URL to configure in the provider dashboard). */
+export type SmsProvider = "twilio" | "telnyx" | "bandwidth";
+
+export const SMS_PROVIDERS: Array<{ id: SmsProvider; label: string; blurb: string }> = [
+  { id: "twilio", label: "Twilio", blurb: "Auto-provisioned number, handled for you" },
+  { id: "telnyx", label: "Telnyx", blurb: "Connect your Telnyx number" },
+  { id: "bandwidth", label: "Bandwidth", blurb: "Connect your Bandwidth number" },
+];
+
 export interface SmsConnection {
   workspaceId: string;
   phoneNumber: string; // E.164
-  twilioSid: string;
+  provider: SmsProvider;
+  /** Twilio number SID (twilio provider only). */
+  twilioSid?: string;
+  /** Provider-side identifier for the number (telnyx/bandwidth). */
+  externalNumberId?: string;
   status: "provisioning" | "active" | "suspended";
   compliance: {
     /** 10DLC brand/campaign state. Toll-free numbers skip 10DLC. */
@@ -165,6 +193,181 @@ export async function twilioSendSms(
 }
 
 // ---------------------------------------------------------------------------
+// Telnyx REST
+// ---------------------------------------------------------------------------
+
+async function telnyxApi(path: string, body: Record<string, unknown>): Promise<any> {
+  const apiKey = TELNYX_API_KEY.value();
+  if (!apiKey) throw new Error("Telnyx credentials are not configured.");
+  const res = await fetch(`https://api.telnyx.com/v2${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const errors = (data as any)?.errors?.map((e: any) => e.detail).join("; ");
+    throw new Error(`Telnyx API ${res.status}: ${errors ?? "request failed"}`);
+  }
+  return data;
+}
+
+/** Send one SMS via Telnyx. Returns the Telnyx message ID. */
+export async function telnyxSendSms(
+  from: string,
+  to: string,
+  body: string,
+): Promise<string> {
+  const data = await telnyxApi("/messages", { from, to, text: body });
+  const id = (data as any)?.data?.id;
+  if (!id) throw new Error("Telnyx send returned no message id.");
+  return id as string;
+}
+
+// ---------------------------------------------------------------------------
+// Bandwidth REST
+// ---------------------------------------------------------------------------
+
+async function bandwidthApi(path: string, body: Record<string, unknown>): Promise<any> {
+  const accountId = BANDWIDTH_ACCOUNT_ID.value();
+  const apiToken = BANDWIDTH_API_TOKEN.value();
+  const apiSecret = BANDWIDTH_API_SECRET.value();
+  if (!accountId || !apiToken || !apiSecret) {
+    throw new Error("Bandwidth credentials are not configured.");
+  }
+  const auth = Buffer.from(`${apiToken}:${apiSecret}`).toString("base64");
+  const res = await fetch(
+    `https://messaging.bandwidth.com/api/v2/users/${accountId}${path}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      `Bandwidth API ${res.status}: ${(data as any)?.description ?? "request failed"}`,
+    );
+  }
+  return data;
+}
+
+/** Send one SMS via Bandwidth. Returns the Bandwidth message ID. */
+export async function bandwidthSendSms(
+  from: string,
+  to: string,
+  body: string,
+): Promise<string> {
+  const data = await bandwidthApi("/messages", {
+    from,
+    to,
+    text: body,
+  });
+  const id = (data as any)?.id;
+  if (!id) throw new Error("Bandwidth send returned no message id.");
+  return id as string;
+}
+
+// ---------------------------------------------------------------------------
+// Provider router
+// ---------------------------------------------------------------------------
+
+/**
+ * Send one SMS via the workspace's configured provider.
+ * Returns the provider's message ID (sid). Throws on provider errors.
+ */
+export async function sendSmsViaProvider(
+  provider: SmsProvider,
+  from: string,
+  to: string,
+  body: string,
+): Promise<string> {
+  switch (provider) {
+    case "telnyx":
+      return telnyxSendSms(from, to, body);
+    case "bandwidth":
+      return bandwidthSendSms(from, to, body);
+    case "twilio":
+    default:
+      return twilioSendSms(from, to, body);
+  }
+}
+
+/** Normalize a possibly-legacy connection (pre-provider field) to twilio. */
+export function providerOf(conn: SmsConnection): SmsProvider {
+  return conn.provider ?? "twilio";
+}
+
+// ---------------------------------------------------------------------------
+// Inbound webhook parsing (provider-neutral)
+// ---------------------------------------------------------------------------
+
+export interface ParsedInboundSms {
+  from: string; // E.164
+  to: string; // E.164 (our number)
+  body: string;
+  externalId: string; // provider message id (for dedup)
+}
+
+/** Parse a Telnyx messaging webhook (message.received event). */
+export function parseTelnyxWebhook(payload: any): ParsedInboundSms | null {
+  const data = payload?.data;
+  if (!data || data.event_type !== "message.received") return null;
+  const p = data.payload ?? {};
+  const from = normalizePhone(String(p.from?.phone_number ?? ""));
+  const to = normalizePhone(String(p.to?.[0]?.phone_number ?? ""));
+  const body = String(p.text ?? "");
+  const id = String(p.id ?? "");
+  if (!from || !id) return null;
+  return { from, to: to ?? "", body, externalId: `telnyx_${id}` };
+}
+
+/** Parse a Bandwidth messaging webhook (message-received event). */
+export function parseBandwidthWebhook(payload: any): ParsedInboundSms | null {
+  const events = Array.isArray(payload) ? payload : [payload];
+  for (const e of events) {
+    if (e?.type !== "message-received" && e?.type !== "message_received") continue;
+    const m = e.message ?? {};
+    const from = normalizePhone(String(m.from ?? ""));
+    const to = normalizePhone(String(m.to ?? ""));
+    const body = String(m.text ?? "");
+    const id = String(m.id ?? "");
+    if (!from || !id) continue;
+    return { from, to: to ?? "", body, externalId: `bw_${id}` };
+  }
+  return null;
+}
+
+/**
+ * Verify a Telnyx webhook signature (Ed25519).
+ * Telnyx sends `telnyx-signature-ed25519` and `telnyx-timestamp` headers;
+ * the signed payload is `${timestamp}|${rawBody}`.
+ */
+export function verifyTelnyxSignature(
+  rawBody: string,
+  signatureB64: string,
+  timestamp: string,
+): boolean {
+  try {
+    const publicKey = TELNYX_PUBLIC_KEY.value();
+    if (!publicKey || !signatureB64 || !timestamp) return false;
+    const verify = createVerify("ed25519");
+    verify.update(`${timestamp}|${rawBody}`);
+    verify.end();
+    return verify.verify(publicKey, Buffer.from(signatureB64, "base64"));
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Compliance keywords (TCPA)
 // ---------------------------------------------------------------------------
 
@@ -263,7 +466,7 @@ export async function persistInboundSms(
   from: string,
   to: string,
   body: string,
-  twilioSid: string,
+  externalId: string,
 ): Promise<void> {
   const convoId = `sms_${from.replace("+", "")}`;
   const convoRef = db()
@@ -271,10 +474,10 @@ export async function persistInboundSms(
     .doc(workspaceId)
     .collection("conversations")
     .doc(convoId);
-  const messageRef = convoRef.collection("messages").doc(twilioSid);
+  const messageRef = convoRef.collection("messages").doc(externalId);
   const already = await messageRef.get();
   if (already.exists) {
-    logger.info("Duplicate SMS webhook delivery ignored", { twilioSid });
+    logger.info("Duplicate SMS webhook delivery ignored", { externalId });
     return;
   }
   const batch = db().batch();
@@ -286,6 +489,9 @@ export async function persistInboundSms(
       recipientId: to,
       lastMessageAt: FieldValue.serverTimestamp(),
       lastMessageText: body,
+      // Fallback sweep: an inbound message with no outbound reply inside
+      // the window counts as unanswered.
+      awaitingReply: true,
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -295,10 +501,13 @@ export async function persistInboundSms(
     channel: "sms",
     senderId: from,
     text: body,
-    externalId: twilioSid,
+    externalId,
+    timestampMs: Date.now(),
     createdAt: FieldValue.serverTimestamp(),
   });
   await batch.commit();
+  // Analytics: fold the inbound SMS into today's counters (fire-and-forget).
+  trackInbound(workspaceId, "sms");
 }
 
 /** Persist an outbound SMS into the workspace conversation thread (sms_{phone}). */
@@ -307,7 +516,7 @@ export async function persistOutboundSms(
   from: string,
   to: string,
   body: string,
-  twilioSid: string,
+  externalId: string,
 ): Promise<void> {
   const convoId = `sms_${to.replace("+", "")}`;
   const convoRef = db()
@@ -315,7 +524,7 @@ export async function persistOutboundSms(
     .doc(workspaceId)
     .collection("conversations")
     .doc(convoId);
-  const messageRef = convoRef.collection("messages").doc(twilioSid);
+  const messageRef = convoRef.collection("messages").doc(externalId);
   const batch = db().batch();
   batch.set(
     convoRef,
@@ -334,7 +543,8 @@ export async function persistOutboundSms(
     channel: "sms",
     senderId: from,
     text: body,
-    externalId: twilioSid,
+    externalId,
+    timestampMs: Date.now(),
     createdAt: FieldValue.serverTimestamp(),
   });
   await batch.commit();
@@ -422,6 +632,9 @@ export async function logSms(entry: {  workspaceId: string;  direction: "outboun
   body: string;
   segments: number;
   creditsCharged: number;
+  /** Provider message id (Twilio SID, Telnyx id, Bandwidth id). */
+  messageId?: string | null;
+  /** @deprecated Use messageId. Kept for backwards compat with old log entries. */
   twilioSid?: string | null;
   status: "sent" | "failed" | "received";
   error?: string;

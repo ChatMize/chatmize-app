@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from '../components/emoji';
 import { 
   Sparkles, 
   MessageSquare, 
@@ -506,6 +507,7 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
   
   // Editor draft state
   const [draftTool, setDraftTool] = useState<NurtureTool>(activeTool);
+  const toolEmoji = useEmojiTarget<HTMLTextAreaElement>();
 
   useEffect(() => {
     if (activeTool) {
@@ -1605,7 +1607,7 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>
                   <label className="block text-slate-400 font-semibold mb-1">Tool Internal Name</label>
-                  <input 
+                  <input data-no-emoji 
                     type="text"
                     value={draftTool.name}
                     onChange={(e) => setDraftTool({ ...draftTool, name: e.target.value })}
@@ -1659,9 +1661,13 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
               </div>
 
               <div className="text-xs">
-                <label className="block text-slate-400 font-semibold mb-1">Initial Greeting Message</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-400 font-semibold">Initial Greeting Message</label>
+                  <EmojiPickerButton onPick={(e) => toolEmoji.insert(e, draftTool.welcomeMessage, (v) => setDraftTool({ ...draftTool, welcomeMessage: v }))} placement="down" />
+                </div>
                 <textarea 
                   rows={2}
+                  ref={toolEmoji.ref}
                   value={draftTool.welcomeMessage}
                   onChange={(e) => setDraftTool({ ...draftTool, welcomeMessage: e.target.value })}
                   className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-cyan-400 resize-none"
@@ -2430,7 +2436,7 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Plan Name *</label>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={planForm.name}
                     onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })}
@@ -2441,7 +2447,7 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
 
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Display Price (Optional)</label>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={planForm.price || ''}
                     onChange={(e) => setPlanForm({ ...planForm, price: e.target.value })}
@@ -2455,6 +2461,7 @@ export const NurtureToolsView: React.FC<NurtureToolsViewProps> = ({
               <div className="text-xs">
                 <label className="block text-slate-300 font-semibold mb-1">Plan Description</label>
                 <textarea
+                  data-no-emoji
                   rows={2}
                   value={planForm.description || ''}
                   onChange={(e) => setPlanForm({ ...planForm, description: e.target.value })}

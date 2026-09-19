@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Link2, 
   Share2, 
@@ -20,11 +20,29 @@ import {
   Bot,
   Eye,
   TrendingUp,
-  MousePointer
+  MousePointer,
+  Lock,
+  Loader2,
+  Pause,
+  Play,
+  AlertTriangle
 } from 'lucide-react';
 import { SendChatCloakedLink, MmeLinkConfig, IgmeLinkConfig, CloakedDestinationType, CloakingMode } from '../../types/growthTools';
-import { DEFAULT_CLOAKED_LINKS } from '../../data/growthToolsDefaults';
 import { QrCodeModal } from './QrCodeModal';
+import { QrBuilderTab } from './QrBuilderTab'; // [BUILDER C: QR tab] new QR Builder tab component
+import { ImageUpload } from '../ImageUpload';
+import { prodDb } from '../../lib/firebase';
+import {
+  collection,
+  doc,
+  getDocs,
+  setDoc,
+  deleteDoc,
+  updateDoc,
+  query,
+  where,
+  DocumentData
+} from 'firebase/firestore';
 
 export const LINK_PRESETS = [
   {
@@ -65,12 +83,84 @@ export const LINK_PRESETS = [
   }
 ];
 
-interface GrowthLinksViewProps {
-  workspaceName?: string;
+/**
+ * Firestore contract for the send.chat cloaker backend (Builder A).
+ * Collection `cloaked_links`, document ID `${workspaceSlug}_${slug}`
+ * (URL-safe lowercase). The hosted resolver reads the routing fields
+ * (destinationType / destinationUrl / cloakingMode / ref) and increments
+ * clickCount; this UI only reads clickCount.
+ */
+const CLOAKED_LINKS_COLLECTION = 'cloaked_links';
+const LOCAL_LINKS_KEY = 'chatmize_sendchat_links';
+
+const DESTINATION_OPTIONS: Array<{ value: CloakedDestinationType; label: string; hint: string }> = [
+  { value: 'takeover', label: 'Bridge Page + Live Chat', hint: 'Hosted send.chat card with a chat widget and CTA button' },
+  { value: 'messenger', label: 'Direct Messenger', hint: 'm.me link opens a Facebook Messenger thread' },
+  { value: 'instagram', label: 'Direct Instagram DM', hint: 'ig.me link opens an Instagram Direct thread' },
+  { value: 'url', label: 'Plain URL (301)', hint: 'Straight redirect to any URL, no bridge page' },
+];
+
+const DEST_URL_PLACEHOLDERS: Record<CloakedDestinationType, string> = {
+  takeover: 'https://yourdomain.com/final-offer (the bridge page continues here)',
+  messenger: 'https://m.me/YourPage?ref=promo',
+  instagram: 'https://ig.me/m/your_handle?ref=promo',
+  url: 'https://yourdomain.com/any-page',
+};
+
+const DEST_BADGE_STYLES: Record<CloakedDestinationType, string> = {
+  messenger: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+  instagram: 'bg-pink-500/15 text-pink-300 border-pink-500/30',
+  takeover: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+  url: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+};
+
+const cleanSlug = (input: string) => {
+  return input.toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-');
+};
+
+const linkDocId = (workspace: string, slug: string) => `${workspace}_${slug}`;
+
+/** Map localStorage-era destination values to the Firestore contract union. */
+const normalizeDestType = (t: unknown): CloakedDestinationType => {
+  if (t === 'messenger' || t === 'instagram' || t === 'takeover' || t === 'url') return t;
+  if (t === 'web_chat') return 'takeover';
+  return 'url';
+};
+
+/** Normalize a Firestore document (or legacy localStorage record) to the UI shape. */
+const toUiLink = (id: string, data: DocumentData): SendChatCloakedLink => {
+  const workspaceSlug = String(data.workspaceSlug || 'workspace');
+  const slug = cleanSlug(String(data.slug || 'link')) || 'link';
+  return {
+    id,
+    workspaceSlug,
+    slug,
+    fullShortUrl: String(data.fullShortUrl || `https://send.chat/${workspaceSlug}/${slug}`),
+    destinationType: normalizeDestType(data.destinationType),
+    destinationUrl: String(data.destinationUrl || ''),
+    title: String(data.title || 'Untitled link'),
+    description: String(data.description || ''),
+    previewImage: data.previewImage ? String(data.previewImage) : undefined,
+    cloakingMode: data.cloakingMode === 'direct' || data.cloakingMode === 'masked' ? data.cloakingMode : 'bridge',
+    connectedBotId: data.connectedBotId ? String(data.connectedBotId) : undefined,
+    ref: data.ref ? String(data.ref) : (data.refPayload ? String(data.refPayload) : undefined),
+    clickCount: typeof data.clickCount === 'number' ? data.clickCount : (typeof data.totalClicks === 'number' ? data.totalClicks : 0),
+    createdBy: data.createdBy ? String(data.createdBy) : undefined,
+    createdAt: String(data.createdAt || new Date().toISOString()),
+    updatedAt: data.updatedAt ? String(data.updatedAt) : undefined,
+    status: data.status === 'paused' ? 'paused' : 'active',
+    refPayload: data.refPayload ? String(data.refPayload) : undefined,
+    totalClicks: typeof data.totalClicks === 'number' ? data.totalClicks : undefined,
+    totalConversions: typeof data.totalConversions === 'number' ? data.totalConversions : undefined,
+    lastClickedAt: data.lastClickedAt ? String(data.lastClickedAt) : undefined,
+  };
+};
+
+interface GrowthLinksViewProps {  workspaceName?: string;
   workspaceSlug?: string;
   availableBots?: Array<{ id: string; name: string }>;
   onNavigateToFlows?: (botId?: string) => void;
-  initialSubTab?: 'cloaker' | 'mme' | 'igme';
+  initialSubTab?: 'cloaker' | 'mme' | 'igme' | 'qr'; // [BUILDER C: QR tab] added 'qr'
 }
 
 export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
@@ -85,23 +175,121 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
   onNavigateToFlows,
   initialSubTab = 'cloaker'
 }) => {
-  const [activeTab, setActiveTab] = useState<'cloaker' | 'mme' | 'igme'>(initialSubTab);
+  const [activeTab, setActiveTab] = useState<'cloaker' | 'mme' | 'igme' | 'qr'>(initialSubTab); // [BUILDER C: QR tab] added 'qr'
   
-  // Cloaked Links State
-  const [links, setLinks] = useState<SendChatCloakedLink[]>(() => {
-    const saved = localStorage.getItem('chatmize_sendchat_links');
-    return saved ? JSON.parse(saved) : DEFAULT_CLOAKED_LINKS;
-  });
+  // Workspace slug is locked to the current workspace: users cannot change it,
+  // so every branded link stays namespaced to the workspace that owns it.
+  const lockedWorkspaceSlug = cleanSlug(workspaceSlug) || 'workspace';
+
+  // Cloaked Links State (Firestore-backed)
+  const [links, setLinks] = useState<SendChatCloakedLink[]>([]);
+  const [linksLoading, setLinksLoading] = useState(true);
+  const [linksError, setLinksError] = useState<string | null>(null);
+  const [linksSaving, setLinksSaving] = useState(false);
+  const [migrationNotice, setMigrationNotice] = useState<string | null>(null);
+
+  const readLocalLinks = (): DocumentData[] => {
+    try {
+      const saved = localStorage.getItem(LOCAL_LINKS_KEY);
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  /** One-time migration: import localStorage links into Firestore, then clear the key. */
+  const migrateLocalLinks = async (saved: DocumentData[]): Promise<SendChatCloakedLink[]> => {
+    const migrated: SendChatCloakedLink[] = [];
+    const now = new Date().toISOString();
+    for (const raw of saved) {
+      try {
+        const slug = cleanSlug(String(raw.slug || 'link')) || 'link';
+        const docId = linkDocId(lockedWorkspaceSlug, slug);
+        const record = {
+          workspaceSlug: lockedWorkspaceSlug,
+          slug,
+          fullShortUrl: String(raw.fullShortUrl || `https://send.chat/${lockedWorkspaceSlug}/${slug}`),
+          destinationType: normalizeDestType(raw.destinationType),
+          destinationUrl: String(raw.destinationUrl || ''),
+          title: String(raw.title || 'Untitled link'),
+          description: String(raw.description || ''),
+          previewImage: raw.previewImage ? String(raw.previewImage) : null,
+          cloakingMode: raw.cloakingMode === 'direct' || raw.cloakingMode === 'masked' ? raw.cloakingMode : 'bridge',
+          connectedBotId: raw.connectedBotId ? String(raw.connectedBotId) : null,
+          ref: raw.ref ? String(raw.ref) : (raw.refPayload ? String(raw.refPayload) : null),
+          clickCount: typeof raw.clickCount === 'number' ? raw.clickCount : (typeof raw.totalClicks === 'number' ? raw.totalClicks : 0),
+          createdBy: 'growth-links-ui (migrated from browser storage)',
+          createdAt: String(raw.createdAt || now),
+          updatedAt: now,
+          status: raw.status === 'paused' ? 'paused' : 'active',
+        };
+        await setDoc(doc(prodDb, CLOAKED_LINKS_COLLECTION, docId), record);
+        migrated.push(toUiLink(docId, record));
+      } catch {
+        // Skip records that fail to migrate; keep going with the rest.
+      }
+    }
+    localStorage.removeItem(LOCAL_LINKS_KEY);
+    return migrated;
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLinksLoading(true);
+      setLinksError(null);
+      try {
+        const q = query(
+          collection(prodDb, CLOAKED_LINKS_COLLECTION),
+          where('workspaceSlug', '==', lockedWorkspaceSlug)
+        );
+        const snap = await getDocs(q);
+        let rows = snap.docs.map(d => toUiLink(d.id, d.data()));
+
+        const saved = readLocalLinks();
+        if (saved.length > 0 && rows.length === 0) {
+          rows = await migrateLocalLinks(saved);
+          if (!cancelled && rows.length > 0) {
+            setMigrationNotice(
+              `Imported ${rows.length} link${rows.length === 1 ? '' : 's'} from this browser into the shared database.`
+            );
+          }
+        }
+
+        rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        if (!cancelled) setLinks(rows);
+      } catch {
+        if (!cancelled) setLinksError('Could not load links from the database. Check your connection and try again.');
+      } finally {
+        if (!cancelled) setLinksLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [lockedWorkspaceSlug]);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [qrModalData, setQrModalData] = useState<{ url: string; title: string; subtitle?: string } | null>(null);
+
+  // [BUILDER C: QR tab] prefill for "QR for this link" buttons: opens the QR tab with a cloaked link
+  const [qrPrefillUrl, setQrPrefillUrl] = useState<string | null>(null);
+  const [qrPrefillLabel, setQrPrefillLabel] = useState<string | null>(null);
+  const [qrPrefillNonce, setQrPrefillNonce] = useState(0);
+  const openQrTabForLink = (url: string, label?: string) => {
+    setQrPrefillUrl(url);
+    setQrPrefillLabel(label || url);
+    setQrPrefillNonce((n) => n + 1);
+    setIsCreatingLink(false);
+    setActiveTab('qr');
+  };
   const [previewModalLink, setPreviewModalLink] = useState<SendChatCloakedLink | null>(null);
   const [clickTrackingNotice, setClickTrackingNotice] = useState<string | null>(null);
   const [showQuickGuide, setShowQuickGuide] = useState(true);
 
   // New Cloaked Link Form
   const [isCreatingLink, setIsCreatingLink] = useState(false);
-  const [newLinkWorkspace, setNewLinkWorkspace] = useState(workspaceSlug || 'my-workspace');
   const [newLinkSlug, setNewLinkSlug] = useState('special-offer');
   const [newLinkDestType, setNewLinkDestType] = useState<CloakedDestinationType>('messenger');
   const [newLinkDestUrl, setNewLinkDestUrl] = useState('https://m.me/YourBrand?ref=promo');
@@ -124,55 +312,81 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
   const [igRefPayload, setIgRefPayload] = useState('vip_growth_audit');
   const [copiedIg, setCopiedIg] = useState(false);
 
-  const persistLinks = (updated: SendChatCloakedLink[]) => {
-    setLinks(updated);
-    localStorage.setItem('chatmize_sendchat_links', JSON.stringify(updated));
-  };
-
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const cleanSlug = (input: string) => {
-    return input.toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-');
-  };
-
-  const handleSaveNewLink = (e: React.FormEvent) => {
+  const handleSaveNewLink = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (linksSaving) return;
     const finalSlug = cleanSlug(newLinkSlug) || 'link';
-    const finalWorkspace = cleanSlug(newLinkWorkspace) || 'workspace';
+    const finalWorkspace = lockedWorkspaceSlug;
     const fullUrl = `https://send.chat/${finalWorkspace}/${finalSlug}`;
+    const docId = linkDocId(finalWorkspace, finalSlug);
 
-    const newCloakedLink: SendChatCloakedLink = {
-      id: `link-${Date.now().toString().slice(-6)}`,
+    if (links.some(l => l.id === docId || (l.workspaceSlug === finalWorkspace && l.slug === finalSlug))) {
+      setLinksError(`A link with the slug "${finalSlug}" already exists in this workspace. Pick a different slug.`);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const record = {
       workspaceSlug: finalWorkspace,
       slug: finalSlug,
       fullShortUrl: fullUrl,
       destinationType: newLinkDestType,
-      destinationUrl: newLinkDestUrl,
-      title: newLinkTitle,
-      description: newLinkDesc,
-      previewImage: newLinkImage,
+      destinationUrl: newLinkDestUrl.trim(),
+      title: newLinkTitle.trim(),
+      description: newLinkDesc.trim(),
+      previewImage: newLinkImage.trim() || null,
       cloakingMode: newLinkMode,
-      connectedBotId: newLinkBotId,
-      refPayload: newLinkRef,
-      status: 'active',
-      totalClicks: 0,
-      totalConversions: 0,
-      createdAt: new Date().toISOString()
+      connectedBotId: newLinkBotId || null,
+      ref: newLinkRef.trim() || null,
+      clickCount: 0,
+      createdBy: 'growth-links-ui',
+      createdAt: now,
+      updatedAt: now,
+      status: 'active' as const,
     };
 
-    const updated = [newCloakedLink, ...links];
-    persistLinks(updated);
-    setIsCreatingLink(false);
+    setLinksSaving(true);
+    setLinksError(null);
+    try {
+      await setDoc(doc(prodDb, CLOAKED_LINKS_COLLECTION, docId), record);
+      setLinks(prev => [toUiLink(docId, record), ...prev]);
+      setIsCreatingLink(false);
+    } catch {
+      setLinksError('Could not save the link to the database. Check your connection and try again.');
+    } finally {
+      setLinksSaving(false);
+    }
   };
 
-  const handleDeleteLink = (id: string) => {
-    if (confirm('Are you sure you want to delete this cloaked link?')) {
-      const updated = links.filter(l => l.id !== id);
-      persistLinks(updated);
+  const handleDeleteLink = async (link: SendChatCloakedLink) => {
+    if (!confirm(`Delete send.chat/${link.workspaceSlug}/${link.slug}? Visitors will no longer reach its destination.`)) return;
+    const docId = linkDocId(link.workspaceSlug, link.slug);
+    try {
+      await deleteDoc(doc(prodDb, CLOAKED_LINKS_COLLECTION, docId));
+      setLinks(prev => prev.filter(l => l.id !== link.id));
+    } catch {
+      setLinksError('Could not delete the link. Check your connection and try again.');
+    }
+  };
+
+  const handleToggleActive = async (link: SendChatCloakedLink) => {
+    const nextStatus = link.status === 'active' ? 'paused' : 'active';
+    const docId = linkDocId(link.workspaceSlug, link.slug);
+    setLinks(prev => prev.map(l => l.id === link.id ? { ...l, status: nextStatus } : l));
+    try {
+      await updateDoc(doc(prodDb, CLOAKED_LINKS_COLLECTION, docId), {
+        status: nextStatus,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch {
+      setLinks(prev => prev.map(l => l.id === link.id ? { ...l, status: link.status } : l));
+      setLinksError('Could not update the link status. Check your connection and try again.');
     }
   };
 
@@ -207,7 +421,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12" data-no-personalization>
       
       {/* Top Banner */}
       <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-950 border border-white/10 relative overflow-hidden shadow-xl">
@@ -281,6 +495,19 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
         >
           <Instagram className="w-4 h-4 text-pink-400" />
           <span>ig.me Instagram DM Builder</span>
+        </button>
+
+        {/* [BUILDER C: QR tab] fourth sub-tab */}
+        <button
+          onClick={() => setActiveTab('qr')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+            activeTab === 'qr'
+              ? 'bg-gradient-to-r from-violet-500/20 to-purple-500/20 text-violet-300 border border-violet-500/40 shadow-sm'
+              : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+          }`}
+        >
+          <QrCode className="w-4 h-4 text-violet-400" />
+          <span>QR Builder</span>
         </button>
       </div>
 
@@ -376,7 +603,6 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                       key={tmpl.name}
                       type="button"
                       onClick={() => {
-                        setNewLinkWorkspace(tmpl.workspaceSlug);
                         setNewLinkSlug(tmpl.slug);
                         setNewLinkDestType(tmpl.destType);
                         setNewLinkDestUrl(tmpl.destUrl);
@@ -408,7 +634,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                   <div>
                     <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider block">Your Branded Short Link</span>
                     <span className="text-sm font-mono font-bold text-white">
-                      https://send.chat/<span className="text-cyan-400">{cleanSlug(newLinkWorkspace) || 'workspace'}</span>/<span className="text-emerald-400">{cleanSlug(newLinkSlug) || 'slug'}</span>
+                      https://send.chat/<span className="text-cyan-400">{lockedWorkspaceSlug}</span>/<span className="text-emerald-400">{cleanSlug(newLinkSlug) || 'slug'}</span>
                     </span>
                   </div>
                   <span className="text-xs text-slate-400">Automatic 301/Bridge Redirect</span>
@@ -417,23 +643,23 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                 {/* Workspace & Slug inputs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-300">Workspace Namespace Slug</label>
-                    <div className="flex items-center px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      Workspace Namespace Slug
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
+                        <Lock className="w-3 h-3" />
+                        Locked to this workspace
+                      </span>
+                    </label>
+                    <div className="flex items-center px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs select-none" title="The workspace slug is fixed and cannot be changed">
                       <span className="text-slate-500 mr-1">send.chat/</span>
-                      <input
-                        type="text"
-                        value={newLinkWorkspace}
-                        onChange={(e) => setNewLinkWorkspace(e.target.value)}
-                        placeholder="your-workspace"
-                        className="flex-1 bg-transparent focus:outline-none text-cyan-300 font-mono"
-                        required
-                      />
+                      <span className="flex-1 text-cyan-300 font-mono">{lockedWorkspaceSlug}</span>
+                      <Lock className="w-3.5 h-3.5 text-slate-600" />
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-300">Custom Campaign Slug</label>
-                    <input
+                    <input data-no-emoji
                       type="text"
                       value={newLinkSlug}
                       onChange={(e) => setNewLinkSlug(e.target.value)}
@@ -451,32 +677,46 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                     <span>Destination &amp; Target Routing</span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] text-slate-400">Destination Platform</label>
-                      <select
-                        value={newLinkDestType}
-                        onChange={(e) => setNewLinkDestType(e.target.value as any)}
-                        className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
-                      >
-                        <option value="messenger">Facebook Messenger (m.me)</option>
-                        <option value="instagram">Instagram Direct (ig.me)</option>
-                        <option value="web_chat">Website Chat Widget</option>
-                        <option value="custom_url">External Custom URL</option>
-                      </select>
+                  {/* Destination type picker: four routing modes from the cloaker contract */}
+                  <div className="space-y-2">
+                    <label className="text-[11px] text-slate-400">Destination Type</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                      {DESTINATION_OPTIONS.map((opt) => {
+                        const selected = newLinkDestType === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setNewLinkDestType(opt.value)}
+                            aria-pressed={selected}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              selected
+                                ? 'border-cyan-500/60 bg-cyan-500/10 shadow-sm'
+                                : 'border-white/10 bg-slate-950 hover:border-cyan-500/30'
+                            }`}
+                          >
+                            <span className={`text-xs font-bold block ${selected ? 'text-cyan-300' : 'text-white'}`}>
+                              {opt.label}
+                            </span>
+                            <span className="text-[11px] text-slate-400 block mt-0.5 leading-snug">
+                              {opt.hint}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
+                  </div>
 
-                    <div className="sm:col-span-2 space-y-1.5">
-                      <label className="text-[11px] text-slate-400">Final Destination Target URL</label>
-                      <input
-                        type="url"
-                        value={newLinkDestUrl}
-                        onChange={(e) => setNewLinkDestUrl(e.target.value)}
-                        placeholder="https://m.me/..."
-                        className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none font-mono"
-                        required
-                      />
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-400">Final Destination Target URL</label>
+                    <input
+                      type="url"
+                      value={newLinkDestUrl}
+                      onChange={(e) => setNewLinkDestUrl(e.target.value)}
+                      placeholder={DEST_URL_PLACEHOLDERS[newLinkDestType]}
+                      className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none font-mono"
+                      required
+                    />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
@@ -540,19 +780,23 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[11px] text-slate-400">Preview Thumbnail Image URL</label>
-                    <input
-                      type="url"
+                    <ImageUpload
+                      label="Preview Thumbnail Image"
                       value={newLinkImage}
-                      onChange={(e) => setNewLinkImage(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                      onChange={(url) => setNewLinkImage(url)}
+                      accentClass="focus-within:border-cyan-500"
                     />
                   </div>
                 </div>
 
                 {/* Submit button */}
                 <div className="flex items-center justify-end gap-3 pt-2">
+                  {linksError && (
+                    <span className="text-xs text-rose-300 flex items-center gap-1.5 mr-auto">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      {linksError}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={() => setIsCreatingLink(false)}
@@ -563,10 +807,11 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
 
                   <button
                     type="submit"
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer"
+                    disabled={linksSaving}
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer disabled:opacity-60"
                   >
-                    <Check className="w-4 h-4" />
-                    <span>Generate &amp; Save Cloaked Link</span>
+                    {linksSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    <span>{linksSaving ? 'Saving to database...' : 'Generate & Save Cloaked Link'}</span>
                   </button>
                 </div>
 
@@ -577,119 +822,172 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
           {/* Links List Table */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white">Active send.chat Cloaked URLs</h3>
+              <h3 className="text-sm font-bold text-white">send.chat Cloaked URLs</h3>
               <span className="text-xs text-slate-400">{links.length} total URLs cloaked</span>
             </div>
 
-            <div className="space-y-3">
-              {links.map((link) => {
-                const isCopied = copiedId === link.id;
+            {migrationNotice && (
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>{migrationNotice}</span>
+              </div>
+            )}
 
-                return (
-                  <div
-                    key={link.id}
-                    className="p-4 rounded-2xl bg-slate-900/80 border border-white/10 hover:border-cyan-500/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group"
-                  >
-                    {/* Left: Link info */}
-                    <div className="space-y-1.5 min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-mono font-bold text-cyan-300">
-                          {link.fullShortUrl}
-                        </span>
+            {linksError && (
+              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400" />
+                <span>{linksError}</span>
+              </div>
+            )}
 
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                          link.destinationType === 'messenger'
-                            ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
-                            : link.destinationType === 'instagram'
-                            ? 'bg-pink-500/15 text-pink-300 border-pink-500/30'
-                            : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                        }`}>
-                          {link.destinationType.toUpperCase()}
-                        </span>
+            {linksLoading ? (
+              <div className="p-10 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col items-center justify-center gap-3 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+                <span className="text-xs">Loading links from the database...</span>
+              </div>
+            ) : links.length === 0 ? (
+              <div className="p-10 rounded-2xl bg-slate-900/60 border border-white/10 flex flex-col items-center justify-center gap-3 text-center">
+                <Link2 className="w-8 h-8 text-slate-600" />
+                <p className="text-sm font-bold text-white">No send.chat links yet</p>
+                <p className="text-xs text-slate-400 max-w-sm">
+                  Create your first branded link above. It is stored in the shared database so it works everywhere, not just this browser.
+                </p>
+                <button
+                  onClick={() => setIsCreatingLink(true)}
+                  className="mt-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-cyan-500/20"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>New send.chat Link</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {links.map((link) => {
+                  const isCopied = copiedId === link.id;
+                  const isActive = link.status !== 'paused';
 
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400">
-                          Mode: {link.cloakingMode}
-                        </span>
+                  return (
+                    <div
+                      key={link.id}
+                      className={`p-4 rounded-2xl bg-slate-900/80 border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group ${
+                        isActive ? 'border-white/10 hover:border-cyan-500/40' : 'border-white/5 opacity-70'
+                      }`}
+                    >
+                      {/* Left: Link info */}
+                      <div className="space-y-1.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-mono font-bold text-cyan-300">
+                            {link.fullShortUrl}
+                          </span>
+
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${DEST_BADGE_STYLES[link.destinationType]}`}>
+                            {link.destinationType.toUpperCase()}
+                          </span>
+
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-slate-400">
+                            Mode: {link.cloakingMode}
+                          </span>
+
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                            isActive
+                              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                              : 'bg-slate-500/15 text-slate-400 border-slate-500/30'
+                          }`}>
+                            {isActive ? 'ACTIVE' : 'PAUSED'}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-slate-200 font-medium truncate">{link.title}</p>
+
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400 truncate">
+                          <span className="text-slate-500">Target:</span>
+                          <span className="truncate font-mono">{link.destinationUrl}</span>
+                        </div>
                       </div>
 
-                      <p className="text-xs text-slate-200 font-medium truncate">{link.title}</p>
+                      {/* Middle: Click Stats (read-only; counted by the hosted resolver) */}
+                      <div className="flex items-center gap-4 px-4 py-2 rounded-xl bg-slate-950/60 border border-white/5 flex-shrink-0" title="Clicks are counted by the hosted send.chat resolver">
+                        <div>
+                          <span className="text-[10px] text-slate-500 block">Total Clicks</span>
+                          <span className="text-sm font-bold text-white flex items-center gap-1">
+                            <MousePointer className="w-3.5 h-3.5 text-cyan-400" />
+                            {link.clickCount}
+                          </span>
+                        </div>
+                        {link.ref && (
+                          <div className="border-l border-white/10 pl-4">
+                            <span className="text-[10px] text-slate-500 block">Ref</span>
+                            <span className="text-sm font-bold text-slate-300 font-mono">
+                              {link.ref}
+                            </span>
+                          </div>
+                        )}
+                      </div>
 
-                      <div className="flex items-center gap-2 text-[11px] text-slate-400 truncate">
-                        <span className="text-slate-500">Target:</span>
-                        <span className="truncate font-mono">{link.destinationUrl}</span>
+                      {/* Right: Actions */}
+                      <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                        <button
+                          onClick={() => handleCopy(link.id, link.fullShortUrl)}
+                          className="py-1.5 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{isCopied ? 'Copied' : 'Copy Link'}</span>
+                        </button>
+
+                        <button
+                          onClick={() => setPreviewModalLink(link)}
+                          className="py-1.5 px-3 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                          title="Test and simulate cloaked bridge page"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Preview Bridge</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleToggleActive(link)}
+                          className={`p-2 rounded-xl border text-xs transition-colors cursor-pointer ${
+                            isActive
+                              ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                              : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                          }`}
+                          title={isActive ? 'Pause this link (visitors see it as inactive)' : 'Activate this link'}
+                        >
+                          {isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                        </button>
+
+                        {/* [BUILDER C: QR tab] one-click "QR for this link": opens the QR Builder tab prefilled with this cloaked link */}
+                        <button
+                          onClick={() => openQrTabForLink(link.fullShortUrl, link.title)}
+                          className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer"
+                          title="Build QR Code for this link"
+                        >
+                          <QrCode className="w-4 h-4" />
+                        </button>
+
+                        <a
+                          href={link.destinationUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer"
+                          title="Test Destination Redirect"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+
+                        <button
+                          onClick={() => handleDeleteLink(link)}
+                          className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                          title="Delete Cloaked Link"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
 
-                    {/* Middle: Click Stats */}
-                    <div className="flex items-center gap-4 px-4 py-2 rounded-xl bg-slate-950/60 border border-white/5 flex-shrink-0">
-                      <div>
-                        <span className="text-[10px] text-slate-500 block">Total Clicks</span>
-                        <span className="text-sm font-bold text-white flex items-center gap-1">
-                          <MousePointer className="w-3.5 h-3.5 text-cyan-400" />
-                          {link.totalClicks}
-                        </span>
-                      </div>
-                      <div className="border-l border-white/10 pl-4">
-                        <span className="text-[10px] text-slate-500 block">Conversions</span>
-                        <span className="text-sm font-bold text-emerald-400">
-                          {link.totalConversions}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Right: Actions */}
-                    <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-                      <button
-                        onClick={() => handleCopy(link.id, link.fullShortUrl)}
-                        className="py-1.5 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                      >
-                        {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{isCopied ? 'Copied' : 'Copy Link'}</span>
-                      </button>
-
-                      <button
-                        onClick={() => setPreviewModalLink(link)}
-                        className="py-1.5 px-3 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-                        title="Test and simulate cloaked bridge page"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        <span>Preview Bridge</span>
-                      </button>
-
-                      <button
-                        onClick={() => setQrModalData({
-                          url: link.fullShortUrl,
-                          title: link.title,
-                          subtitle: `send.chat/${link.workspaceSlug}/${link.slug}`
-                        })}
-                        className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer"
-                        title="View QR Code"
-                      >
-                        <QrCode className="w-4 h-4" />
-                      </button>
-
-                      <a
-                        href={link.destinationUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs transition-colors cursor-pointer"
-                        title="Test Destination Redirect"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
-
-                      <button
-                        onClick={() => handleDeleteLink(link.id)}
-                        className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                        title="Delete Cloaked Link"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
 
         </div>
@@ -720,7 +1018,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                 <label className="text-xs font-bold text-slate-300">Facebook Page Username or Page ID</label>
                 <div className="flex items-center px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white">
                   <span className="text-slate-500 mr-1 font-mono">https://m.me/</span>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={mmePage}
                     onChange={(e) => setMmePage(e.target.value)}
@@ -746,7 +1044,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">Ref Payload Parameter</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={mmeRefPayload}
                   onChange={(e) => setMmeRefPayload(e.target.value)}
@@ -880,7 +1178,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
                 <label className="text-xs font-bold text-slate-300">Instagram Handle (Username)</label>
                 <div className="flex items-center px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white">
                   <span className="text-slate-500 mr-1 font-mono">https://ig.me/m/</span>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={igHandle}
                     onChange={(e) => setIgHandle(e.target.value)}
@@ -906,7 +1204,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">Ref Payload / Keyword Starter</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={igRefPayload}
                   onChange={(e) => setIgRefPayload(e.target.value)}
@@ -1003,6 +1301,17 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
         </div>
       )}
 
+      {/* [BUILDER C: QR tab] =========================================================================
+          TAB 4: QR BUILDER
+          ========================================================================= */}
+      {activeTab === 'qr' && (
+        <QrBuilderTab
+          prefillUrl={qrPrefillUrl}
+          prefillLabel={qrPrefillLabel}
+          prefillNonce={qrPrefillNonce}
+        />
+      )}
+
       {/* Shared QR Code Modal */}
       {qrModalData && (
         <QrCodeModal
@@ -1063,15 +1372,20 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
               <div className="space-y-2">
                 <button
                   onClick={() => {
-                    const updated = links.map(l => l.id === previewModalLink.id ? { ...l, totalClicks: l.totalClicks + 1 } : l);
-                    persistLinks(updated);
-                    setPreviewModalLink({ ...previewModalLink, totalClicks: previewModalLink.totalClicks + 1 });
-                    setClickTrackingNotice(`Click registered for send.chat/${previewModalLink.workspaceSlug}/${previewModalLink.slug}!`);
+                    // Preview only: real clicks are counted by the hosted resolver.
+                    setClickTrackingNotice(
+                      `Bridge preview for send.chat/${previewModalLink.workspaceSlug}/${previewModalLink.slug}. Live visitor clicks are counted automatically.`
+                    );
                     setTimeout(() => setClickTrackingNotice(null), 3500);
                   }}
                   className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer"
                 >
-                  <span>Continue to {previewModalLink.destinationType === 'messenger' ? 'Facebook Messenger' : previewModalLink.destinationType === 'instagram' ? 'Instagram Direct' : 'Chat'}</span>
+                  <span>Continue to {{
+                    messenger: 'Facebook Messenger',
+                    instagram: 'Instagram Direct',
+                    takeover: 'Live Chat',
+                    url: 'Website',
+                  }[previewModalLink.destinationType]}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
 
@@ -1083,7 +1397,7 @@ export const GrowthLinksView: React.FC<GrowthLinksViewProps> = ({
 
             {/* Modal Footer Controls */}
             <div className="flex items-center justify-between text-xs pt-1">
-              <span className="text-slate-400">Total clicks tracked: <strong className="text-white font-mono">{previewModalLink.totalClicks}</strong></span>
+              <span className="text-slate-400">Total clicks tracked: <strong className="text-white font-mono">{previewModalLink.clickCount}</strong> <span className="text-[10px] text-slate-500">(read-only, counted by the resolver)</span></span>
               <a
                 href={previewModalLink.destinationUrl}
                 target="_blank"

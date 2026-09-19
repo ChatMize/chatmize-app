@@ -12,6 +12,8 @@ import {
 interface SnapshotImportViewProps {
   snapshotId: string;
   workspaceName: string;
+  /** Current workspace slug; imported growth links land in Firestore under it. */
+  workspaceSlug?: string;
   onBack: () => void;
   onImported: () => void;
 }
@@ -20,6 +22,7 @@ interface SnapshotImportViewProps {
 export const SnapshotImportView: React.FC<SnapshotImportViewProps> = ({
   snapshotId,
   workspaceName,
+  workspaceSlug,
   onBack,
   onImported,
 }) => {
@@ -39,12 +42,15 @@ export const SnapshotImportView: React.FC<SnapshotImportViewProps> = ({
       .finally(() => setLoading(false));
   }, [snapshotId]);
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (!snapshot) return;
     setImporting(true);
     try {
-      const counts = importSnapshotPayload(snapshot.payload);
+      const counts = await importSnapshotPayload(snapshot.payload, { workspaceSlug });
       setImported(counts);
+    } catch {
+      // Firestore unavailable: surface zero counts rather than hanging.
+      setImported({ botMaps: 0, botGroups: 0, nurtureTools: 0, growthLinks: 0, overlays: 0, supportWidgets: 0 });
     } finally {
       setImporting(false);
     }

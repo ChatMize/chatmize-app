@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { EmojiPickerButton, useEmojiTarget, useEmojiTargetMap } from './emoji';
+import { PersonalizationPickerButton, usePersonalizationTarget, usePersonalizationTargetMap } from './personalization';
 import { 
   X, 
   Calendar, 
@@ -32,6 +34,7 @@ import {
   recordRecurringNotificationSent,
   subscribeToContacts
 } from '../lib/firebase';
+import { ImageUpload } from './ImageUpload';
 
 interface CampaignBuilderModalProps {
   isOpen: boolean;
@@ -73,7 +76,11 @@ export function CampaignBuilderModal({
     return d.toISOString().slice(0, 10);
   });
   const [scheduledTime, setScheduledTime] = useState<string>('10:00');
+  const broadcastEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const dripEmoji = useEmojiTargetMap<HTMLTextAreaElement | HTMLInputElement>();
   const [timezone, setTimezone] = useState<string>('America/New_York');
+  const broadcastPz = usePersonalizationTarget<HTMLTextAreaElement>();
+  const dripPz = usePersonalizationTargetMap<HTMLTextAreaElement>();
 
   // Drip Sequence Configuration
   const [triggerOnTag, setTriggerOnTag] = useState<string>('New Lead');
@@ -258,11 +265,6 @@ export function CampaignBuilderModal({
       stepNumber: idx + 1
     }));
     setDripSteps(updated);
-  };
-
-  // Personalization shortcode insert helper
-  const insertVariable = (variable: string) => {
-    setMessageText(prev => `${prev} {{${variable}}}`);
   };
 
   // Save Campaign to Firestore
@@ -507,7 +509,7 @@ export function CampaignBuilderModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1.5">Campaign Name</label>
-                <input 
+                <input data-no-emoji 
                   type="text" 
                   value={name} 
                   onChange={(e) => setName(e.target.value)}
@@ -533,7 +535,7 @@ export function CampaignBuilderModal({
 
             <div>
               <label className="block text-xs font-bold text-slate-300 mb-1.5">Description (Internal Notes)</label>
-              <input 
+              <input data-no-emoji 
                 type="text" 
                 value={description} 
                 onChange={(e) => setDescription(e.target.value)}
@@ -564,7 +566,7 @@ export function CampaignBuilderModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5">Approved Topic Name</label>
-                  <input 
+                  <input data-no-emoji 
                     type="text" 
                     value={rnTopic} 
                     onChange={(e) => setRnTopic(e.target.value)}
@@ -707,7 +709,7 @@ export function CampaignBuilderModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-900/80 rounded-xl border border-white/10 text-xs">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Enrollment Trigger Tag</label>
-                  <input 
+                  <input data-no-emoji 
                     type="text" 
                     value={triggerOnTag} 
                     onChange={(e) => setTriggerOnTag(e.target.value)}
@@ -741,7 +743,7 @@ export function CampaignBuilderModal({
                         <span className="w-6 h-6 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-black flex items-center justify-center">
                           {step.stepNumber}
                         </span>
-                        <input 
+                        <input data-no-emoji 
                           type="text" 
                           value={step.title}
                           onChange={(e) => handleUpdateDripStep(idx, { title: e.target.value })}
@@ -786,38 +788,53 @@ export function CampaignBuilderModal({
                     </div>
 
                     {/* Step Message Content */}
-                    <div>
+                    <div className="relative">
                       <textarea
                         rows={2}
+                        ref={(el) => { dripEmoji.setRef(`step:${idx}`)(el); dripPz.setRef(`step:${idx}`)(el); }}
                         value={step.messageText}
                         onChange={(e) => handleUpdateDripStep(idx, { messageText: e.target.value })}
                         placeholder="Write step message... Use {{first_name}} for personalization"
-                        className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 text-xs text-white outline-none focus:border-amber-500 resize-none"
+                        className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 pr-9 text-xs text-white outline-none focus:border-amber-500 resize-none"
                       />
+                      <span className="absolute right-1.5 bottom-1.5">
+                        <EmojiPickerButton onPick={(e) => dripEmoji.insert(`step:${idx}`, e, step.messageText, (v) => handleUpdateDripStep(idx, { messageText: v }))} placement="up" />
+                        <PersonalizationPickerButton
+                          onPick={(t) => dripPz.insert(`step:${idx}`, t, step.messageText, (v) => handleUpdateDripStep(idx, { messageText: v }))}
+                          placement="up"
+                          title="Insert personalization"
+                        />
+                      </span>
                     </div>
 
                     {/* Step Optional Media & CTA Button */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                       <div>
-                        <input 
-                          type="text" 
-                          placeholder="Media Image URL (Optional)" 
-                          value={step.mediaUrl || ''} 
-                          onChange={(e) => handleUpdateDripStep(idx, { mediaUrl: e.target.value })}
-                          className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-amber-500"
+                        <ImageUpload
+                          label="Media Image (Optional)"
+                          value={step.mediaUrl || ''}
+                          onChange={(url) => handleUpdateDripStep(idx, { mediaUrl: url })}
+                          accentClass="focus-within:border-amber-500"
+                          compact
                         />
                       </div>
                       <div>
-                        <input 
-                          type="text" 
-                          placeholder="Button Label (e.g. Claim Offer)" 
-                          value={step.buttonText || ''} 
-                          onChange={(e) => handleUpdateDripStep(idx, { buttonText: e.target.value })}
-                          className="w-full bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-amber-500"
-                        />
+                        <div className="relative">
+                          <input 
+                            type="text" 
+                            placeholder="Button Label (e.g. Claim Offer)" 
+                            ref={dripEmoji.setRef(`btn:${idx}`)}
+                            value={step.buttonText || ''} 
+                            onChange={(e) => handleUpdateDripStep(idx, { buttonText: e.target.value })}
+                            className="w-full bg-slate-950 border border-white/10 rounded-lg pl-2.5 pr-8 py-1.5 text-[11px] text-white outline-none focus:border-amber-500"
+                          />
+                          <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                            <EmojiPickerButton onPick={(e) => dripEmoji.insert(`btn:${idx}`, e, step.buttonText || '', (v) => handleUpdateDripStep(idx, { buttonText: v }))} placement="up" />
+                          </span>
+                        </div>
                       </div>
                       <div>
-                        <input 
+                        <input data-no-emoji 
                           type="text" 
                           placeholder="Destination URL (https://...)" 
                           value={step.buttonUrl || ''} 
@@ -862,51 +879,70 @@ export function CampaignBuilderModal({
                     <button
                       key={v}
                       type="button"
-                      onClick={() => insertVariable(v)}
+                      onClick={() => broadcastPz.insert(`{{${v}}}`, messageText, setMessageText)}
                       className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/15 text-blue-300 font-mono transition-colors"
                     >
                       {`{{${v}}}`}
                     </button>
                   ))}
+                  <EmojiPickerButton onPick={(e) => broadcastEmoji.insert(e, messageText, setMessageText)} placement="down" />
+                  <PersonalizationPickerButton
+                    onPick={(t) => broadcastPz.insert(t, messageText, setMessageText)}
+                    placement="down"
+                    title="Insert personalization"
+                  />
                 </div>
               </div>
 
-              <div>
+              <div className="relative">
                 <textarea
                   rows={4}
+                  ref={(el) => { broadcastEmoji.ref(el); broadcastPz.ref(el); }}
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
                   placeholder="Type the message copy... Markdown formatting supported."
-                  className="w-full bg-slate-900 border border-white/15 rounded-xl p-3.5 text-xs text-white outline-none focus:border-blue-500 resize-none font-sans leading-relaxed"
+                  className="w-full bg-slate-900 border border-white/15 rounded-xl p-3.5 pr-10 text-xs text-white outline-none focus:border-blue-500 resize-none font-sans leading-relaxed"
                 />
+                <span className="absolute right-2 bottom-2">
+                  <PersonalizationPickerButton
+                    onPick={(t) => broadcastPz.insert(t, messageText, setMessageText)}
+                    placement="up"
+                    title="Insert personalization"
+                  />
+                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-1">
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Media Banner Image</label>
-                  <input 
-                    type="text" 
-                    value={mediaUrl} 
-                    onChange={(e) => setMediaUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                  <ImageUpload
+                    label="Media Banner Image"
+                    value={mediaUrl}
+                    onChange={(url) => setMediaUrl(url)}
+                    accentClass="focus-within:border-blue-500"
+                    compact
                   />
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Call-To-Action Button</label>
-                  <input 
-                    type="text" 
-                    value={ctaButtonText} 
-                    onChange={(e) => setCtaButtonText(e.target.value)}
-                    placeholder="Claim VIP Offer 🚀"
-                    className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
-                  />
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      ref={dripEmoji.setRef('cta')}
+                      value={ctaButtonText} 
+                      onChange={(e) => setCtaButtonText(e.target.value)}
+                      placeholder="Claim VIP Offer 🚀"
+                      className="w-full bg-slate-900 border border-white/15 rounded-xl pl-3 pr-9 py-2 text-xs text-white outline-none focus:border-blue-500"
+                    />
+                    <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                      <EmojiPickerButton onPick={(e) => dripEmoji.insert('cta', e, ctaButtonText, setCtaButtonText)} placement="up" />
+                    </span>
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Destination URL</label>
-                  <input 
+                  <input data-no-emoji 
                     type="text" 
                     value={ctaButtonUrl} 
                     onChange={(e) => setCtaButtonUrl(e.target.value)}

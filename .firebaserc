@@ -13,6 +13,9 @@
         ],
         "landing": [
           "chatmize-landing"
+        ],
+        "links": [
+          "chatmize-sendchat"
         ]
       }
     }

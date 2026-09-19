@@ -18,6 +18,7 @@ export interface SmsConnection {
 export interface SmsStatus {
   connected: boolean;
   phoneNumber?: string;
+  provider?: 'twilio' | 'telnyx' | 'bandwidth';
   status?: 'provisioning' | 'active' | 'suspended';
   tenDlc?: 'not_required' | 'pending' | 'approved';
   complianceNote?: string;
@@ -86,9 +87,14 @@ export interface Workspace {
   color: string;
   avatarUrl?: string;
   ownerName?: string;
+  /** Firebase Auth UID of the workspace owner. Unset on legacy workspaces,
+   * which are treated as owner-held until the team system lands. */
+  ownerUid?: string;
   connectedPage: MetaPageConnection;
   connectedSms?: SmsConnection;
   connectedStandaloneChat?: StandaloneChatbotConnection;
+  deleted?: boolean;
+  deletedAt?: string;
   planTier: WorkspacePlanTier;
   pricingModel: WorkspacePricingModel;
   whitelabel: WhitelabelSettings;

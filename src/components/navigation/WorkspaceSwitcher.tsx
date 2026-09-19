@@ -17,6 +17,8 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { Workspace } from '../../types/workspace';
+import { getMetaOAuthStatus } from '../../lib/meta';
+import { getInstagramOAuthStatus } from '../../lib/instagram';
 
 interface WorkspaceSwitcherProps {
   workspaces: Workspace[];
@@ -40,6 +42,34 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0];
 
+  // Show the connected channel's profile image as the workspace avatar:
+  // the Meta anchor's Page picture first, then the IG-only profile picture.
+  const [channelAvatarUrl, setChannelAvatarUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setChannelAvatarUrl(null);
+    if (!activeWorkspace?.id) return;
+    (async () => {
+      try {
+        const meta = await getMetaOAuthStatus(activeWorkspace.id);
+        if (!cancelled && meta.connected && meta.pagePictureUrl) {
+          setChannelAvatarUrl(meta.pagePictureUrl);
+          return;
+        }
+      } catch { /* fall through to IG-only */ }
+      try {
+        const ig = await getInstagramOAuthStatus(activeWorkspace.id);
+        if (!cancelled && ig.connected && ig.pictureUrl) {
+          setChannelAvatarUrl(ig.pictureUrl);
+        }
+      } catch { /* keep fallback avatar */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeWorkspace?.id]);
+
+  const avatarFor = (wsId: string, fallback?: string) =>
+    (wsId === activeWorkspace?.id && channelAvatarUrl) || fallback || null;
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -57,9 +87,9 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
         onClick={() => setIsOpen(prev => !prev)}
         className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-left transition-all cursor-pointer group"
       >
-        {activeWorkspace?.avatarUrl ? (
+        {avatarFor(activeWorkspace.id, activeWorkspace?.avatarUrl) ? (
           <img 
-            src={activeWorkspace.avatarUrl} 
+            src={avatarFor(activeWorkspace.id, activeWorkspace?.avatarUrl)!} 
             alt={activeWorkspace.name} 
             className="w-7 h-7 rounded-lg object-cover border border-slate-700 flex-shrink-0 shadow-sm"
           />
@@ -81,9 +111,38 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
               <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />
             )}
           </div>
-          <div className="flex items-center gap-1 text-[10px] text-slate-400 truncate">
-            <Facebook className="w-2.5 h-2.5 text-blue-400 flex-shrink-0" />
-            <span className="truncate">{activeWorkspace?.connectedPage.pageName || 'Page Workspace'}</span>
+          {/* Active channel badges (only show connected) */}
+          <div className="flex items-center gap-1 mt-0.5">
+            {activeWorkspace?.connectedPage.pageName && (
+              <span className="text-[10px] text-slate-400 truncate max-w-[80px]">
+                {activeWorkspace.connectedPage.pageName}
+              </span>
+            )}
+            {activeWorkspace?.connectedPage.pageId && (
+              <span className="w-4 h-4 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center flex-shrink-0" title={`Facebook: ${activeWorkspace.connectedPage.pageName}`}>
+                <Facebook className="w-2.5 h-2.5 text-blue-400" />
+              </span>
+            )}
+            {activeWorkspace?.connectedPage.connectedIg?.connected && (
+              <span className="w-4 h-4 rounded-full bg-pink-500/20 border border-pink-500/30 flex items-center justify-center flex-shrink-0" title={`Instagram: @${activeWorkspace.connectedPage.connectedIg.username}`}>
+                <Instagram className="w-2.5 h-2.5 text-pink-400" />
+              </span>
+            )}
+            {activeWorkspace?.connectedPage.connectedWhatsApp?.connected && (
+              <span className="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center flex-shrink-0" title={`WhatsApp: ${activeWorkspace.connectedPage.connectedWhatsApp.phoneNumber}`}>
+                <Phone className="w-2.5 h-2.5 text-emerald-400" />
+              </span>
+            )}
+            {activeWorkspace?.connectedSms?.connected && (
+              <span className="w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center flex-shrink-0" title="SMS connected">
+                <Smartphone className="w-2.5 h-2.5 text-amber-400" />
+              </span>
+            )}
+            {activeWorkspace?.connectedStandaloneChat?.enabled && (
+              <span className="w-4 h-4 rounded-full bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center flex-shrink-0" title="Web Chat connected">
+                <Globe className="w-2.5 h-2.5 text-cyan-400" />
+              </span>
+            )}
           </div>
         </div>
 
@@ -97,7 +156,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
           <div className="p-2.5 pb-2 border-b border-slate-800 flex items-center justify-between">
             <div>
               <span className="text-xs font-bold text-white block">Karl Schuckert</span>
-              <span className="text-[10px] text-slate-400">Meta Account Anchor &bull; {workspaces.length} Connected Workspaces</span>
+              <span className="text-[10px] text-slate-400">Meta Account Anchor &bull; {workspaces.filter(w => !w.deleted).length} Connected Workspaces</span>
             </div>
             <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[9px] font-bold">
               Meta Sync Ready
@@ -106,7 +165,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
 
           {/* Workspaces List with FB + IG hierarchy + SMS & Web Bot */}
           <div className="py-1.5 max-h-72 overflow-y-auto space-y-1">
-            {workspaces.map((ws) => {
+            {workspaces.filter(ws => !ws.deleted).map((ws) => {
               const isCurrent = ws.id === activeWorkspaceId;
               const hasSms = Boolean(ws.connectedSms?.connected);
               const hasBot = Boolean(ws.connectedStandaloneChat?.enabled);
@@ -126,9 +185,9 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
                 >
                   <div className="flex items-center justify-between w-full">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      {ws.avatarUrl ? (
+                      {avatarFor(ws.id, ws.avatarUrl) ? (
                         <img 
-                          src={ws.avatarUrl} 
+                          src={avatarFor(ws.id, ws.avatarUrl)!} 
                           alt={ws.name} 
                           className="w-7 h-7 rounded-lg object-cover border border-slate-700 flex-shrink-0"
                         />
@@ -147,10 +206,12 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
                             <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 font-mono">WL</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                          <Facebook className="w-2.5 h-2.5 text-blue-400" />
-                          <span className="truncate">{ws.connectedPage.pageName}</span>
-                        </div>
+                        {ws.connectedPage.pageName && (
+                          <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                            <Facebook className="w-2.5 h-2.5 text-blue-400" />
+                            <span className="truncate">{ws.connectedPage.pageName}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -171,9 +232,9 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
                     )}
 
                     {ws.connectedPage.connectedWhatsApp?.connected && (
-                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 flex items-center gap-1" title={`WhatsApp: ${ws.connectedPage.connectedWhatsApp.phoneNumber}`}>
                         <Phone className="w-2.5 h-2.5" />
-                        <span>WA</span>
+                        <span>{ws.connectedPage.connectedWhatsApp.phoneNumber || 'WA'}</span>
                       </span>
                     )}
 

@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight, 
   ChevronUp,
+  DollarSign,
   Clock, 
   Copy, 
   ExternalLink, 
@@ -16,6 +17,8 @@ import {
   Globe, 
   Image as ImageIcon, 
   Layers, 
+  Mic,
+  Video as VideoIcon,
   Link2,
   Maximize2, 
   MessageCircle, 
@@ -49,18 +52,26 @@ import {
   ShieldAlert,
   AlertTriangle,
   AlertCircle,
+  ClipboardList,
   Instagram,
   Smartphone,
   Layout,
   Webhook,
+  Table2,
   QrCode,
   Power,
   Sliders,
   Search,
   BookOpen,
-  Hash
+  Hash,
+  ShoppingBag,
+  HelpCircle,
+  Calendar,
 } from 'lucide-react';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { getApp } from 'firebase/app';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { EmojiPickerButton, useEmojiTarget, useEmojiTargetMap } from '../components/emoji';
 import { 
   getActiveConnectedIntegrations, 
   INTEGRATION_ACTION_TEMPLATES, 
@@ -68,6 +79,9 @@ import {
   IntegrationApp 
 } from '../data/integrations';
 import { saveContact, setContactVariable, saveRecurringNotificationToken, saveOtnToken } from '../lib/firebase';
+import { validateCaptureInput, CaptureField, CaptureMode } from '../lib/contactCapture';
+import { validateVariableInput, sanitizeVariableName, validateVariableName, RESERVED_VARIABLE_NAMES, VARIABLE_TYPES } from '../lib/flowVariables';
+import { PersonalizationPickerButton, usePersonalizationTarget, usePersonalizationTargetMap, VariablePickerButton, FlowVariable } from '../components/personalization';
 import { 
   MetaMessageTag, 
   validateMessageTagCompliance, 
@@ -82,11 +96,104 @@ import {
 } from '../types/metaMessaging';
 import { MetaPolicyModal } from '../components/MetaPolicyModal';
 import { TriggerSelectorModal } from '../components/TriggerSelectorModal';
+import { ImageUpload } from '../components/ImageUpload';
+import { MediaUpload } from '../components/MediaUpload';
 import { loadBotMapData, saveBotMapData } from '../utils/botMapStorage';
+import { listBigmarkerWebinars, type BigMarkerWebinar } from '../lib/bigmarker';
+
+/**
+ * BigMarker webinar picker for the FlowBuilder webinar registration action.
+ * Loads the connected workspace's webinars and stores the selected
+ * conference id + title on the component.
+ */
+function BigmarkerWebinarPicker({
+  workspaceId,
+  value,
+  onSelect,
+}: {
+  workspaceId?: string;
+  value?: string;
+  onSelect: (conferenceId: string, title: string) => void;
+}) {
+  const [webinars, setWebinars] = useState<BigMarkerWebinar[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusLabel, setStatusLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!workspaceId) return;
+    setLoading(true);
+    setError(null);
+    listBigmarkerWebinars(workspaceId)
+      .then((r) => {
+        if (cancelled) return;
+        setStatusLabel(r.statusLabel);
+        if (r.status === 'connected') {
+          setWebinars(r.webinars);
+          if (r.webinars.length === 0) setError('No upcoming webinars found on this BigMarker account.');
+        } else {
+          setError(r.statusLabel);
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Could not load webinars.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [workspaceId]);
+
+  if (!workspaceId) {
+    return <p className="text-[10px] text-slate-500 leading-snug">Open this BotMap inside a workspace to pick a webinar.</p>;
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Webinar</label>
+      {loading && <p className="text-[10px] text-slate-500">Loading webinars…</p>}
+      {!loading && error && (
+        <p className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1.5 leading-snug">
+          {error}{statusLabel === 'Not connected' ? ' Connect BigMarker in Settings, then come back.' : ''}
+        </p>
+      )}
+      {!loading && !error && webinars.length > 0 && (
+        <select
+          value={value || ''}
+          onChange={(e) => {
+            const w = webinars.find((x) => x.id === e.target.value);
+            onSelect(e.target.value, w?.title || '');
+          }}
+          className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-sky-500"
+        >
+          <option value="">Choose a webinar…</option>
+          {webinars.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.title}{w.startAt ? ` (${new Date(w.startAt).toLocaleDateString()})` : ''}
+            </option>
+          ))}
+        </select>
+      )}
+      <p className="text-[10px] text-slate-500 leading-snug">
+        The contact is registered with their saved email and name. Already registered contacts count as a success, and a Webinar tag is added so you can send reminders. The latest status is also saved on the contact as {`{{bigmarker_status}}`}.
+      </p>
+    </div>
+  );
+}
+import { fetchSurveys } from '../lib/surveys';
+import type { Survey } from '../types/surveys';
 
 export type MessageComponentType = 
   | 'text' 
   | 'image' 
+  | 'video'
+  | 'audio'
+  | 'contact_capture'
+  | 'question'
+  | 'bigmarker_register'
+  | 'booking'
   | 'card' 
   | 'gallery' 
   | 'typing'
@@ -109,6 +216,32 @@ export interface MessageComponent {
   text?: string;
   imageUrl?: string;
   imageCaption?: string;
+  videoUrl?: string;
+  videoCaption?: string;
+  audioUrl?: string;
+  audioCaption?: string;
+  // Contact capture block: grab phone/email via one-tap quick replies,
+  // typed text, or both. The reply is validated and saved to the contact.
+  captureFields?: Array<'phone' | 'email'>;
+  captureMode?: 'quick_reply' | 'free_text' | 'both';
+  capturePrompt?: string;
+  // Question block: ask something and save the typed answer to a named
+  // variable on the contact. Phone/email use the contact capture block;
+  // this covers text, number, and date answers.
+  questionPrompt?: string;
+  questionVariable?: string;
+  questionType?: 'text' | 'number' | 'date';
+  // BigMarker webinar registration action: register the contact for the
+  // selected webinar through the BigMarker API. Registration is idempotent
+  // (register_or_update), so an already registered contact is a success.
+  // Attendance syncs back onto the contact record for flow branching.
+  bigmarkerConferenceId?: string;
+  bigmarkerConferenceTitle?: string;
+  // Booking block: offer the workspace booking page as a button inside the
+  // flow. The button URL resolves to the workspace booking page at send
+  // time; booking data lands on the contact automatically.
+  bookingIntroText?: string;
+  bookingButtonText?: string;
   cardTitle?: string;
   cardSubtitle?: string;
   cardImageUrl?: string;
@@ -184,6 +317,23 @@ export interface FlowNode {
   // No-reply condition (condition nodes): "no reply within X minutes/hours"
   conditionType?: string;
   conditionValue?: string;
+  // Webhook action: POST the contact's collected variables to a third
+  // party URL as JSON. Configured per node, stored on the flow document.
+  // variableNames limits the push; empty means all variables.
+  webhookAction?: { url: string; variableNames?: string[] };
+  // Shopify action: send a commerce message (cart recovery or order update)
+  // from a flow step. The message supports {{variable}} personalization with
+  // the event variables of the trigger that started the flow
+  // ({{cart_recovery_url}}, {{order_name}}, {{tracking_number}}, ...).
+  // Fires once per flow run from the API, never retried.
+  shopifyAction?: { kind: 'cart_recovery' | 'order_update'; message: string };
+  // Google Sheets action: append one row to a tab of the workspace's
+  // connected spreadsheet. mappings pair a column header with the variable
+  // name whose captured value fills that column.
+  sheetsAction?: { tab: string; mappings: Array<{ column: string; variable: string }> };
+  // Survey action: send the contact a link to this survey. The taker's
+  // answers land in the survey's contact variables automatically.
+  surveyAction?: { surveyId: string; surveyName?: string };
   delayText?: string;
   delayHours?: number;
   conditionText?: string;
@@ -289,7 +439,8 @@ export function FlowBuilder({
   onBackToBotList,
   activeBotId = 'bot-1',
   activeBotTitle,
-  onUpdateBotTitle
+  onUpdateBotTitle,
+  workspaceId
 }: { 
   onNavigateToIntegrations?: () => void;
   onNavigateToDocs?: (docId?: string) => void;
@@ -297,6 +448,7 @@ export function FlowBuilder({
   activeBotId?: string;
   activeBotTitle?: string;
   onUpdateBotTitle?: (title: string) => void;
+  workspaceId?: string;
 } = {}) {
   const [aiMode, setAiMode] = useState<'manual' | 'copilot' | 'auto'>('manual');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -619,7 +771,11 @@ export function FlowBuilder({
       }
       if (node.components && node.components.length > 0) {
         node.components.forEach(c => {
-          if (c.type === 'image' || c.type === 'card' || c.type === 'gallery') estimatedY += 160;
+          if (c.type === 'image' || c.type === 'video' || c.type === 'card' || c.type === 'gallery') estimatedY += 160;
+          if (c.type === 'audio') estimatedY += 120;
+          if (c.type === 'contact_capture') estimatedY += 140;
+          if (c.type === 'question') estimatedY += 140;
+          if (c.type === 'bigmarker_register') estimatedY += 140;
           else if (c.type === 'typing') estimatedY += 44;
           else if (c.type === 'text') estimatedY += 48;
           else if (c.type === 'recurring_notification_optin' || c.type === 'one_time_notification_optin') estimatedY += 120;
@@ -1556,7 +1712,7 @@ export function FlowBuilder({
             </div>
             
             {isEditingTitle ? (
-              <input 
+              <input data-no-emoji 
                 type="text" 
                 value={flowTitle} 
                 onChange={(e) => {
@@ -2299,6 +2455,9 @@ export function FlowBuilder({
           <PhoneSimulator 
             nodes={nodes}
             connections={connections}
+            workspaceId={workspaceId}
+            flowId={activeBotId}
+            flowName={flowTitle}
             onClose={() => setShowSimulator(false)}
           />
         </div>
@@ -2774,6 +2933,32 @@ const NodeCard = React.memo(function NodeCard({
             Collects SMS opt-in
           </div>
         )}
+        {isAction && node.webhookAction?.url && (
+          <div className="text-xs bg-amber-500/10 text-amber-100 px-2.5 py-1.5 rounded-lg border border-amber-500/20 flex items-start gap-2 mt-1.5">
+            <Webhook className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <span className="truncate font-mono">Webhook: {node.webhookAction.url}</span>
+          </div>
+        )}
+        {isAction && node.shopifyAction?.message && (
+          <div className="text-xs bg-emerald-500/10 text-emerald-100 px-2.5 py-1.5 rounded-lg border border-emerald-500/20 flex items-start gap-2 mt-1.5">
+            <ShoppingBag className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
+            <span className="line-clamp-2">
+              Shopify {node.shopifyAction.kind === 'cart_recovery' ? 'cart recovery' : 'order update'}: {node.shopifyAction.message}
+            </span>
+          </div>
+        )}
+        {isAction && node.sheetsAction?.tab && (
+          <div className="text-xs bg-emerald-500/10 text-emerald-100 px-2.5 py-1.5 rounded-lg border border-emerald-500/20 flex items-start gap-2 mt-1.5">
+            <Table2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
+            <span className="truncate">Sheets: {node.sheetsAction.tab} ({(node.sheetsAction.mappings || []).length} columns)</span>
+          </div>
+        )}
+        {isAction && node.surveyAction?.surveyId && (
+          <div className="text-xs bg-cyan-500/10 text-cyan-100 px-2.5 py-1.5 rounded-lg border border-cyan-500/20 flex items-start gap-2 mt-1.5">
+            <ClipboardList className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0 mt-0.5" />
+            <span className="truncate">Survey: {node.surveyAction.surveyName || node.surveyAction.surveyId}</span>
+          </div>
+        )}
 
         {isDelay && (
           <div className="text-xs text-purple-200 bg-purple-500/10 border border-purple-500/20 p-2.5 rounded-xl flex items-center gap-2">
@@ -2849,6 +3034,172 @@ const NodeCard = React.memo(function NodeCard({
                         {comp.imageCaption}
                       </div>
                     )}
+                  </div>
+                );
+              }
+
+              if (comp.type === 'video') {
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-rose-500/30 bg-slate-950/60 relative">
+                    {comp.videoUrl ? (
+                      <video 
+                        src={comp.videoUrl} 
+                        controls
+                        preload="metadata"
+                        className="w-full h-28 object-cover bg-black"
+                      />
+                    ) : (
+                      <div className="w-full h-20 bg-slate-800/80 flex items-center justify-center gap-2 text-slate-400 text-xs">
+                        <VideoIcon className="w-4 h-4 text-rose-400" />
+                        <span>No video set</span>
+                      </div>
+                    )}
+                    {comp.videoCaption && (
+                      <div className="p-2 text-[11px] text-slate-300 bg-slate-900/95 border-t border-white/5 truncate">
+                        {comp.videoCaption}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              if (comp.type === 'audio') {
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-orange-500/30 bg-slate-950/60 relative p-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="p-1.5 rounded-lg bg-orange-500/15 border border-orange-500/30">
+                        <Mic className="w-4 h-4 text-orange-400" />
+                      </div>
+                      <span className="text-[11px] font-semibold text-orange-200">
+                        {comp.audioUrl ? 'Audio attachment' : 'No audio set'}
+                      </span>
+                    </div>
+                    {comp.audioUrl && (
+                      <audio src={comp.audioUrl} controls preload="metadata" className="w-full h-8" />
+                    )}
+                    {comp.audioCaption && (
+                      <div className="mt-1.5 text-[11px] text-slate-300 truncate">
+                        {comp.audioCaption}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              if (comp.type === 'contact_capture') {
+                const fields = comp.captureFields && comp.captureFields.length > 0 ? comp.captureFields : ['phone', 'email'];
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-sky-500/30 bg-slate-950/60 relative p-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="p-1.5 rounded-lg bg-sky-500/15 border border-sky-500/30">
+                        <UserCheck className="w-4 h-4 text-sky-400" />
+                      </div>
+                      <span className="text-[11px] font-semibold text-sky-200">
+                        Capture {fields.join(' + ')}
+                      </span>
+                    </div>
+                    {comp.capturePrompt && (
+                      <div className="text-[11px] text-slate-300 truncate mb-1.5">
+                        {comp.capturePrompt}
+                      </div>
+                    )}
+                    <div className="flex gap-1.5">
+                      {fields.includes('phone') && (
+                        <span className="text-[10px] font-bold bg-sky-500/15 border border-sky-500/30 text-sky-300 px-2 py-1 rounded-lg">
+                          Tap for phone
+                        </span>
+                      )}
+                      {fields.includes('email') && (
+                        <span className="text-[10px] font-bold bg-sky-500/15 border border-sky-500/30 text-sky-300 px-2 py-1 rounded-lg">
+                          Tap for email
+                        </span>
+                      )}
+                      {comp.captureMode !== 'quick_reply' && (
+                        <span className="text-[10px] font-medium text-slate-400 px-1 py-1">
+                          or type it
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              if (comp.type === 'question') {
+                const varName = sanitizeVariableName(comp.questionVariable || '') || 'variable';
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-violet-500/30 bg-slate-950/60 relative p-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="p-1.5 rounded-lg bg-violet-500/15 border border-violet-500/30">
+                        <HelpCircle className="w-4 h-4 text-violet-400" />
+                      </div>
+                      <span className="text-[11px] font-semibold text-violet-200">
+                        Ask and save
+                      </span>
+                      <span className="ml-auto text-[10px] font-mono text-violet-300/80 bg-violet-500/10 border border-violet-500/20 px-1.5 py-0.5 rounded">
+                        {`{{${varName}}}`}
+                      </span>
+                    </div>
+                    {comp.questionPrompt && (
+                      <div className="text-[11px] text-slate-300 truncate mb-1.5">
+                        {comp.questionPrompt}
+                      </div>
+                    )}
+                    <div className="flex gap-1.5 items-center">
+                      <span className="text-[10px] font-bold bg-violet-500/15 border border-violet-500/30 text-violet-300 px-2 py-1 rounded-lg capitalize">
+                        {comp.questionType || 'text'}
+                      </span>
+                      <span className="text-[10px] text-slate-500">answer saved to {varName}</span>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (comp.type === 'bigmarker_register') {
+                const hasWebinar = !!(comp.bigmarkerConferenceId || '').trim();
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-sky-500/30 bg-slate-950/60 relative p-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="p-1.5 rounded-lg bg-sky-500/15 border border-sky-500/30">
+                        <VideoIcon className="w-4 h-4 text-sky-400" />
+                      </div>
+                      <span className="text-[11px] font-semibold text-sky-200">
+                        Register for webinar
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 truncate mb-1.5">
+                      {hasWebinar ? (comp.bigmarkerConferenceTitle || 'Webinar selected') : 'No webinar selected yet'}
+                    </div>
+                    <div className="flex gap-1.5 items-center">
+                      <span className="text-[10px] font-bold bg-sky-500/15 border border-sky-500/30 text-sky-300 px-2 py-1 rounded-lg">
+                        BigMarker
+                      </span>
+                      <span className="text-[10px] text-slate-500">contact is registered idempotently</span>
+                    </div>
+                  </div>
+                );
+              }
+              if (comp.type === 'booking') {
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-emerald-500/30 bg-slate-950/60 relative p-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="p-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30">
+                        <Calendar className="w-4 h-4 text-emerald-400" />
+                      </div>
+                      <span className="text-[11px] font-semibold text-emerald-200">
+                        Booking block
+                      </span>
+                    </div>
+                    {comp.bookingIntroText && (
+                      <div className="text-[11px] text-slate-300 truncate mb-1.5">
+                        {comp.bookingIntroText}
+                      </div>
+                    )}
+                    <div className="py-1.5 px-3 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 rounded-lg text-center text-[11px] font-bold">
+                      {comp.bookingButtonText || 'Book now'}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1.5">
+                      Opens your booking page. Booking data lands on the contact.
+                    </div>
                   </div>
                 );
               }
@@ -3146,8 +3497,14 @@ function NodeEditor({
   onToggleTrigger?: (triggerId: string) => void;
 }) {
   const [newBtnText, setNewBtnText] = useState('');
+  const [newQrText, setNewQrText] = useState('');
   const [newTagText, setNewTagText] = useState('');
   const [newKeywordInput, setNewKeywordInput] = useState('');
+  // Emoji picker targets for bot message authoring
+  const msgTextEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const smsEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const btnEmoji = useEmojiTarget<HTMLInputElement>();
+  const compEmoji = useEmojiTargetMap<HTMLTextAreaElement | HTMLInputElement>();
   const [activeIntegrations, setActiveIntegrations] = useState<IntegrationApp[]>(() => getActiveConnectedIntegrations());
   const [selectedConnectionId, setSelectedConnectionId] = useState<string>('');
   const [selectedListId, setSelectedListId] = useState<string>('');
@@ -3156,6 +3513,17 @@ function NodeEditor({
   const [expandedTriggerId, setExpandedTriggerId] = useState<string | null>(null);
   const [copiedTriggerId, setCopiedTriggerId] = useState<string | null>(null);
   const [testedWebhookId, setTestedWebhookId] = useState<string | null>(null);
+
+  // Surveys for the survey_completed trigger and the send-survey node action.
+  const [surveyOptions, setSurveyOptions] = useState<Survey[]>([]);
+  useEffect(() => {
+    if (!workspaceId) return;
+    let cancelled = false;
+    fetchSurveys(workspaceId)
+      .then((list) => { if (!cancelled) setSurveyOptions(list); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [workspaceId]);
   const [newKeywordInputs, setNewKeywordInputs] = useState<Record<string, string>>({});
   const [testingTriggerId, setTestingTriggerId] = useState<string | null>(null);
   const [testInputText, setTestInputText] = useState<string>('');
@@ -3220,6 +3588,28 @@ function NodeEditor({
   const onAutoUpdate = (updates: Partial<FlowNode>) => {
     onUpdate(updates);
   };
+  const msgPz = usePersonalizationTarget<HTMLTextAreaElement>();
+  const compPz = usePersonalizationTargetMap<HTMLTextAreaElement>();
+
+  // Variables defined by question blocks anywhere in this flow, for the
+  // variable picker in the message composers.
+  const flowVariables: FlowVariable[] = useMemo(() => {
+    const seen = new Map<string, FlowVariable>();
+    for (const n of nodes || []) {
+      for (const c of n.components || []) {
+        if (c.type !== 'question') continue;
+        const name = sanitizeVariableName(c.questionVariable || '');
+        if (!name || seen.has(name)) continue;
+        if (RESERVED_VARIABLE_NAMES.has(name)) continue;
+        seen.set(name, {
+          name,
+          type: c.questionType || 'text',
+          prompt: c.questionPrompt || '',
+        });
+      }
+    }
+    return [...seen.values()];
+  }, [nodes]);
 
   const handleUpdateTrigger = (triggerId: string, updates: Partial<FlowTrigger>) => {
     const currentTriggers = node.triggers || [];
@@ -3301,7 +3691,7 @@ function NodeEditor({
     if (type === 'web_modal' || type === 'web_bar' || type === 'web_slidein' || type === 'web_embed_form' || type === 'landing_page' || type === 'fb_customer_chat') {
       return ['OPTIN', 'START', 'DOWNLOAD', 'GUIDE', 'FREE', 'VIP'];
     }
-    if (type === 'webhook' || type === 'shopify_trigger' || type === 'lead_form') {
+    if (type === 'webhook' || type === 'shopify_trigger' || type === 'lead_form' || type === 'shopify_cart_abandoned' || type === 'shopify_order_created' || type === 'shopify_order_shipped' || type === 'shopify_order_delivered' || type === 'shopify_product_purchased') {
       return ['CHECKOUT', 'NEW_LEAD', 'ORDER_PAID', 'ABANDONED', 'PURCHASE'];
     }
     return ['START', 'BOT', 'HELP', 'PRICING', 'VIP', 'JOIN', 'INFO'];
@@ -3389,6 +3779,20 @@ function NodeEditor({
     onAutoUpdate({ buttons: updated });
   };
 
+  const handleAddQuickReply = () => {
+    if (!newQrText.trim()) return;
+    const current = node.quickReplies || [];
+    if (current.length >= 13) return;
+    onAutoUpdate({ quickReplies: [...current, newQrText.trim().slice(0, 20)] });
+    setNewQrText('');
+  };
+
+  const handleRemoveQuickReply = (index: number) => {
+    if (!node.quickReplies) return;
+    const updated = node.quickReplies.filter((_, i) => i !== index);
+    onAutoUpdate({ quickReplies: updated });
+  };
+
   const handleAddTag = () => {
     if (!newTagText.trim()) return;
     const currentTags = node.actionTags || [];
@@ -3424,6 +3828,50 @@ function NodeEditor({
         type: 'image',
         imageUrl: PRESET_IMAGES[0].url,
         imageCaption: 'Build-A-Bot Live Workshop flyer',
+      };
+    } else if (type === 'video') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'video',
+        videoUrl: '',
+        videoCaption: '',
+      };
+    } else if (type === 'audio') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'audio',
+        audioUrl: '',
+        audioCaption: '',
+      };
+    } else if (type === 'contact_capture') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'contact_capture',
+        captureFields: ['phone', 'email'],
+        captureMode: 'both',
+        capturePrompt: 'How can we reach you? Tap below or type it in.',
+      };
+    } else if (type === 'question') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'question',
+        questionPrompt: 'What is your appointment date?',
+        questionVariable: 'appointment_date',
+        questionType: 'date',
+      };
+    } else if (type === 'bigmarker_register') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'bigmarker_register',
+        bigmarkerConferenceId: '',
+        bigmarkerConferenceTitle: '',
+      };
+    } else if (type === 'booking') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'booking',
+        bookingIntroText: 'Pick a time that works for you:',
+        bookingButtonText: 'Book now',
       };
     } else if (type === 'card') {
       newComp = {
@@ -3572,7 +4020,7 @@ function NodeEditor({
         {/* Node Title */}
         <div>
           <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Step Name</label>
-          <input 
+          <input data-no-emoji 
             type="text" 
             value={node.title} 
             onChange={(e) => onAutoUpdate({ title: e.target.value })}
@@ -3901,7 +4349,7 @@ function NodeEditor({
                               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                                 Trigger Label
                               </label>
-                              <input
+                              <input data-no-emoji
                                 type="text"
                                 value={trig.title}
                                 onChange={(e) => handleUpdateTrigger(trig.id, { title: e.target.value })}
@@ -4061,7 +4509,7 @@ function NodeEditor({
 
                                     {/* Add Keywords Input */}
                                     <div className="flex gap-2">
-                                      <input
+                                      <input data-no-emoji
                                         type="text"
                                         value={newKeywordInputs[trig.id] || ''}
                                         onChange={(e) => setNewKeywordInputs(prev => ({ ...prev, [trig.id]: e.target.value }))}
@@ -4129,7 +4577,7 @@ function NodeEditor({
                                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                                     Target Post or Reel URL
                                   </label>
-                                  <input
+                                  <input data-no-emoji
                                     type="text"
                                     value={trig.postUrl || ''}
                                     onChange={(e) => handleUpdateTrigger(trig.id, { postUrl: e.target.value })}
@@ -4176,7 +4624,7 @@ function NodeEditor({
                                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                                     Connected Meta Ad Campaign Name
                                   </label>
-                                  <input
+                                  <input data-no-emoji
                                     type="text"
                                     value={trig.adCampaignName || ''}
                                     onChange={(e) => handleUpdateTrigger(trig.id, { adCampaignName: e.target.value })}
@@ -4188,7 +4636,7 @@ function NodeEditor({
                                   <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                                     Meta Ad ID / Ref Payload
                                   </label>
-                                  <input
+                                  <input data-no-emoji
                                     type="text"
                                     value={trig.adCampaignId || ''}
                                     onChange={(e) => handleUpdateTrigger(trig.id, { adCampaignId: e.target.value })}
@@ -4327,7 +4775,7 @@ function NodeEditor({
                             )}
 
                             {/* External Inbound Webhook / Integrations */}
-                            {(trig.type === 'webhook' || trig.type === 'shopify_trigger' || trig.type === 'lead_form') && (
+                            {(trig.type === 'webhook' || trig.type === 'shopify_trigger' || trig.type === 'lead_form' || trig.type === 'shopify_cart_abandoned' || trig.type === 'shopify_order_created' || trig.type === 'shopify_order_shipped' || trig.type === 'shopify_order_delivered' || trig.type === 'shopify_product_purchased') && (
                               <div className="space-y-2.5 p-3 rounded-2xl bg-slate-950/60 border border-white/10">
                                 <div className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                                   <Webhook className="w-3.5 h-3.5 text-amber-400" />
@@ -4367,6 +4815,35 @@ function NodeEditor({
                                   {testedWebhookId === trig.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Zap className="w-3.5 h-3.5" />}
                                   <span>{testedWebhookId === trig.id ? 'Test Event Received Successfully! (HTTP 200)' : 'Simulate Inbound Webhook Event'}</span>
                                 </button>
+                              </div>
+                            )}
+
+                            {/* Survey Completed trigger: pick which survey fires this flow */}
+                            {trig.type === 'survey_completed' && (
+                              <div className="space-y-2.5 p-3 rounded-2xl bg-slate-950/60 border border-white/10">
+                                <div className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                                  <ClipboardList className="w-3.5 h-3.5 text-cyan-400" />
+                                  <span>Survey That Fires This Flow</span>
+                                </div>
+                                <select
+                                  value={trig.surveyId || ''}
+                                  onChange={(e) => {
+                                    const s = surveyOptions.find(x => x.id === e.target.value);
+                                    handleUpdateTrigger(trig.id, { surveyId: s?.id || '', surveyName: s?.title || '' });
+                                  }}
+                                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-cyan-500"
+                                >
+                                  <option value="">Select a survey...</option>
+                                  {surveyOptions.filter(s => s.status === 'active').map((s) => (
+                                    <option key={s.id} value={s.id}>{s.title}</option>
+                                  ))}
+                                </select>
+                                <p className="text-[11px] text-slate-500">
+                                  When a visitor finishes this survey, the flow starts and their answers are already saved to the contact variables you named.
+                                </p>
+                                {surveyOptions.filter(s => s.status === 'active').length === 0 && (
+                                  <p className="text-[11px] text-amber-300">No active surveys yet. Build one in Growth Suite → Surveys and set it to Active.</p>
+                                )}
                               </div>
                             )}
                           </div>
@@ -4463,7 +4940,7 @@ function NodeEditor({
                 <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
                   Custom Delay Description / Timer Text
                 </label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={node.delayText || node.content || ''}
                   onChange={(e) => onAutoUpdate({ delayText: e.target.value, content: e.target.value })}
@@ -4767,7 +5244,7 @@ function NodeEditor({
                       <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1.5">
                         OTN Token Topic / Purpose
                       </label>
-                      <input
+                      <input data-no-emoji
                         type="text"
                         value={node.otnTopic || ''}
                         onChange={(e) => onAutoUpdate({ otnTopic: e.target.value })}
@@ -4840,7 +5317,7 @@ function NodeEditor({
                         <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1.5">
                           Topic
                         </label>
-                        <input
+                        <input data-no-emoji
                           type="text"
                           value={node.rnTopic || ''}
                           onChange={(e) => onAutoUpdate({ rnTopic: e.target.value })}
@@ -4930,13 +5407,25 @@ function NodeEditor({
             <div className="flex justify-between items-center mb-2">
               <label className="text-xs font-bold uppercase text-slate-400">Message Text</label>
               <div className="flex gap-1.5">
-                <button 
+                <EmojiPickerButton onPick={(e) => msgTextEmoji.insert(e, node.content || '', (v) => onAutoUpdate({ content: v }))} placement="down" />
+                <PersonalizationPickerButton
+                  onPick={(t) => msgPz.insert(t, node.content || '', (v) => onAutoUpdate({ content: v }))}
+                  placement="down"
+                  title="Insert personalization"
+                />
+                <VariablePickerButton
+                  variables={flowVariables}
+                  onPick={(t) => msgPz.insert(t, node.content || '', (v) => onAutoUpdate({ content: v }))}
+                  placement="down"
+                  title="Insert flow variable"
+                />
+                <button
                   onClick={() => onAutoUpdate({ content: (node.content || '') + ' {{first_name}}' })}
                   className="text-[11px] font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20"
                 >
                   + {'{{first_name}}'}
                 </button>
-                <button 
+                <button
                   onClick={() => onAutoUpdate({ content: (node.content || '') + ' {{email}}' })}
                   className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20"
                 >
@@ -4944,9 +5433,10 @@ function NodeEditor({
                 </button>
               </div>
             </div>
-            <textarea 
+            <textarea
               rows={6}
-              value={node.content || ''} 
+              ref={msgTextEmoji.ref}
+              value={node.content || ''}
               onChange={(e) => onAutoUpdate({ content: e.target.value })}
               className="w-full bg-slate-900 border border-white/10 rounded-xl p-3.5 text-sm text-white outline-none focus:border-blue-500 transition-colors resize-none leading-relaxed font-sans"
               placeholder="Type your bot response here..."
@@ -4961,7 +5451,7 @@ function NodeEditor({
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-bold uppercase text-slate-400">Step Components Sequence</label>
-                  <span className="text-[10px] text-slate-500">Order executes top-to-bottom</span>
+                  <span className="text-[10px] text-slate-500">Media attachments send first, then the rest top to bottom</span>
                 </div>
 
                 <div className="space-y-3">
@@ -5144,14 +5634,26 @@ function NodeEditor({
                           <div className="flex justify-between items-center">
                             <label className="text-[10px] font-bold uppercase text-slate-400">Bubble Text</label>
                             <div className="flex gap-1">
-                              <button 
+                              <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:text`, e, comp.text || '', (v) => handleUpdateComponent(comp.id, { text: v }))} placement="down" />
+                              <PersonalizationPickerButton
+                                onPick={(t) => compPz.insert(`bubble:${comp.id}`, t, comp.text || '', (v) => handleUpdateComponent(comp.id, { text: v }))}
+                                placement="down"
+                                title="Insert personalization"
+                              />
+                              <VariablePickerButton
+                                variables={flowVariables}
+                                onPick={(t) => compPz.insert(`bubble:${comp.id}`, t, comp.text || '', (v) => handleUpdateComponent(comp.id, { text: v }))}
+                                placement="down"
+                                title="Insert flow variable"
+                              />
+                              <button
                                 type="button"
                                 onClick={() => handleUpdateComponent(comp.id, { text: (comp.text || '') + ' {{first_name}}' })}
                                 className="text-[10px] font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20"
                               >
                                 + {'{{first_name}}'}
                               </button>
-                              <button 
+                              <button
                                 type="button"
                                 onClick={() => handleUpdateComponent(comp.id, { text: (comp.text || '') + ' {{email}}' })}
                                 className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20"
@@ -5160,8 +5662,9 @@ function NodeEditor({
                               </button>
                             </div>
                           </div>
-                          <textarea 
+                          <textarea
                             rows={3}
+                            ref={compEmoji.setRef(`${comp.id}:text`)}
                             value={comp.text || ''}
                             onChange={(e) => handleUpdateComponent(comp.id, { text: e.target.value })}
                             placeholder="Add additional message text..."
@@ -5195,13 +5698,11 @@ function NodeEditor({
                           </div>
 
                           <div>
-                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Image URL</label>
-                            <input 
-                              type="text" 
-                              value={comp.imageUrl || ''} 
-                              onChange={(e) => handleUpdateComponent(comp.id, { imageUrl: e.target.value })}
-                              placeholder="https://images.unsplash.com/..."
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                            <ImageUpload
+                              label="Image"
+                              value={comp.imageUrl || ''}
+                              onChange={(url) => handleUpdateComponent(comp.id, { imageUrl: url })}
+                              accentClass="focus-within:border-emerald-500"
                             />
                           </div>
 
@@ -5216,17 +5717,237 @@ function NodeEditor({
                             />
                           </div>
 
-                          {/* Image Preview */}
-                          {comp.imageUrl && (
-                            <div className="rounded-xl overflow-hidden border border-white/10 bg-slate-950 relative h-28">
-                              <img 
-                                src={comp.imageUrl} 
-                                alt={comp.imageCaption || 'Preview'} 
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
+                        </div>
+                      )}
+
+                      {/* VIDEO COMPONENT EDITOR */}
+                      {comp.type === 'video' && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <MediaUpload
+                              label="Video"
+                              kind="video"
+                              value={comp.videoUrl || ''}
+                              onChange={(url) => handleUpdateComponent(comp.id, { videoUrl: url })}
+                              accentClass="focus-within:border-rose-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Caption (Optional)</label>
+                            <input 
+                              type="text" 
+                              value={comp.videoCaption || ''} 
+                              onChange={(e) => handleUpdateComponent(comp.id, { videoCaption: e.target.value })}
+                              placeholder="What this video shows..."
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-rose-500"
+                            />
+                          </div>
+
+                        </div>
+                      )}
+
+                      {/* AUDIO COMPONENT EDITOR */}
+                      {comp.type === 'audio' && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <MediaUpload
+                              label="Audio"
+                              kind="audio"
+                              value={comp.audioUrl || ''}
+                              onChange={(url) => handleUpdateComponent(comp.id, { audioUrl: url })}
+                              accentClass="focus-within:border-orange-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Caption (Optional)</label>
+                            <input 
+                              type="text" 
+                              value={comp.audioCaption || ''} 
+                              onChange={(e) => handleUpdateComponent(comp.id, { audioCaption: e.target.value })}
+                              placeholder="What this audio covers..."
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-orange-500"
+                            />
+                          </div>
+
+                        </div>
+                      )}
+
+                      {/* CONTACT CAPTURE COMPONENT EDITOR */}
+                      {comp.type === 'contact_capture' && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Prompt</label>
+                            <input
+                              type="text"
+                              value={comp.capturePrompt || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { capturePrompt: e.target.value })}
+                              placeholder="How can we reach you?"
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-sky-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Collect</label>
+                            <div className="flex gap-1.5">
+                              {(['phone', 'email'] as const).map((f) => {
+                                const active = (comp.captureFields || []).includes(f);
+                                return (
+                                  <button
+                                    key={f}
+                                    type="button"
+                                    onClick={() => {
+                                      const cur = comp.captureFields || ['phone', 'email'];
+                                      const next = active ? cur.filter((x) => x !== f) : [...cur, f];
+                                      if (next.length === 0) return;
+                                      handleUpdateComponent(comp.id, { captureFields: next });
+                                    }}
+                                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                                      active
+                                        ? 'bg-sky-500 text-white'
+                                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                    }`}
+                                  >
+                                    {f === 'phone' ? 'Phone' : 'Email'}
+                                  </button>
+                                );
+                              })}
                             </div>
-                          )}
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">How they answer</label>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {([
+                                { v: 'quick_reply', label: 'One tap' },
+                                { v: 'free_text', label: 'Type it' },
+                                { v: 'both', label: 'Both' },
+                              ] as const).map((m) => (
+                                <button
+                                  key={m.v}
+                                  type="button"
+                                  onClick={() => handleUpdateComponent(comp.id, { captureMode: m.v })}
+                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                                    (comp.captureMode || 'both') === m.v
+                                      ? 'bg-sky-500 text-white'
+                                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                  }`}
+                                >
+                                  {m.label}
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
+                              One tap serves their own number or email as a button on Messenger and Instagram. Typing works everywhere and is validated automatically.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {comp.type === 'question' && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Question</label>
+                            <input
+                              type="text"
+                              value={comp.questionPrompt || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { questionPrompt: e.target.value })}
+                              placeholder="What is your appointment date?"
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-violet-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Save answer as</label>
+                            <input
+                              type="text"
+                              value={comp.questionVariable || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { questionVariable: sanitizeVariableName(e.target.value) })}
+                              placeholder="appointment_date"
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono outline-none focus:border-violet-500"
+                            />
+                            {(() => {
+                              const nameCheck = validateVariableName(comp.questionVariable || '');
+                              if (nameCheck.ok) return null;
+                              return (
+                                <p className="text-[10px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-1.5 mt-1.5 leading-snug">
+                                  {nameCheck.error}
+                                </p>
+                              );
+                            })()}
+                            <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
+                              Use it later as {`{{${sanitizeVariableName(comp.questionVariable || '') || 'variable'}}}`} in any message, or push it to a third party with the webhook action.
+                            </p>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Answer type</label>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {VARIABLE_TYPES.map((t) => (
+                                <button
+                                  key={t.v}
+                                  type="button"
+                                  title={t.hint}
+                                  onClick={() => handleUpdateComponent(comp.id, { questionType: t.v })}
+                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                                    (comp.questionType || 'text') === t.v
+                                      ? 'bg-violet-500 text-white'
+                                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                  }`}
+                                >
+                                  {t.label}
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
+                              Dates accept natural typing like Jan 5 2027 and are saved as YYYY-MM-DD.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* BIGMARKER WEBINAR REGISTRATION EDITOR */}
+                      {comp.type === 'bigmarker_register' && (
+                        <div className="space-y-3 pt-1">
+                          <BigmarkerWebinarPicker
+                            workspaceId={workspaceId}
+                            value={comp.bigmarkerConferenceId}
+                            onSelect={(conferenceId, title) =>
+                              handleUpdateComponent(comp.id, {
+                                bigmarkerConferenceId: conferenceId,
+                                bigmarkerConferenceTitle: title,
+                              })
+                            }
+                          />
+                        </div>
+                      )}
+
+                      {comp.type === 'booking' && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Intro text</label>
+                            <input
+                              type="text"
+                              value={comp.bookingIntroText || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { bookingIntroText: e.target.value })}
+                              placeholder="Pick a time that works for you:"
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Button text</label>
+                            <input
+                              type="text"
+                              value={comp.bookingButtonText || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { bookingButtonText: e.target.value })}
+                              placeholder="Book now"
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-snug">
+                            The button opens this workspace's booking page from Settings &gt; Bookings. When the contact books, the booking date, time, and status are saved on their contact automatically.
+                          </p>
                         </div>
                       )}
 
@@ -5252,51 +5973,67 @@ function NodeEditor({
                                 </button>
                               ))}
                             </div>
-                            <input 
-                              type="text" 
-                              value={comp.cardImageUrl || ''} 
-                              onChange={(e) => handleUpdateComponent(comp.id, { cardImageUrl: e.target.value })}
-                              placeholder="Image URL..."
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+                            <ImageUpload
+                              value={comp.cardImageUrl || ''}
+                              onChange={(url) => handleUpdateComponent(comp.id, { cardImageUrl: url })}
+                              accentClass="focus-within:border-purple-500"
                             />
                           </div>
 
                           <div>
                             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Card Title</label>
-                            <input 
-                              type="text" 
-                              value={comp.cardTitle || ''} 
-                              onChange={(e) => handleUpdateComponent(comp.id, { cardTitle: e.target.value })}
-                              placeholder="e.g. VIP Masterclass Pass"
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-purple-500 font-bold"
-                            />
+                            <div className="relative">
+                              <input 
+                                type="text" 
+                                ref={compEmoji.setRef(`${comp.id}:cardTitle`)}
+                                value={comp.cardTitle || ''} 
+                                onChange={(e) => handleUpdateComponent(comp.id, { cardTitle: e.target.value })}
+                                placeholder="e.g. VIP Masterclass Pass"
+                                className="w-full bg-slate-950 border border-white/10 rounded-xl pl-2.5 pr-9 py-1.5 text-xs text-white outline-none focus:border-purple-500 font-bold"
+                              />
+                              <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                                <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:cardTitle`, e, comp.cardTitle || '', (v) => handleUpdateComponent(comp.id, { cardTitle: v }))} placement="up" />
+                              </span>
+                            </div>
                           </div>
 
                           <div>
                             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Subtitle / Details</label>
-                            <textarea 
-                              rows={2}
-                              value={comp.cardSubtitle || ''} 
-                              onChange={(e) => handleUpdateComponent(comp.id, { cardSubtitle: e.target.value })}
-                              placeholder="Brief description of the offer or content..."
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 text-xs text-white outline-none focus:border-purple-500 resize-none leading-relaxed"
-                            />
+                            <div className="relative">
+                              <textarea 
+                                rows={2}
+                                ref={compEmoji.setRef(`${comp.id}:cardSubtitle`)}
+                                value={comp.cardSubtitle || ''} 
+                                onChange={(e) => handleUpdateComponent(comp.id, { cardSubtitle: e.target.value })}
+                                placeholder="Brief description of the offer or content..."
+                                className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 pr-9 text-xs text-white outline-none focus:border-purple-500 resize-none leading-relaxed"
+                              />
+                              <span className="absolute right-1.5 bottom-1.5">
+                                <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:cardSubtitle`, e, comp.cardSubtitle || '', (v) => handleUpdateComponent(comp.id, { cardSubtitle: v }))} placement="up" />
+                              </span>
+                            </div>
                           </div>
 
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Button Label</label>
-                              <input 
-                                type="text" 
-                                value={comp.cardButtonLabel || ''} 
-                                onChange={(e) => handleUpdateComponent(comp.id, { cardButtonLabel: e.target.value })}
-                                placeholder="e.g. Reserve Spot"
-                                className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-purple-500"
-                              />
+                              <div className="relative">
+                                <input 
+                                  type="text" 
+                                  ref={compEmoji.setRef(`${comp.id}:cardButtonLabel`)}
+                                  value={comp.cardButtonLabel || ''} 
+                                  onChange={(e) => handleUpdateComponent(comp.id, { cardButtonLabel: e.target.value })}
+                                  placeholder="e.g. Reserve Spot"
+                                  className="w-full bg-slate-950 border border-white/10 rounded-xl pl-2.5 pr-9 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+                                />
+                                <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                                  <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:cardButtonLabel`, e, comp.cardButtonLabel || '', (v) => handleUpdateComponent(comp.id, { cardButtonLabel: v }))} placement="up" />
+                                </span>
+                              </div>
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Button Link</label>
-                              <input 
+                              <input data-no-emoji 
                                 type="text" 
                                 value={comp.cardButtonUrl || ''} 
                                 onChange={(e) => handleUpdateComponent(comp.id, { cardButtonUrl: e.target.value })}
@@ -5353,20 +6090,25 @@ function NodeEditor({
                                   className="w-full bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-xs text-white outline-none focus:border-amber-500"
                                 />
                                 <div className="grid grid-cols-2 gap-1.5">
-                                  <input 
-                                    type="text"
+                                  <ImageUpload
                                     value={gcard.imageUrl || ''}
-                                    onChange={(e) => handleUpdateGalleryCard(comp.id, gcard.id, { imageUrl: e.target.value })}
-                                    placeholder="Image URL"
-                                    className="w-full bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white outline-none focus:border-amber-500"
+                                    onChange={(url) => handleUpdateGalleryCard(comp.id, gcard.id, { imageUrl: url })}
+                                    accentClass="focus-within:border-amber-500"
+                                    compact
                                   />
-                                  <input 
-                                    type="text"
-                                    value={gcard.buttonLabel || ''}
-                                    onChange={(e) => handleUpdateGalleryCard(comp.id, gcard.id, { buttonLabel: e.target.value })}
-                                    placeholder="Button text"
-                                    className="w-full bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-[11px] text-white outline-none focus:border-amber-500"
-                                  />
+                                  <div className="relative">
+                                    <input 
+                                      type="text"
+                                      ref={compEmoji.setRef(`${comp.id}:${gcard.id}:btn`)}
+                                      value={gcard.buttonLabel || ''}
+                                      onChange={(e) => handleUpdateGalleryCard(comp.id, gcard.id, { buttonLabel: e.target.value })}
+                                      placeholder="Button text"
+                                      className="w-full bg-slate-900 border border-white/10 rounded-lg pl-2 pr-8 py-1 text-[11px] text-white outline-none focus:border-amber-500"
+                                    />
+                                    <span className="absolute right-0.5 top-1/2 -translate-y-1/2">
+                                      <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:${gcard.id}:btn`, e, gcard.buttonLabel || '', (v) => handleUpdateGalleryCard(comp.id, gcard.id, { buttonLabel: v }))} placement="up" />
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             ))}
@@ -5471,7 +6213,7 @@ function NodeEditor({
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Meta Template Name</label>
-                              <input 
+                              <input data-no-emoji 
                                 type="text" 
                                 value={comp.waTemplateName || ''} 
                                 onChange={(e) => handleUpdateComponent(comp.id, { waTemplateName: e.target.value })}
@@ -5506,13 +6248,19 @@ function NodeEditor({
 
                           <div>
                             <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Template Body (Approved Copy)</label>
-                            <textarea 
-                              rows={3}
-                              value={comp.waBody || ''} 
-                              onChange={(e) => handleUpdateComponent(comp.id, { waBody: e.target.value })}
-                              placeholder="Hi {{1}}, your order has been dispatched. Track here: {{2}}"
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500 resize-none font-sans"
-                            />
+                            <div className="relative">
+                              <textarea 
+                                rows={3}
+                                ref={compEmoji.setRef(`${comp.id}:waBody`)}
+                                value={comp.waBody || ''} 
+                                onChange={(e) => handleUpdateComponent(comp.id, { waBody: e.target.value })}
+                                placeholder="Hi {{1}}, your order has been dispatched. Track here: {{2}}"
+                                className="w-full bg-slate-950 border border-white/10 rounded-xl p-2.5 pr-9 text-xs text-white outline-none focus:border-emerald-500 resize-none font-sans"
+                              />
+                              <span className="absolute right-1.5 bottom-1.5">
+                                <EmojiPickerButton onPick={(e) => compEmoji.insert(`${comp.id}:waBody`, e, comp.waBody || '', (v) => handleUpdateComponent(comp.id, { waBody: v }))} placement="up" />
+                              </span>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -5552,18 +6300,73 @@ function NodeEditor({
             </div>
 
             {/* Add new button input */}
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                placeholder="Button label..." 
-                value={newBtnText} 
-                onChange={(e) => setNewBtnText(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddButton()}
-                className="flex-1 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500 transition-colors"
-              />
+            <div className="flex gap-2 items-center">
+              <div className="relative flex-1">
+                <input 
+                  type="text" 
+                  placeholder="Button label..." 
+                  ref={btnEmoji.ref}
+                  value={newBtnText} 
+                  onChange={(e) => setNewBtnText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddButton()}
+                  className="w-full bg-slate-900 border border-white/10 rounded-xl pl-3 pr-9 py-2 text-xs text-white outline-none focus:border-blue-500 transition-colors"
+                />
+                <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                  <EmojiPickerButton onPick={(e) => btnEmoji.insert(e, newBtnText, setNewBtnText)} placement="up" />
+                </span>
+              </div>
               <button 
                 onClick={handleAddButton}
                 className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Quick Replies */}
+        {node.type === 'message' && (
+          <div>
+            <label className="block text-xs font-bold uppercase text-slate-400 mb-2">Quick Replies</label>
+            <p className="text-[10px] text-slate-500 mb-2">Meta requires quick replies to send with message text. They always go out with the text, after any media.</p>
+            {(!node.content || !node.content.trim()) && (node.quickReplies || []).length > 0 && (
+              <p className="text-[10px] text-amber-400 mb-2">Add message text above so the quick replies have text to attach to.</p>
+            )}
+            <div className="space-y-2 mb-3">
+              {(node.quickReplies || []).map((qr, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold text-white">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{qr}</span>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveQuickReply(idx)}
+                    className="text-slate-400 hover:text-red-400 p-1 transition-colors"
+                    title="Remove quick reply"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Add new quick reply input */}
+            <div className="flex gap-2 items-center">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Reply label... (max 20 chars)"
+                  value={newQrText}
+                  onChange={(e) => setNewQrText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddQuickReply()}
+                  maxLength={20}
+                  className="w-full bg-slate-900 border border-white/10 rounded-xl pl-3 pr-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors"
+                />
+              </div>
+              <button
+                onClick={handleAddQuickReply}
+                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" /> Add
               </button>
@@ -5620,13 +6423,58 @@ function NodeEditor({
               </button>
             </div>
 
+            {/* Log Revenue action: tags a booking/sale with a dollar value for money-track badges */}
+            <div className="mb-3 p-3 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/20">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5 mb-2">
+                <DollarSign className="w-3 h-3" />
+                <span>Log Revenue</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Amount ($)"
+                  id={`rev-amount-${node.id}`}
+                  className="w-28 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors"
+                />
+                <input
+                  type="text"
+                  placeholder="Note (optional)"
+                  id={`rev-note-${node.id}`}
+                  maxLength={120}
+                  className="flex-1 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const amountEl = document.getElementById(`rev-amount-${node.id}`) as HTMLInputElement | null;
+                    const noteEl = document.getElementById(`rev-note-${node.id}`) as HTMLInputElement | null;
+                    const amount = parseFloat((amountEl?.value || '').replace(/[^0-9.]/g, ''));
+                    if (!Number.isFinite(amount) || amount <= 0) return;
+                    const note = (noteEl?.value || '').trim();
+                    const tag = note ? `LogRevenue: ${amount.toFixed(2)} | ${note}` : `LogRevenue: ${amount.toFixed(2)}`;
+                    const currentTags = node.actionTags || [];
+                    onAutoUpdate({ actionTags: [...currentTags, tag] });
+                    if (amountEl) amountEl.value = '';
+                    if (noteEl) noteEl.value = '';
+                  }}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1.5">Adds up in your Rewards tab and counts toward money badges.</p>
+            </div>
+
             {/* SMS action: sent via the workspace's Twilio number; requires opt-in */}
             <div className="pt-3 border-t border-white/10 space-y-2.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 <MessageSquareText className="w-3 h-3 text-amber-400" />
                 <span>Send SMS</span>
+                <span className="ml-auto"><EmojiPickerButton onPick={(e) => smsEmoji.insert(e, node.smsMessage || '', (v) => onAutoUpdate({ smsMessage: v }))} placement="up" /></span>
               </label>
               <textarea
+                ref={smsEmoji.ref}
                 value={node.smsMessage || ''}
                 onChange={(e) => onAutoUpdate({ smsMessage: e.target.value })}
                 rows={3}
@@ -5773,6 +6621,180 @@ function NodeEditor({
                   When on, the push is skipped if the contact replies on any channel inside the window. This is what chains the steps: Messenger, then SMS, then push, each one standing down when the contact answers.
                 </p>
               </div>
+            </div>
+
+            {/* Webhook action: POST collected variables to a third party */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Webhook className="w-3 h-3 text-amber-400" />
+                <span>Send variables to webhook</span>
+              </label>
+              <input
+                type="url"
+                value={node.webhookAction?.url || ''}
+                onChange={(e) => onAutoUpdate({ webhookAction: { ...(node.webhookAction || { variableNames: [] }), url: e.target.value } })}
+                placeholder="https://your-crm.com/hook"
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 outline-none focus:border-amber-500 transition-colors"
+              />
+              <input
+                type="text"
+                value={(node.webhookAction?.variableNames || []).join(', ')}
+                onChange={(e) => onAutoUpdate({ webhookAction: { url: node.webhookAction?.url || '', variableNames: e.target.value.split(',').map((s) => sanitizeVariableName(s)).filter(Boolean) } })}
+                placeholder="Variable names, comma separated (empty sends all)"
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 outline-none focus:border-amber-500 transition-colors"
+              />
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Fires from the API with the contact id and variables as JSON. HTTPS only. Fires once per call, never retried.
+              </p>
+            </div>
+
+            {/* Shopify action: send a cart recovery or order update message */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <ShoppingBag className="w-3 h-3 text-emerald-400" />
+                <span>Shopify message</span>
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onAutoUpdate({ shopifyAction: { kind: 'cart_recovery', message: node.shopifyAction?.message || '' } })}
+                  className={`flex-1 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
+                    (node.shopifyAction?.kind || 'cart_recovery') === 'cart_recovery'
+                      ? 'bg-emerald-600 text-white border-emerald-500'
+                      : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  Cart recovery
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAutoUpdate({ shopifyAction: { kind: 'order_update', message: node.shopifyAction?.message || '' } })}
+                  className={`flex-1 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
+                    node.shopifyAction?.kind === 'order_update'
+                      ? 'bg-emerald-600 text-white border-emerald-500'
+                      : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  Order update
+                </button>
+              </div>
+              <textarea
+                value={node.shopifyAction?.message || ''}
+                onChange={(e) => {
+                  const message = e.target.value;
+                  if (!message && !node.shopifyAction) return;
+                  onAutoUpdate({
+                    shopifyAction: message
+                      ? { kind: node.shopifyAction?.kind || 'cart_recovery', message }
+                      : undefined,
+                  });
+                }}
+                placeholder={
+                  (node.shopifyAction?.kind || 'cart_recovery') === 'cart_recovery'
+                    ? 'Hi {{customer_first_name}}, you left {{cart_items}} in your cart ({{cart_total}}). Tap to finish checkout: {{cart_recovery_url}}'
+                    : 'Hi {{customer_first_name}}, order {{order_name}} is on its way. Track it here: {{tracking_url}}'
+                }
+                rows={3}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-emerald-500 transition-colors resize-y"
+              />
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                {(node.shopifyAction?.kind || 'cart_recovery') === 'cart_recovery'
+                  ? 'Use {{cart_items}}, {{cart_total}}, {{cart_recovery_url}}, {{customer_first_name}}. Fires when the cart abandoned trigger starts this flow.'
+                  : 'Use {{order_name}}, {{order_total}}, {{tracking_number}}, {{tracking_url}}, {{customer_first_name}}. Fires when an order event starts this flow.'}
+                {' '}Sends once per flow run, never retried.
+              </p>
+            </div>
+
+            {/* Google Sheets action: append one row to the workspace's connected sheet */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Table2 className="w-3 h-3 text-emerald-400" />
+                <span>Log to Google Sheet</span>
+              </label>
+              <input
+                type="text"
+                value={node.sheetsAction?.tab || ''}
+                onChange={(e) => onAutoUpdate({ sheetsAction: { ...(node.sheetsAction || { mappings: [] }), tab: e.target.value } })}
+                placeholder="Tab name, e.g. Leads"
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-emerald-500 transition-colors"
+              />
+              <div className="space-y-1.5">
+                {(node.sheetsAction?.mappings || []).map((m, idx) => (
+                  <div key={idx} className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={m.column}
+                      onChange={(e) => {
+                        const mappings = [...(node.sheetsAction?.mappings || [])];
+                        mappings[idx] = { ...mappings[idx], column: e.target.value };
+                        onAutoUpdate({ sheetsAction: { ...(node.sheetsAction || { tab: '' }), mappings } });
+                      }}
+                      placeholder="Column"
+                      className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder:text-slate-600 outline-none focus:border-emerald-500 transition-colors"
+                    />
+                    <span className="text-slate-600 text-xs">=</span>
+                    <input
+                      type="text"
+                      value={m.variable}
+                      onChange={(e) => {
+                        const mappings = [...(node.sheetsAction?.mappings || [])];
+                        mappings[idx] = { ...mappings[idx], variable: e.target.value };
+                        onAutoUpdate({ sheetsAction: { ...(node.sheetsAction || { tab: '' }), mappings } });
+                      }}
+                      placeholder="variable"
+                      className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono placeholder:text-slate-600 outline-none focus:border-emerald-500 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const mappings = (node.sheetsAction?.mappings || []).filter((_, i) => i !== idx);
+                        onAutoUpdate({ sheetsAction: { ...(node.sheetsAction || { tab: '' }), mappings } });
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-red-400 transition-colors cursor-pointer"
+                      title="Remove mapping"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const mappings = [...(node.sheetsAction?.mappings || []), { column: '', variable: '' }];
+                  onAutoUpdate({ sheetsAction: { ...(node.sheetsAction || { tab: '' }), mappings } });
+                }}
+                className="w-full px-3 py-1.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/25 text-emerald-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Map a column
+              </button>
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Appends one row to the tab. Column is the header in row 1; variable is the captured answer to fill it. Connect the sheet in Settings first.
+              </p>
+            </div>
+
+            {/* Survey action: send the contact a survey link */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <ClipboardList className="w-3 h-3 text-cyan-400" />
+                <span>Send survey</span>
+              </label>
+              <select
+                value={node.surveyAction?.surveyId || ''}
+                onChange={(e) => {
+                  const s = surveyOptions.find(x => x.id === e.target.value);
+                  onAutoUpdate(s ? { surveyAction: { surveyId: s.id, surveyName: s.title } } : { surveyAction: undefined });
+                }}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 transition-colors"
+              >
+                <option value="">No survey (off)</option>
+                {surveyOptions.filter(s => s.status === 'active').map((s) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Sends the contact the survey link. Their answers land in the survey's contact variables, ready for the next steps in this flow.
+              </p>
             </div>
 
             {/* Active Integrations Cascading Configuration: Connection -> List -> Tags */}
@@ -6069,7 +7091,7 @@ function NodeEditor({
               {(node.components || []).length} added
             </span>
           </div>
-          <div className="grid grid-cols-5 gap-1 sm:gap-1.5 mb-1.5">
+          <div className="grid grid-cols-4 gap-1 sm:gap-1.5 mb-1.5">
             <button 
               type="button"
               onClick={() => handleAddComponent('text')}
@@ -6114,6 +7136,60 @@ function NodeEditor({
             >
               <MoreHorizontal className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-400 group-hover:scale-110 transition-transform mb-0.5" />
               <span className="text-[9px] sm:text-[10px] font-bold text-cyan-300">Typing</span>
+            </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('video')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-white/10 hover:border-rose-500/50 hover:bg-slate-800/80 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm"
+              title="Add video attachment"
+            >
+              <VideoIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-medium text-slate-300">Video</span>
+            </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('audio')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-white/10 hover:border-orange-500/50 hover:bg-slate-800/80 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm"
+              title="Add audio attachment"
+            >
+              <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-medium text-slate-300">Audio</span>
+            </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('contact_capture')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-sky-500/40 hover:border-sky-400 hover:bg-sky-500/15 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm shadow-sky-500/10"
+              title="Add contact capture block (phone/email)"
+            >
+              <UserCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-bold text-sky-300">Capture</span>
+            </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('question')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-violet-500/40 hover:border-violet-400 hover:bg-violet-500/15 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm shadow-violet-500/10"
+              title="Add question block (save the answer as a variable)"
+            >
+              <HelpCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-violet-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-bold text-violet-300">Ask</span>
+            </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('bigmarker_register')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-sky-500/40 hover:border-sky-400 hover:bg-sky-500/15 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm shadow-sky-500/10"
+              title="Register the contact for a BigMarker webinar"
+            >
+              <VideoIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-bold text-sky-300">Webinar</span>
+            </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('booking')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-500/15 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm shadow-emerald-500/10"
+              title="Add booking block (offer your booking page as a button)"
+            >
+              <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-bold text-emerald-300">Book</span>
             </button>
           </div>
 
@@ -6163,41 +7239,109 @@ type SimulatorItem =
   | { id: string; sender: 'user'; text: string }
   | { id: string; sender: 'bot'; type: 'text'; text: string }
   | { id: string; sender: 'bot'; type: 'image'; imageUrl: string; caption?: string }
+  | { id: string; sender: 'bot'; type: 'video'; videoUrl: string; caption?: string }
+  | { id: string; sender: 'bot'; type: 'audio'; audioUrl: string; caption?: string }
   | { id: string; sender: 'bot'; type: 'card'; title: string; subtitle?: string; imageUrl?: string; buttonLabel?: string; buttonUrl?: string }
   | { id: string; sender: 'bot'; type: 'gallery'; cards: CardItem[] }
   | { id: string; sender: 'bot'; type: 'rn_optin'; topic: string; frequency: string; title: string; buttonText: string; tokenGranted?: boolean }
   | { id: string; sender: 'bot'; type: 'otn_optin'; topic: string; buttonText: string; tokenGranted?: boolean }
-  | { id: string; sender: 'bot'; type: 'wa_template'; templateName: string; category: string; header?: string; body: string };
+  | { id: string; sender: 'bot'; type: 'wa_template'; templateName: string; category: string; header?: string; body: string }
+  | { id: string; sender: 'bot'; type: 'contact_capture'; prompt: string; fields: Array<'phone' | 'email'>; mode: 'quick_reply' | 'free_text' | 'both' }
+  | { id: string; sender: 'bot'; type: 'question'; prompt: string; variable: string; varType: 'text' | 'number' | 'date' }
+  | { id: string; sender: 'bot'; type: 'bigmarker_register'; title: string; registered: boolean };
 
 function PhoneSimulator({ 
   nodes, 
   connections = [], 
+  workspaceId,
+  flowId,
+  flowName,
   onClose 
 }: { 
   nodes: FlowNode[]; 
   connections?: FlowConnection[]; 
+  workspaceId?: string;
+  flowId?: string;
+  flowName?: string;
   onClose: () => void;
 }) {
+  // Analytics: simulator runs are tracked separately (sim: true) so test
+  // traffic never pollutes live numbers. Best effort, never blocks the sim.
+  const enteredFiredRef = useRef(false);
+  const trackSimEvent = useCallback((
+    type: 'entered' | 'step' | 'completed',
+    stepId?: string,
+    stepTitle?: string,
+  ) => {
+    if (!workspaceId || !flowId) return;
+    try {
+      const functions = getFunctions(getApp(), 'us-west2');
+      const fn = httpsCallable(functions, 'trackFlowEvent');
+      fn({
+        workspaceId,
+        flowId,
+        flowName: flowName || 'Untitled flow',
+        type,
+        stepId,
+        stepTitle,
+        sim: true,
+      }).catch(() => {});
+    } catch {}
+  }, [workspaceId, flowId, flowName]);
+
+  // Fire "entered" once when the simulator opens.
+  useEffect(() => {
+    if (!enteredFiredRef.current) {
+      enteredFiredRef.current = true;
+      trackSimEvent('entered');
+    }
+  }, [trackSimEvent]);
   const [currentNodeId, setCurrentNodeId] = useState<string>('step-1');
   const [chatItems, setChatItems] = useState<SimulatorItem[]>([]);
   const [activeButtons, setActiveButtons] = useState<string[]>([]);
+  const [activeQuickReplies, setActiveQuickReplies] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [typingDuration, setTypingDuration] = useState<number>(3);
   const [secondsRemaining, setSecondsRemaining] = useState<number>(3);
   const [appliedTag, setAppliedTag] = useState<string | null>(null);
   const [typingMode, setTypingMode] = useState<'realistic' | 'instant'>('realistic');
+  // Contact capture: armed while a capture block waits for the user's answer.
+  const [activeCapture, setActiveCapture] = useState<{ compId: string; fields: Array<'phone' | 'email'>; mode: 'quick_reply' | 'free_text' | 'both' } | null>(null);
+  const [captureInput, setCaptureInput] = useState('');
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  // Question block: armed while an Ask block waits for the user's answer.
+  const [activeQuestion, setActiveQuestion] = useState<{ compId: string; variable: string; varType: 'text' | 'number' | 'date' } | null>(null);
+  const [questionInput, setQuestionInput] = useState('');
+  const [questionError, setQuestionError] = useState<string | null>(null);
+  // The simulated contact: collected phone/email plus saved variables.
+  const [simContact, setSimContact] = useState<{
+    firstName: string;
+    email: string;
+    phone: string;
+    variables: Record<string, string>;
+  }>({
+    firstName: 'Alex',
+    email: 'alex.webinar@gmail.com',
+    phone: '+1 (555) 019-2834',
+    variables: {},
+  });
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const galleryScrollRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const stepQueueRef = useRef<Array<() => void>>([]);
 
-  // Replace personalization variables
+  // Replace personalization variables, plus any variable saved by an Ask
+  // block earlier in the flow (resolved against the simulated contact).
   const replaceVars = (text: string) => {
-    return text
-      .replace(/{{first_name}}/g, 'Alex')
-      .replace(/{{email}}/g, 'alex.webinar@gmail.com')
-      .replace(/{{phone}}/g, '+1 (555) 019-2834');
+    const withFlowVars = text.replace(/{{([a-z_][a-z0-9_]*)}}/g, (match, name) => {
+      if (name === 'first_name') return simContact.firstName;
+      if (name === 'email') return simContact.email;
+      if (name === 'phone') return simContact.phone;
+      const val = simContact.variables[name];
+      return val !== undefined ? String(val) : match;
+    });
+    return withFlowVars;
   };
 
   // Scroll to bottom on updates
@@ -6237,6 +7381,8 @@ function PhoneSimulator({
     if (!node) return;
 
     setCurrentNodeId(nodeId);
+    // Analytics: funnel step view inside the simulator.
+    trackSimEvent('step', node.id, node.title);
 
     // If it's an action node, execute CRM action and immediately jump to connected target
     if (node.type === 'action') {
@@ -6296,6 +7442,95 @@ function PhoneSimulator({
       } catch (e) {}
 
       // Find outbound connection from this action node
+      // Webhook action: simulate the push (no real POST from the browser).
+      // Production pushes fire from the API via the send_webhook tool.
+      if (node.webhookAction?.url) {
+        const pushedNames = node.webhookAction.variableNames && node.webhookAction.variableNames.length > 0
+          ? node.webhookAction.variableNames
+          : Object.keys(simContact.variables);
+        const pushedPairs = pushedNames
+          .map((name) => `${name}=${simContact.variables[name] ?? '(empty)'}`)
+          .join(', ');
+        setChatItems((prev) => [
+          ...prev,
+          {
+            id: `webhook-${Date.now()}`,
+            sender: 'bot',
+            type: 'text',
+            text: `Webhook simulated → ${node.webhookAction!.url}${pushedPairs ? ` (${pushedPairs})` : ''}`,
+          },
+        ]);
+      }
+      // Shopify action: simulate the commerce message with sample values
+      // (no real send from the browser; production sends fire from the API).
+      if (node.shopifyAction?.message) {
+        const sampleVars: Record<string, string> = {
+          customer_first_name: 'Alex',
+          customer_email: 'alex@example.com',
+          cart_items: '2 x Trail Backpack (Forest)',
+          cart_total: '$129.00',
+          cart_currency: 'USD',
+          cart_item_count: '2',
+          cart_recovery_url: 'https://mystore.myshopify.com/checkouts/recover',
+          order_name: '#1001',
+          order_total: '$129.00',
+          order_currency: 'USD',
+          order_item_count: '2',
+          order_items: '2 x Trail Backpack (Forest)',
+          order_status_url: 'https://mystore.myshopify.com/orders/status',
+          tracking_number: '1Z9999999999999999',
+          tracking_company: 'UPS',
+          tracking_url: 'https://www.ups.com/track?tracknum=1Z9999999999999999',
+          product_title: 'Trail Backpack',
+          variant_title: 'Forest',
+          quantity: '1',
+          price: '$129.00',
+        };
+        const rendered = node.shopifyAction.message.replace(
+          /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+          (_m, name: string) => sampleVars[name] ?? simContact.variables[name] ?? `{{${name}}}`,
+        );
+        setChatItems((prev) => [
+          ...prev,
+          {
+            id: `shopify-${Date.now()}`,
+            sender: 'bot',
+            type: 'text',
+            text: rendered,
+          },
+        ]);
+      }
+      // Sheets action: simulate the row append (no real Google call from the
+      // browser). Production appends fire from the API via sheets_append_row.
+      if (node.sheetsAction?.tab) {
+        const mappedPairs = (node.sheetsAction.mappings || [])
+          .filter((m) => m.column)
+          .map((m) => `${m.column}=${simContact.variables[m.variable] ?? '(empty)'}`)
+          .join(', ');
+        setChatItems((prev) => [
+          ...prev,
+          {
+            id: `sheets-${Date.now()}`,
+            sender: 'bot',
+            type: 'text',
+            text: `Sheets simulated → row appended to "${node.sheetsAction!.tab}"${mappedPairs ? ` (${mappedPairs})` : ''}`,
+          },
+        ]);
+      }
+      // Survey action: simulate sending the survey link (no real send from
+      // the browser). Production sends fire from the API alongside the flow.
+      if (node.surveyAction?.surveyId) {
+        const surveyName = node.surveyAction.surveyName || 'your survey';
+        setChatItems((prev) => [
+          ...prev,
+          {
+            id: `survey-${Date.now()}`,
+            sender: 'bot',
+            type: 'text',
+            text: `Survey sent → ${surveyName} (${window.location.origin}/survey/${node.surveyAction!.surveyId}). Answers land in the survey's contact variables.`,
+          },
+        ]);
+      }
       const nextConn = connections.find(c => c.sourceNodeId === node.id);
       if (nextConn) {
         setTimeout(() => {
@@ -6306,34 +7541,14 @@ function PhoneSimulator({
     }
 
     // Build the sequential steps for this message node:
-    // 1. Primary content (if any)
-    // 2. Each component in node.components
-    // 3. Final interactive buttons
+    // 1. Media components (image, video, audio) always lead
+    // 2. Primary content (if any)
+    // 3. Every other component in sequence
+    // 4. Final interactive buttons
     const queue: Array<() => void> = [];
 
-    // Primary content block
-    if (node.content && node.content.trim()) {
-      queue.push(() => {
-        setChatItems(prev => [
-          ...prev, 
-          { 
-            id: `msg-${Date.now()}-${Math.random()}`, 
-            sender: 'bot', 
-            type: 'text', 
-            text: replaceVars(node.content!) 
-          }
-        ]);
-        // Trigger next queue item if available
-        if (stepQueueRef.current.length > 0) {
-          const next = stepQueueRef.current.shift();
-          next?.();
-        }
-      });
-    }
-
-    // Components in order (typing, text, image, card, gallery)
-    if (node.components && node.components.length > 0) {
-      node.components.forEach((comp) => {
+    // One component becomes one queued send step.
+    const pushComponent = (comp: MessageComponent) => {
         if (comp.type === 'typing') {
           // Push a typing pause step
           queue.push(() => {
@@ -6368,6 +7583,40 @@ function PhoneSimulator({
                 type: 'image',
                 imageUrl: comp.imageUrl!,
                 caption: comp.imageCaption ? replaceVars(comp.imageCaption) : undefined
+              }
+            ]);
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
+        } else if (comp.type === 'video' && comp.videoUrl) {
+          queue.push(() => {
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'video',
+                videoUrl: comp.videoUrl!,
+                caption: comp.videoCaption ? replaceVars(comp.videoCaption) : undefined
+              }
+            ]);
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
+        } else if (comp.type === 'audio' && comp.audioUrl) {
+          queue.push(() => {
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'audio',
+                audioUrl: comp.audioUrl!,
+                caption: comp.audioCaption ? replaceVars(comp.audioCaption) : undefined
               }
             ]);
             if (stepQueueRef.current.length > 0) {
@@ -6466,16 +7715,161 @@ function PhoneSimulator({
               next?.();
             }
           });
+        } else if (comp.type === 'contact_capture') {
+          queue.push(() => {
+            const fields = comp.captureFields && comp.captureFields.length > 0 ? comp.captureFields : (['phone', 'email'] as Array<'phone' | 'email'>);
+            const mode = comp.captureMode || 'both';
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'contact_capture',
+                prompt: replaceVars(comp.capturePrompt || 'How can we reach you? Tap below or type it in.'),
+                fields,
+                mode,
+              }
+            ]);
+            // Arm the capture: the flow waits here until the user taps a
+            // one-tap chip or types an answer (validated like the server).
+            setActiveCapture({ compId: comp.id, fields, mode });
+            setCaptureInput('');
+            setCaptureError(null);
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
+        } else if (comp.type === 'booking') {
+          queue.push(() => {
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'text',
+                text: `${replaceVars(comp.bookingIntroText || 'Pick a time that works for you:')}\n\n[ ${replaceVars(comp.bookingButtonText || 'Book now')} ] (opens your booking page)`,
+              }
+            ]);
+            // Booking blocks don't block the flow in the simulator: the
+            // contact books on the public page and booking_created triggers
+            // continue the conversation. Variables are not set here because
+            // no real booking exists in the simulator.
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
+        } else if (comp.type === 'question') {
+          queue.push(() => {
+            const nameCheck = validateVariableName(comp.questionVariable || '');
+            if (!nameCheck.ok) {
+              // Reserved or empty name: say so in the simulator and move on
+              // instead of arming a question that could never save correctly.
+              setChatItems(prev => [
+                ...prev,
+                {
+                  id: `comp-${comp.id}-blocked`,
+                  sender: 'bot',
+                  type: 'text',
+                  text: `Question skipped: ${nameCheck.error}`,
+                }
+              ]);
+              if (stepQueueRef.current.length > 0) {
+                const next = stepQueueRef.current.shift();
+                next?.();
+              }
+              return;
+            }
+            const variable = nameCheck.name;
+            const varType = comp.questionType === 'number' || comp.questionType === 'date' ? comp.questionType : 'text';
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'question',
+                prompt: replaceVars(comp.questionPrompt || 'What is your answer?'),
+                variable,
+                varType,
+              }
+            ]);
+            // Arm the question: the flow waits here until the user types an
+            // answer (validated and normalized like the server).
+            setActiveQuestion({ compId: comp.id, variable, varType });
+            setQuestionInput('');
+            setQuestionError(null);
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
+        } else if (comp.type === 'bigmarker_register') {
+          queue.push(() => {
+            const registered = !!(comp.bigmarkerConferenceId || '').trim();
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'bigmarker_register',
+                title: comp.bigmarkerConferenceTitle || 'Webinar',
+                registered,
+              }
+            ]);
+            // The simulator never hits the real BigMarker API; it shows what
+            // the contact would see after a successful registration. Live,
+            // the backend registers the contact idempotently and tags them.
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
+        }
+    };
+
+    const isMediaComponent = (c: MessageComponent) =>
+      c.type === 'image' || c.type === 'video' || c.type === 'audio';
+    const orderedComps = node.components || [];
+
+    // Media always leads the message.
+    orderedComps.filter(isMediaComponent).forEach(pushComponent);
+
+    // Primary content block
+    if (node.content && node.content.trim()) {
+      queue.push(() => {
+        setChatItems(prev => [
+          ...prev,
+          {
+            id: `msg-${Date.now()}-${Math.random()}`,
+            sender: 'bot',
+            type: 'text',
+            text: replaceVars(node.content!)
+          }
+        ]);
+        // Trigger next queue item if available
+        if (stepQueueRef.current.length > 0) {
+          const next = stepQueueRef.current.shift();
+          next?.();
         }
       });
     }
 
-    // Final interactive buttons
+    // Everything else runs in sequence after the media and text.
+    orderedComps.filter((c) => !isMediaComponent(c)).forEach(pushComponent);
+
+    // Final interactive buttons + quick replies. Quick replies render with
+    // the text step per Meta's text-first rule (they never ride the media).
     queue.push(() => {
       if (node.buttons && node.buttons.length > 0) {
         setActiveButtons(node.buttons);
       } else {
         setActiveButtons([]);
+      }
+      if (node.quickReplies && node.quickReplies.length > 0) {
+        setActiveQuickReplies(node.quickReplies);
+      } else {
+        setActiveQuickReplies([]);
       }
     });
 
@@ -6512,6 +7906,7 @@ function PhoneSimulator({
       { id: `user-${Date.now()}`, sender: 'user', text: btnLabel }
     ]);
     setActiveButtons([]);
+    setActiveQuickReplies([]);
 
     // Persist user button response as a dynamic variable to Firestore contact
     try {
@@ -6546,6 +7941,8 @@ function PhoneSimulator({
         }, 400);
       } else {
         // Conclude simulation
+        // Analytics: the simulated run reached the end of the flow.
+        trackSimEvent('completed');
         setTimeout(() => {
           setChatItems(prev => [
             ...prev,
@@ -6570,13 +7967,73 @@ function PhoneSimulator({
     }
   };
 
+  // --- Contact capture: one-tap chips and typed input ---
+  const handleCaptureQuickReply = (field: 'phone' | 'email') => {
+    if (!activeCapture) return;
+    const value = field === 'phone' ? '15555550100' : 'test@example.com';
+    const label = field === 'phone' ? '(555) 555-0100' : 'test@example.com';
+    setSimContact((prev) => ({ ...prev, [field === 'phone' ? 'phone' : 'email']: value }));
+    setChatItems((prev) => [...prev, { id: `user-capture-${Date.now()}`, sender: 'user', type: 'text', text: label }]);
+    setActiveCapture(null);
+    setCaptureInput('');
+    setCaptureError(null);
+    advanceFromNode(capturedNodeRef.current, activeCapture.compId);
+  };
+
+  const handleCaptureSubmit = () => {
+    if (!activeCapture) return;
+    const result = validateCaptureInput(captureInput, activeCapture.fields);
+    if (!result.ok) {
+      setCaptureError(result.error);
+      return;
+    }
+    setSimContact((prev) => ({ ...prev, [result.field === 'phone' ? 'phone' : 'email']: result.value }));
+    setChatItems((prev) => [...prev, { id: `user-capture-${Date.now()}`, sender: 'user', type: 'text', text: result.value }]);
+    const compId = activeCapture.compId;
+    setActiveCapture(null);
+    setCaptureInput('');
+    setCaptureError(null);
+    advanceFromNode(capturedNodeRef.current, compId);
+  };
+
+  // --- Question block: validate the typed answer, save it to the variable,
+  // then continue the flow from the asking node ---
+  const handleQuestionSubmit = () => {
+    if (!activeQuestion) return;
+    const result = validateVariableInput(questionInput, activeQuestion.varType);
+    if (!result.ok) {
+      setQuestionError(result.error);
+      return;
+    }
+    const variable = activeQuestion.variable;
+    setSimContact((prev) => ({
+      ...prev,
+      variables: { ...prev.variables, [variable]: result.value },
+    }));
+    setContactVariable('sim_contact_alex_vance', variable, result.value).catch(() => {});
+    setChatItems((prev) => [...prev, { id: `user-question-${Date.now()}`, sender: 'user', type: 'text', text: result.value }]);
+    const compId = activeQuestion.compId;
+    setActiveQuestion(null);
+    setQuestionInput('');
+    setQuestionError(null);
+    advanceFromNode(capturedNodeRef.current, compId);
+  };
+
   const handleReset = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     stepQueueRef.current = [];
     setIsTyping(false);
     setChatItems([]);
     setActiveButtons([]);
+    setActiveCapture(null);
+    setCaptureInput('');
+    setCaptureError(null);
+    setActiveQuestion(null);
+    setQuestionInput('');
+    setQuestionError(null);
+    setActiveQuickReplies([]);
     setAppliedTag(null);
+    setSimContact({ firstName: 'Alex', email: 'alex.webinar@gmail.com', phone: '+1 (555) 019-2834', variables: {} });
 
     const startNode = nodes.find(n => n.type === 'trigger') || nodes.find(n => n.id === 'step-1') || nodes[0];
     if (startNode) {
@@ -6705,6 +8162,48 @@ function PhoneSimulator({
                     />
                     {item.caption && (
                       <div className="p-2.5 text-[11px] text-slate-300 font-medium border-t border-white/5">
+                        {item.caption}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // Bot video attachment
+            if (item.type === 'video') {
+              return (
+                <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 max-w-[88%]">
+                  <div className="bg-slate-800/95 border border-white/10 rounded-2xl rounded-bl-none overflow-hidden shadow-md w-full">
+                    <video
+                      src={item.videoUrl}
+                      controls
+                      preload="metadata"
+                      className="w-full max-h-48"
+                    />
+                    {item.caption && (
+                      <div className="p-2.5 text-[11px] text-slate-300 font-medium border-t border-white/5">
+                        {item.caption}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // Bot audio attachment
+            if (item.type === 'audio') {
+              return (
+                <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 max-w-[88%]">
+                  <div className="bg-slate-800/95 border border-white/10 rounded-2xl rounded-bl-none p-3 shadow-md w-full">
+                    <audio
+                      src={item.audioUrl}
+                      controls
+                      preload="metadata"
+                      className="w-full h-8"
+                    />
+                    {item.caption && (
+                      <div className="pt-2 text-[11px] text-slate-300 font-medium">
                         {item.caption}
                       </div>
                     )}
@@ -6965,6 +8464,155 @@ function PhoneSimulator({
               );
             }
 
+            if (item.type === 'contact_capture') {
+              const showControls = activeCapture?.compId === item.id.replace('comp-', '');
+              return (
+                <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 w-full max-w-[90%]">
+                  <div className="bg-sky-950/50 border border-sky-500/40 rounded-2xl rounded-bl-none overflow-hidden shadow-lg w-full p-3.5 space-y-2">
+                    <div className="flex items-center gap-1.5 text-sky-300 font-bold text-xs">
+                      <UserCheck className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Contact capture</span>
+                    </div>
+                    <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+                      {item.prompt}
+                    </div>
+                    {showControls && (
+                      <div className="space-y-2 pt-1">
+                        {activeCapture.mode !== 'free_text' && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {activeCapture.fields.includes('phone') && (
+                              <button
+                                type="button"
+                                onClick={() => handleCaptureQuickReply('phone')}
+                                className="bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold px-3 py-1.5 rounded-full transition-colors"
+                              >
+                                Share phone number
+                              </button>
+                            )}
+                            {activeCapture.fields.includes('email') && (
+                              <button
+                                type="button"
+                                onClick={() => handleCaptureQuickReply('email')}
+                                className="bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold px-3 py-1.5 rounded-full transition-colors"
+                              >
+                                Share email address
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {activeCapture.mode !== 'quick_reply' && (
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              value={captureInput}
+                              onChange={(e) => { setCaptureInput(e.target.value); setCaptureError(null); }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleCaptureSubmit(); }}
+                              placeholder={activeCapture.fields.includes('email') && !activeCapture.fields.includes('phone') ? 'you@example.com' : 'Your phone number'}
+                              className="flex-1 min-w-0 bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-sky-500 placeholder:text-slate-600"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleCaptureSubmit}
+                              className="bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold px-3 rounded-lg transition-colors"
+                            >
+                              Send
+                            </button>
+                          </div>
+                        )}
+                        {captureError && (
+                          <div className="text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-1.5">
+                            {captureError}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // Question block: ask the prompt, take a typed answer, save it to
+            // the named variable (later {{variable}} tags resolve to it).
+            if (item.type === 'question') {
+              const showControls = activeQuestion?.compId === item.id.replace('comp-', '');
+              const savedValue = !showControls ? simContact.variables[item.variable] : undefined;
+              return (
+                <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 w-full max-w-[90%]">
+                  <div className="bg-violet-950/50 border border-violet-500/40 rounded-2xl rounded-bl-none overflow-hidden shadow-lg w-full p-3.5 space-y-2">
+                    <div className="flex items-center gap-1.5 text-violet-300 font-bold text-xs">
+                      <HelpCircle className="w-3.5 h-3.5 text-violet-400" />
+                      <span>Question</span>
+                      <span className="ml-auto text-[9px] font-mono font-normal text-violet-400/80 bg-violet-500/10 border border-violet-500/20 px-1.5 py-0.5 rounded">
+                        {`{{${item.variable}}}`}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+                      {item.prompt}
+                    </div>
+                    {showControls && (
+                      <div className="space-y-2 pt-1">
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={questionInput}
+                            onChange={(e) => { setQuestionInput(e.target.value); setQuestionError(null); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleQuestionSubmit(); }}
+                            placeholder={item.varType === 'date' ? 'e.g. Jan 5 2027' : item.varType === 'number' ? 'e.g. 42' : 'Type your answer'}
+                            className="flex-1 min-w-0 bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-violet-500 placeholder:text-slate-600"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleQuestionSubmit}
+                            className="bg-violet-500 hover:bg-violet-400 text-white text-xs font-bold px-3 rounded-lg transition-colors"
+                          >
+                            Send
+                          </button>
+                        </div>
+                        {questionError && (
+                          <div className="text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-1.5">
+                            {questionError}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {savedValue !== undefined && (
+                      <div className="text-[10px] text-violet-300/70 font-mono pt-0.5">
+                        Saved: {savedValue}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // BigMarker registration action: shows the confirmation the
+            // contact would see after a successful registration. The live
+            // backend registers idempotently and adds the webinar tag.
+            if (item.type === 'bigmarker_register') {
+              return (
+                <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 w-full max-w-[90%]">
+                  <div className="bg-sky-950/50 border border-sky-500/40 rounded-2xl rounded-bl-none overflow-hidden shadow-lg w-full p-3.5 space-y-2">
+                    <div className="flex items-center gap-1.5 text-sky-300 font-bold text-xs">
+                      <VideoIcon className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Webinar registration</span>
+                    </div>
+                    {item.registered ? (
+                      <div className="text-xs text-slate-200 leading-relaxed">
+                        You are registered for <span className="font-semibold">{item.title}</span>. Your confirmation email is on its way.
+                      </div>
+                    ) : (
+                      <div className="text-xs text-amber-200 leading-relaxed">
+                        No webinar selected on this block yet. Pick one in the block editor.
+                      </div>
+                    )}
+                    <div className="text-[10px] text-sky-300/60 italic">
+                      Simulated. Live runs register the contact through BigMarker and add the webinar tag for reminders.
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
             return null;
           })}
 
@@ -7003,6 +8651,21 @@ function PhoneSimulator({
                 >
                   <span>{btn}</span>
                   <ChevronRight className="w-3.5 h-3.5 text-blue-400" />
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Quick Replies (Meta text-first: shown with the text step, never on media) */}
+          {!isTyping && activeQuickReplies.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-1 w-full max-w-[88%] animate-in fade-in slide-in-from-bottom-2 duration-200">
+              {activeQuickReplies.map((qr, qIdx) => (
+                <button
+                  key={qIdx}
+                  type="button"
+                  onClick={() => setActiveQuickReplies([])}
+                  className="py-1.5 px-3 bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/40 hover:border-emerald-400 text-emerald-200 rounded-full text-xs font-semibold transition-all cursor-pointer active:scale-95"
+                >
+                  {qr}
                 </button>
               ))}
             </div>

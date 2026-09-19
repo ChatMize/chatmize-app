@@ -1,4 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, memo } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from '../components/emoji';
+import { MetaReconnectModal, isConnectionExpiredError } from '../components/MetaReconnectModal';
+import { PersonalizationPickerButton, usePersonalizationTarget } from '../components/personalization';
+import { getApp } from 'firebase/app';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
   MessageSquare, 
   Send, 
@@ -49,9 +54,11 @@ import {
 } from 'lucide-react';
 import { 
   subscribeToContacts, 
+  subscribeToConversationMessages,
   saveContact, 
   updateContactField, 
   seedInitialMetaContacts,
+  prodDb,
   ContactRecord 
 } from '../lib/firebase';
 
@@ -63,6 +70,9 @@ export interface ConversationMessage {
   text: string;
   timestamp: string;
   senderName?: string;
+  /** Baked at merge time so bubbles never depend on the live contact object
+   * (keeps memo() effective when the contact doc updates). */
+  senderInitial?: string;
   metaTag?: 'CONFIRMED_EVENT_UPDATE' | 'POST_PURCHASE_UPDATE' | 'ACCOUNT_UPDATE' | 'HUMAN_AGENT';
   type?: 'text' | 'content_card' | 'quick_reply' | 'event_log' | 'rn_prompt';
   contentCard?: {
@@ -74,8 +84,120 @@ export interface ConversationMessage {
     buttonUrl?: string;
     flowId?: string;
   };
-  deliveryStatus?: 'sent' | 'delivered' | 'read';
+  deliveryStatus?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 }
+
+// Memoized chat bubble: unchanged messages keep object identity in the parent's
+// merge, so memo skips their re-render and the thread scrolls smoothly.
+// NOTE: the bubble takes NO contact props on purpose — senderName/senderInitial
+// are baked into each message at merge time. Passing the live contact's name
+// here would defeat memo() on every contact-doc update (e.g. profile
+// enrichment) and re-render the whole thread mid-scroll.
+const MessageBubble = memo(function MessageBubble({
+  msg,
+  onNavigateToFlows,
+}: {
+  msg: ConversationMessage;
+  onNavigateToFlows?: (flowId: string) => void;
+}) {
+  if (msg.type === 'event_log') {
+    return (
+      <div className="flex justify-center my-1.5">
+        <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400 flex items-center gap-1.5 max-w-lg text-center">
+          <Zap className="w-3 h-3 text-cyan-400 shrink-0" />
+          <span>{msg.text}</span>
+          <span className="text-[10px] text-slate-500 ml-1 shrink-0">{msg.timestamp}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const isCustomer = msg.sender === 'customer';
+  const isBot = msg.sender === 'bot';
+
+  return (
+    <div
+      className={`flex gap-2.5 ${isCustomer ? 'justify-start' : 'justify-end'}`}
+    >
+      {/* Customer Avatar on left */}
+      {isCustomer && (
+        <div className="w-7 h-7 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center shrink-0 mt-1 text-[10px] font-bold text-slate-300">
+          {msg.senderInitial || 'C'}
+        </div>
+      )}
+
+      <div className={`max-w-md space-y-1 ${isCustomer ? 'items-start' : 'items-end'}`}>
+        {/* Sender Label */}
+        <div className={`flex items-center gap-1.5 text-[10px] ${isCustomer ? 'text-slate-400' : 'text-slate-400 justify-end'}`}>
+          <span>{msg.senderName || (isCustomer ? 'Customer' : 'Agent')}</span>
+          <span>•</span>
+          <span>{msg.timestamp}</span>
+          {msg.metaTag && (
+            <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-semibold">
+              Tag: {msg.metaTag}
+            </span>
+          )}
+        </div>
+
+        {/* Bubble */}
+        <div
+          className={`p-3 rounded-2xl text-xs leading-relaxed ${
+            isCustomer
+              ? 'bg-slate-900 border border-white/10 text-slate-200 rounded-tl-sm shadow-sm'
+              : isBot
+              ? 'bg-gradient-to-br from-cyan-950/80 to-blue-950/80 border border-cyan-500/30 text-cyan-100 rounded-tr-sm shadow-md shadow-cyan-950/20'
+              : 'bg-gradient-to-br from-purple-950/80 to-indigo-950/80 border border-purple-500/30 text-purple-100 rounded-tr-sm shadow-md'
+          }`}
+        >
+          <p className="whitespace-pre-wrap">{msg.text}</p>
+
+          {/* Content Card Attachment (if any) */}
+          {msg.contentCard && (
+            <div className="mt-2.5 p-3 rounded-xl bg-slate-950/80 border border-white/15 space-y-2">
+              {msg.contentCard.badge && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 inline-block">
+                  {msg.contentCard.badge}
+                </span>
+              )}
+              <h4 className="text-xs font-bold text-white">{msg.contentCard.title}</h4>
+              <p className="text-[11px] text-slate-400">{msg.contentCard.description}</p>
+              <div className="pt-1 flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    if (msg.contentCard?.flowId && onNavigateToFlows) {
+                      onNavigateToFlows(msg.contentCard.flowId);
+                    }
+                  }}
+                  className="w-full py-1.5 px-3 rounded-lg text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20"
+                >
+                  <span>{msg.contentCard.buttonText}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Delivery status for outbound */}
+        {!isCustomer && msg.deliveryStatus && (
+          <div className="text-[10px] text-slate-500 flex items-center justify-end gap-1">
+            <CheckCircle2 className="w-2.5 h-2.5 text-cyan-400" />
+            <span className="capitalize">{msg.deliveryStatus}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Agent / Bot Avatar on right */}
+      {!isCustomer && (
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-1 text-[10px] font-bold ${
+          isBot ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+        }`}>
+          {isBot ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
+        </div>
+      )}
+    </div>
+  );
+});
 
 // Follow-Up Rule interface
 export interface FollowUpRule {
@@ -198,14 +320,34 @@ const PRESET_FOLLOW_UP_TEMPLATES = [
 ];
 
 interface LiveConversationsViewProps {
+  workspaceId?: string;
+  workspaceName?: string;
+  ownerName?: string;
+  /** False when the signed-in user is not the workspace owner. */
+  isOwner?: boolean;
   onNavigateToAudience?: (contactId?: string) => void;
   onNavigateToFlows?: (flowId?: string) => void;
 }
 
 export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
+  workspaceId: workspaceIdProp,
+  workspaceName,
+  ownerName,
+  isOwner = true,
   onNavigateToAudience,
   onNavigateToFlows
 }) => {
+  // Conversation data lives in the real Firestore workspace where the
+  // webhook handler persists it (ws-chatmize-dev). The localStorage workspace
+  // id is a UI silo label, not a Firestore path, so it must not be used here.
+  // (Proper multi-workspace mapping lands with the support widget rebuild.)
+  const workspaceId = 'ws-chatmize-dev';
+  // Inbox contacts and conversations live in the backend database
+  // (chatmize-prod), where the webhook handler persists them. The applet
+  // database only holds stale demo/seed records, so every inbox read and
+  // write must target prodDb until the workspace rebuild unifies this.
+  const updateInboxContact = (contactId: string, updates: Partial<ContactRecord>) =>
+    updateContactField(contactId, updates, prodDb);
   // State for contacts from Firestore
   const [contacts, setContacts] = useState<ContactRecord[]>([]);
   const [isLoadingContacts, setIsLoadingContacts] = useState<boolean>(true);
@@ -233,8 +375,14 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
   // Composer state
   const [messageInput, setMessageInput] = useState<string>('');
+  const composerEmoji = useEmojiTarget<HTMLInputElement>();
+  const notesEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const ruleContentEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const composerPz = usePersonalizationTarget<HTMLInputElement>();
   const [selectedMetaTag, setSelectedMetaTag] = useState<ConversationMessage['metaTag'] | ''>('');
   const [isSending, setIsSending] = useState<boolean>(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [showReconnectModal, setShowReconnectModal] = useState(false);
 
   // Modals & Panels
   const [showContentModal, setShowContentModal] = useState<boolean>(false);
@@ -269,6 +417,8 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   const [saveSuccessNotice, setSaveSuccessNotice] = useState<boolean>(false);
   const [copiedNotice, setCopiedNotice] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Direct ref to the thread scroll container (replaces document.querySelector).
+  const chatScrollRef = useRef<HTMLDivElement>(null);
 
   // Copy helper
   const handleCopyText = (text: string, label: string) => {
@@ -282,7 +432,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   const handleQuickStatusChange = async (newStatus: ContactRecord['status']) => {
     if (!activeContact) return;
     try {
-      await updateContactField(activeContact.id, { status: newStatus });
+      await updateInboxContact(activeContact.id, { status: newStatus });
       setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, status: newStatus } : c));
       setEditForm(prev => ({ ...prev, status: newStatus }));
     } catch (err) {
@@ -293,6 +443,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   // Initialize and subscribe to Firestore contacts
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
+    let didInitialSelect = false;
 
     const init = async () => {
       setIsLoadingContacts(true);
@@ -302,14 +453,18 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
         (fetchedContacts) => {
           setContacts(fetchedContacts);
           setIsLoadingContacts(false);
-          if (fetchedContacts.length > 0 && !selectedContactId) {
-            setSelectedContactId(fetchedContacts[0].id);
+          // Only auto-select on first load; never steal the user's selection on updates.
+          if (!didInitialSelect && fetchedContacts.length > 0) {
+            didInitialSelect = true;
+            setSelectedContactId((prev) => prev || fetchedContacts[0].id);
           }
         },
         (err) => {
           console.error('Failed to subscribe to contacts:', err);
           setIsLoadingContacts(false);
-        }
+        },
+        500,
+        prodDb // Backend database: webhook-written contacts live here
       );
     };
 
@@ -323,6 +478,90 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   const activeContact = useMemo(() => {
     return contacts.find(c => c.id === selectedContactId) || contacts[0] || null;
   }, [contacts, selectedContactId]);
+
+  // Subscribe to real webhook messages for Meta contacts (replaces seed demo data)
+  useEffect(() => {
+    if (!activeContact?.senderId || !activeContact?.channel) return;
+    if (!['instagram', 'messenger', 'whatsapp'].includes(activeContact.channel)) return;
+
+    const convoId = `${activeContact.channel}_${activeContact.senderId}`;
+    // Uses the active workspace id so sends, reads, and writes all target
+    // the workspace the user is actually looking at.
+
+    const unsubscribe = subscribeToConversationMessages(
+      workspaceId,
+      convoId,
+      (firestoreMessages) => {
+        if (firestoreMessages.length === 0) return; // Keep seed data if no real messages yet
+
+        // Merge into previous state preserving object identity for unchanged
+        // messages, so memoized bubbles skip re-render and scrolling stays smooth.
+        //
+        // Optimistic reconciliation: the backend is now the single writer for
+        // outbound messages (it stores our clientMessageId as clientId). When
+        // the persisted doc arrives, it takes the optimistic message's place
+        // in the list instead of appearing as a second message.
+        setConversationsMap((prev) => {
+          const prevList = prev[activeContact.id] || [];
+          const prevById = new Map<string, ConversationMessage>(prevList.map((m) => [m.id, m]));
+          const optimisticByClientId = new Map<string, ConversationMessage>(
+            prevList.filter((m) => m.id.startsWith('msg-')).map((m) => [m.id, m])
+          );
+          const senderInitial =
+            activeContact.firstName?.[0] || activeContact.name?.[0] || 'C';
+          const realMessages: ConversationMessage[] = firestoreMessages.map((m) => {
+            // Optimistic message confirmed by the backend: swap it in place.
+            const optimistic = m.clientId ? optimisticByClientId.get(m.clientId) : undefined;
+            if (optimistic) {
+              const confirmed: ConversationMessage = {
+                ...optimistic,
+                id: m.id,
+                text: m.text,
+                timestamp: new Date(m.timestampMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                senderInitial,
+                // Backend reports the real Meta send result.
+                deliveryStatus: m.error ? 'failed' : m.ok === false ? 'failed' : 'delivered',
+              };
+              return confirmed;
+            }
+            const prevMsg = prevById.get(m.id);
+            const sender: ConversationMessage['sender'] = m.direction === 'inbound' ? 'customer' : 'agent';
+            const senderName = m.direction === 'inbound' ? activeContact.name : 'Agent';
+            // Human-readable time, not a raw ISO string.
+            const timestamp = new Date(m.timestampMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (
+              prevMsg &&
+              prevMsg.text === m.text &&
+              prevMsg.timestamp === timestamp &&
+              prevMsg.sender === sender &&
+              prevMsg.senderName === senderName
+            ) {
+              return prevMsg;
+            }
+            return {
+              id: m.id,
+              contactId: activeContact.id,
+              sender,
+              text: m.text,
+              timestamp,
+              senderName,
+              senderInitial: m.direction === 'inbound' ? senderInitial : undefined,
+            };
+          });
+          return {
+            ...prev,
+            [activeContact.id]: realMessages,
+          };
+        });
+      },
+      (err) => {
+        console.error('Failed to subscribe to real messages:', err);
+      },
+      prodDb // Backend database: webhook-written conversations live here
+    );
+
+    return () => unsubscribe();
+  }, [activeContact?.id, activeContact?.senderId, activeContact?.channel]);
 
   // Sync edit form when active contact changes
   useEffect(() => {
@@ -621,6 +860,26 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     return conversationsMap[activeContact.id] || [];
   }, [conversationsMap, activeContact?.id]);
 
+  // Thread auto-scroll: when a new message lands, follow it to the bottom
+  // ONLY if the user is already near the bottom. If they're scrolled up
+  // reading history, never yank them (that killed scroll gestures).
+  const currentMessagesLength = currentMessages.length;
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 140) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [currentMessagesLength]);
+
+  // Opening a different conversation always starts at the bottom.
+  const activeContactId = activeContact?.id;
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [activeContactId]);
+
   // Current active follow-up rules
   const currentRules = useMemo(() => {
     if (!activeContact) return [];
@@ -628,10 +887,12 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   }, [followUpRulesMap, activeContact?.id]);
 
   // Send message handler
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!messageInput.trim() || !activeContact) return;
 
     setIsSending(true);
+    setSendError(null);
+    const textToSend = messageInput.trim();
 
     const isBotActive = botModeMap[activeContact.id] ?? false;
     const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -641,12 +902,13 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       contactId: activeContact.id,
       sender: isBotActive ? 'bot' : 'agent',
       senderName: isBotActive ? 'Chatmize AI Agent' : 'Live Agent',
-      text: messageInput.trim(),
+      text: textToSend,
       timestamp: nowStr,
       metaTag: selectedMetaTag || undefined,
-      deliveryStatus: 'delivered'
+      deliveryStatus: 'sending'
     };
 
+    // Optimistically add to local state
     setConversationsMap(prev => ({
       ...prev,
       [activeContact.id]: [...(prev[activeContact.id] || []), newMsg]
@@ -654,12 +916,78 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
     setMessageInput('');
     setSelectedMetaTag('');
-    setIsSending(false);
+
+    try {
+      // Call backend to send via the real channel API
+      const functions = getFunctions(getApp(), 'us-west2');
+      const sendFn = httpsCallable(functions, 'sendChannelMessage');
+
+      // Map UI channel to backend channel
+      const channelMap: Record<string, string> = {
+        'instagram': 'instagram',
+        'messenger': 'messenger',
+        'whatsapp': 'whatsapp',
+        'facebook': 'messenger',
+      };
+      const backendChannel = channelMap[activeContact.channel?.toLowerCase()] || 'instagram';
+
+      await sendFn({
+        workspaceId,
+        channel: backendChannel,
+        recipientId: activeContact.senderId || activeContact.id,
+        text: textToSend,
+        // Lets the backend echo this id back as clientId on the persisted
+        // doc, so the subscription merge reconciles the optimistic message
+        // in place instead of showing a duplicate.
+        clientMessageId: newMsg.id,
+      });
+
+      // Mark as delivered. When the backend's persisted doc arrives via the
+      // subscription, the merge swaps the optimistic message for it in place
+      // (matched by clientId) and carries the real Meta send result.
+      setConversationsMap(prev => ({
+        ...prev,
+        [activeContact.id]: (prev[activeContact.id] || []).map(m =>
+          m.id === newMsg.id ? { ...m, deliveryStatus: 'delivered' } : m
+        )
+      }));
+
+      // NOTE: the backend (recordOutboundMessage) is the single writer for
+      // outbound thread persistence. The frontend must NOT also write the
+      // message to Firestore — that produced duplicate bubbles, and the
+      // backend copy had no timestampMs so it sorted to the top of the
+      // thread and made the view jump on every send.
+
+    } catch (err) {
+      console.error('Failed to send message:', err);
+      // Surface the real backend reason (e.g. expired page connection)
+      // instead of a bare "failed" with no explanation.
+      const reason = err instanceof Error && err.message ? err.message : 'Send failed.';
+      setSendError(reason);
+      // Dead Meta token: pop the reconnect modal on the spot so the owner
+      // can fix it immediately instead of hunting through Settings.
+      if (isConnectionExpiredError(reason)) {
+        setShowReconnectModal(true);
+      }
+      // Mark as failed
+      setConversationsMap(prev => ({
+        ...prev,
+        [activeContact.id]: (prev[activeContact.id] || []).map(m =>
+          m.id === newMsg.id ? { ...m, deliveryStatus: 'failed' } : m
+        )
+      }));
+    } finally {
+      setIsSending(false);
+    }
 
     // Update last interaction in Firestore
-    updateContactField(activeContact.id, {
+    updateInboxContact(activeContact.id, {
       lastInteractionAt: new Date().toISOString()
     }).catch(err => console.error('Error updating interaction:', err));
+
+    // NOTE: no scroll yank here. The auto-scroll effect follows new messages
+    // to the bottom only when the user is already near the bottom — yanking
+    // unconditionally (the old setTimeout) killed active scroll gestures.
   };
 
   // Toggle Bot Mode vs Human Takeover
@@ -780,7 +1108,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     const flowTag = `Delivered: ${content.title}`;
     if (!activeContact.tags.includes(flowTag)) {
       const updatedTags = [...activeContact.tags, flowTag];
-      updateContactField(activeContact.id, { tags: updatedTags }).catch(console.error);
+      updateInboxContact(activeContact.id, { tags: updatedTags }).catch(console.error);
     }
   };
 
@@ -877,7 +1205,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
         notes: editForm.notes.trim()
       };
 
-      await updateContactField(activeContact.id, updates);
+      await updateInboxContact(activeContact.id, updates);
 
       // Update local contact record
       setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, ...updates } : c));
@@ -912,7 +1240,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
     if (activeContact.tags.includes(cleanTag)) return;
 
     const newTags = [...activeContact.tags, cleanTag];
-    await updateContactField(activeContact.id, { tags: newTags });
+    await updateInboxContact(activeContact.id, { tags: newTags });
     setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, tags: newTags } : c));
     setNewTagInput('');
   };
@@ -921,7 +1249,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
   const handleRemoveTag = async (tagToRemove: string) => {
     if (!activeContact) return;
     const newTags = activeContact.tags.filter(t => t !== tagToRemove);
-    await updateContactField(activeContact.id, { tags: newTags });
+    await updateInboxContact(activeContact.id, { tags: newTags });
     setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, tags: newTags } : c));
   };
 
@@ -936,7 +1264,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       [key]: val
     };
 
-    await updateContactField(activeContact.id, { 
+    await updateInboxContact(activeContact.id, { 
       variables: updatedVars,
       customFields: updatedVars
     });
@@ -967,6 +1295,15 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] overflow-hidden bg-slate-950 text-slate-100">
+      {showReconnectModal && (
+        <MetaReconnectModal
+          workspaceId={workspaceId}
+          workspaceName={workspaceName}
+          ownerName={ownerName}
+          isOwner={isOwner}
+          onClose={() => setShowReconnectModal(false)}
+        />
+      )}
       {/* =========================================================================
           TOP BAR: Streamlined Omnichannel Control Header & Sync Telemetry
           ========================================================================= */}
@@ -1345,107 +1682,14 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
               )}
 
               {/* Message Thread Scroll View */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
-                {currentMessages.map(msg => {
-                  if (msg.type === 'event_log') {
-                    return (
-                      <div key={msg.id} className="flex justify-center my-1.5">
-                        <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400 flex items-center gap-1.5 max-w-lg text-center">
-                          <Zap className="w-3 h-3 text-cyan-400 shrink-0" />
-                          <span>{msg.text}</span>
-                          <span className="text-[10px] text-slate-500 ml-1 shrink-0">{msg.timestamp}</span>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  const isCustomer = msg.sender === 'customer';
-                  const isBot = msg.sender === 'bot';
-
-                  return (
-                    <div 
-                      key={msg.id} 
-                      className={`flex gap-2.5 ${isCustomer ? 'justify-start' : 'justify-end'}`}
-                    >
-                      {/* Customer Avatar on left */}
-                      {isCustomer && (
-                        <div className="w-7 h-7 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center shrink-0 mt-1 text-[10px] font-bold text-slate-300">
-                          {activeContact.firstName?.[0] || 'C'}
-                        </div>
-                      )}
-
-                      <div className={`max-w-md space-y-1 ${isCustomer ? 'items-start' : 'items-end'}`}>
-                        {/* Sender Label */}
-                        <div className={`flex items-center gap-1.5 text-[10px] ${isCustomer ? 'text-slate-400' : 'text-slate-400 justify-end'}`}>
-                          <span>{msg.senderName || (isCustomer ? activeContact.name : 'Agent')}</span>
-                          <span>•</span>
-                          <span>{msg.timestamp}</span>
-                          {msg.metaTag && (
-                            <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-semibold">
-                              Tag: {msg.metaTag}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Bubble */}
-                        <div
-                          className={`p-3 rounded-2xl text-xs leading-relaxed ${
-                            isCustomer
-                              ? 'bg-slate-900 border border-white/10 text-slate-200 rounded-tl-sm shadow-sm'
-                              : isBot
-                              ? 'bg-gradient-to-br from-cyan-950/80 to-blue-950/80 border border-cyan-500/30 text-cyan-100 rounded-tr-sm shadow-md shadow-cyan-950/20'
-                              : 'bg-gradient-to-br from-purple-950/80 to-indigo-950/80 border border-purple-500/30 text-purple-100 rounded-tr-sm shadow-md'
-                          }`}
-                        >
-                          <p className="whitespace-pre-wrap">{msg.text}</p>
-
-                          {/* Content Card Attachment (if any) */}
-                          {msg.contentCard && (
-                            <div className="mt-2.5 p-3 rounded-xl bg-slate-950/80 border border-white/15 space-y-2">
-                              {msg.contentCard.badge && (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 inline-block">
-                                  {msg.contentCard.badge}
-                                </span>
-                              )}
-                              <h4 className="text-xs font-bold text-white">{msg.contentCard.title}</h4>
-                              <p className="text-[11px] text-slate-400">{msg.contentCard.description}</p>
-                              <div className="pt-1 flex items-center justify-between">
-                                <button
-                                  onClick={() => {
-                                    if (msg.contentCard?.flowId && onNavigateToFlows) {
-                                      onNavigateToFlows(msg.contentCard.flowId);
-                                    }
-                                  }}
-                                  className="w-full py-1.5 px-3 rounded-lg text-xs font-bold bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-cyan-500/20"
-                                >
-                                  <span>{msg.contentCard.buttonText}</span>
-                                  <ExternalLink className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Delivery status for outbound */}
-                        {!isCustomer && msg.deliveryStatus && (
-                          <div className="text-[10px] text-slate-500 flex items-center justify-end gap-1">
-                            <CheckCircle2 className="w-2.5 h-2.5 text-cyan-400" />
-                            <span className="capitalize">{msg.deliveryStatus}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Agent / Bot Avatar on right */}
-                      {!isCustomer && (
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-1 text-[10px] font-bold ${
-                          isBot ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                        }`}>
-                          {isBot ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+              <div ref={chatScrollRef} data-chat-messages className="flex-1 overflow-y-auto p-4 space-y-3.5">
+                {currentMessages.map(msg => (
+                  <MessageBubble
+                    key={msg.id}
+                    msg={msg}
+                    onNavigateToFlows={onNavigateToFlows}
+                  />
+                ))}
                 <div ref={messagesEndRef} />
               </div>
 
@@ -1507,21 +1751,45 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
                   </div>
                 </div>
 
+                {/* Send error banner: surfaces the real backend reason */}
+                {sendError && (
+                  <div className="mb-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-start justify-between gap-2">
+                    <span>{sendError}</span>
+                    <button
+                      onClick={() => setSendError(null)}
+                      className="text-red-400 hover:text-red-200 shrink-0 font-bold"
+                      aria-label="Dismiss"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
                 {/* Input row */}
                 <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    placeholder={`Reply as ${ (botModeMap[activeContact.id] ?? true) ? 'Chatmize AI Agent' : 'Live Agent' }...`}
-                    className="flex-1 px-3.5 py-2.5 bg-slate-950/80 border border-white/15 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
-                  />
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      ref={(el) => { composerEmoji.ref(el); composerPz.ref(el); }}
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendMessage();
+                        }
+                      }}
+                      placeholder={`Reply as ${ (botModeMap[activeContact.id] ?? true) ? 'Chatmize AI Agent' : 'Live Agent' }...`}
+                      className="w-full px-3.5 py-2.5 pr-16 bg-slate-950/80 border border-white/15 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+                    />
+                    <span className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      <EmojiPickerButton onPick={(e) => composerEmoji.insert(e, messageInput, setMessageInput)} placement="up" />
+                      <PersonalizationPickerButton
+                        onPick={(t) => composerPz.insert(t, messageInput, setMessageInput)}
+                        placement="up"
+                      />
+                    </span>
+                  </div>
                   <button
                     onClick={handleSendMessage}
                     disabled={!messageInput.trim() || isSending}
@@ -1667,7 +1935,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
                     </div>
                     <div>
                       <label className="text-[10px] text-slate-400 block mb-1">Mobile / Phone</label>
-                      <input
+                      <input data-no-emoji
                         type="text"
                         value={editForm.phone}
                         onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
@@ -1699,9 +1967,13 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
                       </div>
                     </div>
                     <div>
-                      <label className="text-[10px] text-slate-400 block mb-1">Agent Scratchpad Notes</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] text-slate-400 block">Agent Scratchpad Notes</label>
+                        <EmojiPickerButton onPick={(e) => notesEmoji.insert(e, editForm.notes, (v) => setEditForm(prev => ({ ...prev, notes: v })))} placement="down" />
+                      </div>
                       <textarea
                         rows={2}
+                        ref={notesEmoji.ref}
                         value={editForm.notes}
                         onChange={(e) => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
                         placeholder="Internal notes regarding deals, preferences..."
@@ -1784,7 +2056,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
                 {/* Add Tag row */}
                 <div className="flex items-center gap-1.5 pt-1">
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={newTagInput}
                     onChange={(e) => setNewTagInput(e.target.value)}
@@ -1896,7 +2168,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
 
                 {/* Add variable input */}
                 <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={newVarKey}
                     onChange={(e) => setNewVarKey(e.target.value)}
@@ -2075,7 +2347,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Rule Name</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={newRuleTitle}
                   onChange={(e) => setNewRuleTitle(e.target.value)}
@@ -2087,7 +2359,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Timing / Trigger</label>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={newRuleDelay}
                     onChange={(e) => setNewRuleDelay(e.target.value)}
@@ -2111,9 +2383,13 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
               </div>
 
               <div>
-                <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Message Content / Action Payload</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400 block">Message Content / Action Payload</label>
+                  <EmojiPickerButton onPick={(e) => ruleContentEmoji.insert(e, newRuleContent, setNewRuleContent)} placement="up" />
+                </div>
                 <textarea
                   rows={3}
+                  ref={ruleContentEmoji.ref}
                   value={newRuleContent}
                   onChange={(e) => setNewRuleContent(e.target.value)}
                   placeholder="Message or flow instructions to execute..."

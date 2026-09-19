@@ -42,7 +42,19 @@ export type TriggerType =
   // Integrations & Events
   | 'webhook'
   | 'shopify_trigger'
-  | 'lead_form';
+  | 'shopify_cart_abandoned'
+  | 'shopify_order_created'
+  | 'shopify_order_shipped'
+  | 'shopify_order_delivered'
+  | 'shopify_product_purchased'
+  | 'lead_form'
+  | 'survey_completed'
+  // Bookings (native ChatMize bookings app)
+  | 'booking_created'
+  | 'booking_reminder_due'
+  | 'booking_completed'
+  | 'booking_no_show'
+  | 'booking_cancelled';
 
 export interface FlowTrigger {
   id: string;
@@ -73,6 +85,9 @@ export interface FlowTrigger {
   widgetDelaySeconds?: number;
   webhookUrl?: string;
   webhookSource?: string;
+  /** Set when type === 'survey_completed': the survey whose completion fires the flow. */
+  surveyId?: string;
+  surveyName?: string;
   waPhoneNumber?: string;
   waPreFillText?: string;
 }
@@ -499,6 +514,87 @@ export const TRIGGER_CATALOG: TriggerTemplate[] = [
     }
   },
   {
+    type: 'shopify_cart_abandoned',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Shopify Cart Abandoned',
+    description: 'Fire when a shopper leaves checkout open past your abandonment window with no order.',
+    badge: 'E-Commerce',
+    icon: 'ShoppingBag',
+    popular: true,
+    defaultConfig: {
+      title: 'Shopify Cart Abandoned',
+      description: 'Cart recovery message with the shopper items and a one tap return link',
+      keywords: ['CART_ABANDONED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'shopify_order_created',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Shopify Order Confirmed',
+    description: 'Fire when a new order is placed or paid for in your Shopify store.',
+    badge: 'E-Commerce',
+    icon: 'ShoppingBag',
+    defaultConfig: {
+      title: 'Shopify Order Confirmed',
+      description: 'Thank you and order summary right after purchase',
+      keywords: ['ORDER_CREATED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'shopify_order_shipped',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Shopify Order Shipped',
+    description: 'Fire when a fulfillment is created, with tracking details when available.',
+    badge: 'E-Commerce',
+    icon: 'ShoppingBag',
+    defaultConfig: {
+      title: 'Shopify Order Shipped',
+      description: 'Shipping notification with tracking number',
+      keywords: ['ORDER_SHIPPED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'shopify_order_delivered',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Shopify Order Delivered',
+    description: 'Fire when the carrier marks the shipment delivered. Great for reviews and upsells.',
+    badge: 'E-Commerce',
+    icon: 'ShoppingBag',
+    defaultConfig: {
+      title: 'Shopify Order Delivered',
+      description: 'Delivery confirmation plus review request',
+      keywords: ['ORDER_DELIVERED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'shopify_product_purchased',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Shopify Product Purchased',
+    description: 'Fire when a specific product is bought. Add the product id in the trigger settings to filter.',
+    badge: 'E-Commerce',
+    icon: 'ShoppingBag',
+    defaultConfig: {
+      title: 'Shopify Product Purchased',
+      description: 'Post purchase flow for one product: onboarding, cross sell, review',
+      keywords: ['PRODUCT_PURCHASED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
     type: 'lead_form',
     channel: 'integrations',
     category: 'integrations',
@@ -510,6 +606,104 @@ export const TRIGGER_CATALOG: TriggerTemplate[] = [
       title: 'Meta Instant Lead Form Submission',
       adCampaignName: 'VIP Masterclass Lead Gen Instant Form',
       keywords: ['LEAD_SUBMITTED', 'VIP_FORM', 'INSTANT_LEAD'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'survey_completed',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Survey Completed',
+    description: 'Trigger flow when a visitor finishes one of your surveys. Their answers are already saved to contact variables.',
+    badge: 'Surveys',
+    icon: 'ClipboardList',
+    defaultConfig: {
+      title: 'Survey Completed',
+      keywords: ['SURVEY_COMPLETED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+
+  // Bookings (native ChatMize bookings app)
+  {
+    type: 'booking_created',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Booking Created',
+    description: 'Trigger flow when someone books through your ChatMize booking page, embed, or a BotMaps booking action.',
+    badge: 'Bookings',
+    icon: 'Calendar',
+    popular: true,
+    defaultConfig: {
+      title: 'New Booking',
+      description: 'Fires when a booking is created',
+      keywords: ['BOOKING_CREATED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'booking_reminder_due',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Booking Reminder Due',
+    description: 'Trigger flow when a booking reminder goes out. Add your own follow up steps around the automatic reminder.',
+    badge: 'Bookings',
+    icon: 'BellRing',
+    defaultConfig: {
+      title: 'Booking Reminder',
+      description: 'Fires when a reminder is sent for a booking',
+      keywords: ['BOOKING_REMINDER'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'booking_completed',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Booking Completed',
+    description: 'Trigger flow when a booking is marked completed. Great for review requests and upsells.',
+    badge: 'Bookings',
+    icon: 'CheckCircle2',
+    defaultConfig: {
+      title: 'Booking Completed',
+      description: 'Fires when a booking is marked completed',
+      keywords: ['BOOKING_COMPLETED'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'booking_no_show',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Booking Missed',
+    description: 'Trigger flow when a booking is marked as missed. Win them back automatically.',
+    badge: 'Bookings',
+    icon: 'CalendarX',
+    defaultConfig: {
+      title: 'Booking Missed',
+      description: 'Fires when a booking is marked as missed',
+      keywords: ['BOOKING_NO_SHOW'],
+      matchRule: 'contains',
+      keywordMode: 'keywords'
+    }
+  },
+  {
+    type: 'booking_cancelled',
+    channel: 'integrations',
+    category: 'integrations',
+    title: 'Booking Cancelled',
+    description: 'Trigger flow when a booking is cancelled. Offer a new time automatically.',
+    badge: 'Bookings',
+    icon: 'XCircle',
+    defaultConfig: {
+      title: 'Booking Cancelled',
+      description: 'Fires when a booking is cancelled',
+      keywords: ['BOOKING_CANCELLED'],
       matchRule: 'contains',
       keywordMode: 'keywords'
     }

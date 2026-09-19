@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from '../emoji';
 import { 
   Layout, 
   Sliders, 
@@ -24,15 +25,32 @@ import {
   Monitor,
   Smartphone,
   Trophy,
-  Gift
+  Gift,
+  Globe,
+  FlaskConical,
+  ClipboardList
 } from 'lucide-react';
 import { WebsiteOverlay, OverlayType, OverlayTrigger, OverlayPosition, OverlayCtaAction, MobileTriggerType, MobileTriggerConfig, ContestStub } from '../../types/growthTools';
-import { DEFAULT_WEBSITE_OVERLAYS } from '../../data/growthToolsDefaults';
+import {
+  fetchOverlays,
+  saveOverlay,
+  deleteOverlay,
+  setOverlayStatus,
+  overlayEmbedCode,
+} from '../../lib/overlays';
+import { usePlan } from '../../lib/entitlements';
+import { limitFor } from '../../lib/planModules';
+import { UpgradePromptModal } from '../UpgradePromptModal';
+import { fetchSurveys } from '../../lib/surveys';
+import type { Survey } from '../../types/surveys';
 
 interface WebsiteOverlaysViewProps {
+  workspaceId?: string;
   availableBots?: Array<{ id: string; name: string }>;
   onNavigateToFlows?: (botId?: string) => void;
   initialFilter?: OverlayType | 'all';
+  /** Firestore plan id of the active workspace; drives capture tool limits. */
+  workspacePlanId?: string;
 }
 
 const OVERLAY_TYPE_INFO: Record<OverlayType, {
@@ -221,29 +239,39 @@ const describeMobileTrigger = (o: WebsiteOverlay): string => {
 const CtaLabel: React.FC<{ overlay: WebsiteOverlay }> = ({ overlay }) => (
   <span className="inline-flex items-center justify-center gap-1.5">
     {overlay.ctaAction === 'enter_contest' && <Trophy className="w-3.5 h-3.5" />}
+    {overlay.ctaAction === 'take_survey' && <ClipboardList className="w-3.5 h-3.5" />}
     <span>{overlay.ctaText}</span>
   </span>
 );
 
 export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
-  availableBots = [
-    { id: 'bot-customer-support-faq', name: 'Customer Support FAQ Bot' },
-    { id: 'bot-lead-magnet-optin', name: 'Lead Magnet & Sales Bot' },
-    { id: 'bot-webinar-registration', name: 'Webinar RSVP Assistant' },
-    { id: 'bot-abandoned-cart-recovery', name: 'Cart Recovery & Voucher Bot' }
-  ],
+  workspaceId,
+  // No fake bots: the parent passes the workspace's real bots; empty when unknown.
+  availableBots = [],
   onNavigateToFlows,
-  initialFilter = 'all'
+  initialFilter = 'all',
+  workspacePlanId
 }) => {
-  const [overlays, setOverlays] = useState<WebsiteOverlay[]>(() => {
-    const saved = localStorage.getItem('chatmize_website_overlays');
-    return saved ? JSON.parse(saved) : DEFAULT_WEBSITE_OVERLAYS;
-  });
+  // Modular plan enforcement: the workspace's plan caps capture tools.
+  const plan = usePlan(workspacePlanId);
+  const captureToolLimit = limitFor(plan, 'capture_tools');
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
+
+  // Overlays are stored per workspace in Firestore via the backend callable
+  // actions (see src/lib/overlays.ts). No local demo data: the list starts
+  // empty and loads from the server.
+  const [overlays, setOverlays] = useState<WebsiteOverlay[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [activeFilter, setActiveFilter] = useState<OverlayType | 'all'>(initialFilter);
   const [activeMode, setActiveMode] = useState<'list' | 'editor' | 'preview'>('list');
-  const [selectedOverlayId, setSelectedOverlayId] = useState<string>(overlays[0]?.id || '');
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string>('');
   const [editingOverlay, setEditingOverlay] = useState<WebsiteOverlay | null>(null);
+  const overlayEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const overlayCtaEmoji = useEmojiTarget<HTMLInputElement>();
 
   // Embed modal
   const [embedModalOverlay, setEmbedModalOverlay] = useState<WebsiteOverlay | null>(null);
@@ -257,6 +285,46 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
   const [simTriggerStatus, setSimTriggerStatus] = useState<string | null>(null);
   const [leadCapturedNotice, setLeadCapturedNotice] = useState<string | null>(null);
   const [showQuickGuide, setShowQuickGuide] = useState(true);
+
+  // Surveys for the take_survey CTA action. Loaded lazily when the editor opens.
+  const [surveyOptions, setSurveyOptions] = useState<Survey[]>([]);
+  useEffect(() => {
+    if (!workspaceId || activeMode !== 'editor') return;
+    let cancelled = false;
+    fetchSurveys(workspaceId)
+      .then((list) => { if (!cancelled) setSurveyOptions(list); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [workspaceId, activeMode]);
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setLoading(false);
+      setLoadError('No workspace selected.');
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    fetchOverlays(workspaceId)
+      .then((list) => {
+        if (cancelled) return;
+        setOverlays(list);
+        setSelectedOverlayId((prev) => prev || list[0]?.id || '');
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadError(err instanceof Error ? err.message : 'Failed to load overlays.');
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [workspaceId]);
+
+  const showNotice = (msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(null), 5000);
+  };
 
   const currentOverlay = overlays.find(o => o.id === selectedOverlayId) || overlays[0];
 
@@ -275,34 +343,41 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
     ? (simMobileActive ? (simMobileCfg?.scrollPercent ?? currentOverlay.triggerScrollPercent) : currentOverlay.triggerScrollPercent)
     : 0;
 
-  const persistOverlays = (newOverlays: WebsiteOverlay[]) => {
-    setOverlays(newOverlays);
-    localStorage.setItem('chatmize_website_overlays', JSON.stringify(newOverlays));
-  };
-
-  const filteredOverlays = activeFilter === 'all' 
-    ? overlays 
+  const filteredOverlays = activeFilter === 'all'
+    ? overlays
     : overlays.filter(o => o.type === activeFilter);
 
+  const requireWorkspace = (): string | null => {
+    if (!workspaceId) {
+      showNotice('No workspace selected. Pick a workspace first.');
+      return null;
+    }
+    return workspaceId;
+  };
+
   const handleCreateNew = (type: OverlayType = 'popup_modal') => {
+    // Plan enforcement: creating beyond the capture tool limit shows the
+    // upgrade prompt instead of opening the editor.
+    if (overlays.length >= captureToolLimit) {
+      setLimitModalOpen(true);
+      return;
+    }
     const info = OVERLAY_TYPE_INFO[type];
+    // New overlays start as drafts with neutral copy — nothing fake is
+    // published. The user edits content, then sets status to active.
     const newOverlay: WebsiteOverlay = {
-      id: `overlay-${type.replace('_', '-')}-${Date.now().toString().slice(-6)}`,
+      // Empty id: the backend assigns a Firestore id on first save.
+      id: '',
       name: `New ${info.name}`,
       type: type,
-      status: 'active',
-      headline: type === 'popup_modal' 
-        ? "Wait! Don't Leave Empty Handed 🎁" 
-        : type === 'slider' 
-        ? "Comparing Plans? Let's Find Your Fit" 
-        : type === 'sticky_bar' 
-        ? "⚡ Flash Sale: Get 20% off all plans today only!" 
-        : "Introducing ChatMize 2.4 — Live Now 🚀",
-      subheadline: "Claim your instant voucher code or chat with our automated concierge.",
-      badgeText: "Special Offer",
-      offerCode: "SAVE20",
-      ctaText: "Claim Exclusive Offer",
-      ctaAction: 'open_bot',
+      status: 'draft',
+      headline: 'Your headline here',
+      subheadline: 'Add a short description of your offer.',
+      badgeText: '',
+      offerCode: '',
+      ctaText: 'Learn More',
+      ctaAction: 'open_url',
+      redirectUrl: '',
       brandColor: '#3b82f6',
       theme: 'dark',
       position: info.defaultPosition,
@@ -312,12 +387,20 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
       exitIntentSensitivity: 'medium',
       // Mobile never gets exit_intent — default to a timed trigger instead.
       mobileTrigger: defaultMobileTrigger(4, 40),
-      connectedBotId: availableBots[0]?.id || 'bot-lead-magnet-optin',
-      botName: 'Deal Concierge',
-      requireEmailCapture: true,
+      // Real bot is picked in the editor; never invent a connected bot id.
+      connectedBotId: '',
+      botName: '',
+      requireEmailCapture: false,
       requireNameCapture: false,
       removeBranding: false,
-      whitelistedDomains: ['*.yourdomain.com', 'yourdomain.com'],
+      // Display rules: show everywhere, 24h cooldown, no per-visitor cap.
+      frequency: { cooldownHours: 24, maxPerVisitor: 0 },
+      pageTargeting: { mode: 'all', patterns: [] },
+      abGroup: '',
+      abWeight: 50,
+      // Empty = serve on all domains. Placeholder domains like
+      // *.yourdomain.com are stripped at publish time anyway.
+      whitelistedDomains: [],
       totalViews: 0,
       totalInteractions: 0,
       totalLeads: 0,
@@ -329,60 +412,106 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
     setActiveMode('editor');
   };
 
+  /** Backfill display-rule fields on overlays saved before those fields existed. */
+  const normalizeOverlay = (overlay: WebsiteOverlay): WebsiteOverlay => ({
+    ...overlay,
+    frequency: overlay.frequency ?? { cooldownHours: 24, maxPerVisitor: 0 },
+    pageTargeting: overlay.pageTargeting ?? { mode: 'all', patterns: [] },
+    abGroup: overlay.abGroup ?? '',
+    abWeight: overlay.abWeight ?? 50,
+  });
+
   const handleEdit = (overlay: WebsiteOverlay) => {
-    setEditingOverlay({ ...overlay });
+    setEditingOverlay(normalizeOverlay({ ...overlay }));
     setSelectedOverlayId(overlay.id);
     setActiveMode('editor');
   };
 
-  const handleSave = (updated: WebsiteOverlay) => {
-    const exists = overlays.some(o => o.id === updated.id);
-    let newOverlays: WebsiteOverlay[];
-    if (exists) {
-      newOverlays = overlays.map(o => o.id === updated.id ? { ...updated, updatedAt: new Date().toISOString() } : o);
-    } else {
-      newOverlays = [updated, ...overlays];
+  const handleSave = async (updated: WebsiteOverlay) => {
+    const wsId = requireWorkspace();
+    if (!wsId) return;
+    setSaving(true);
+    try {
+      const saved = await saveOverlay(wsId, updated);
+      setOverlays((prev) => {
+        const exists = prev.some(o => o.id === saved.id);
+        return exists
+          ? prev.map(o => o.id === saved.id ? saved : o)
+          : [saved, ...prev];
+      });
+      setSelectedOverlayId(saved.id);
+      setEditingOverlay(null);
+      setActiveMode('list');
+      showNotice(saved.status === 'active'
+        ? `Overlay "${saved.name}" saved and published.`
+        : `Overlay "${saved.name}" saved as ${saved.status}. Set it to Active to publish it to your site.`);
+    } catch (err) {
+      showNotice(`Save failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    } finally {
+      setSaving(false);
     }
-    persistOverlays(newOverlays);
-    setSelectedOverlayId(updated.id);
-    setEditingOverlay(null);
-    setActiveMode('list');
   };
 
-  const handleToggleStatus = (id: string, e?: React.MouseEvent) => {
+  const handleToggleStatus = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    const updated = overlays.map(o => {
-      if (o.id === id) {
-        return { ...o, status: o.status === 'active' ? 'paused' : 'active' as const };
-      }
-      return o;
-    });
-    persistOverlays(updated);
+    const wsId = requireWorkspace();
+    if (!wsId) return;
+    const current = overlays.find(o => o.id === id);
+    if (!current) return;
+    const next = current.status === 'active' ? 'paused' : 'active';
+    // Optimistic update; roll back on failure.
+    setOverlays((prev) => prev.map(o => o.id === id ? { ...o, status: next } : o));
+    try {
+      await setOverlayStatus(wsId, id, next);
+    } catch (err) {
+      setOverlays((prev) => prev.map(o => o.id === id ? { ...o, status: current.status } : o));
+      showNotice(`Status change failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    }
   };
 
-  const handleDuplicate = (overlay: WebsiteOverlay, e: React.MouseEvent) => {
+  const handleDuplicate = async (overlay: WebsiteOverlay, e: React.MouseEvent) => {
     e.stopPropagation();
-    const copy: WebsiteOverlay = {
+    const wsId = requireWorkspace();
+    if (!wsId) return;
+    // New backend-generated id: drop the old one.
+    const copy = normalizeOverlay({
       ...overlay,
-      id: `overlay-${overlay.type.replace('_', '-')}-${Date.now().toString().slice(-6)}`,
+      id: '',
       name: `${overlay.name} (Copy)`,
-      totalViews: 0,
-      totalInteractions: 0,
-      totalLeads: 0,
+      status: 'draft' as const,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    persistOverlays([copy, ...overlays]);
+      updatedAt: new Date().toISOString(),
+    } as WebsiteOverlay);
+    setSaving(true);
+    try {
+      const saved = await saveOverlay(wsId, copy);
+      setOverlays((prev) => [saved, ...prev]);
+      showNotice(`Duplicated as "${saved.name}".`);
+    } catch (err) {
+      showNotice(`Duplicate failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to delete this overlay?')) {
-      const filtered = overlays.filter(o => o.id !== id);
-      persistOverlays(filtered);
-      if (selectedOverlayId === id && filtered[0]) {
-        setSelectedOverlayId(filtered[0].id);
+    const wsId = requireWorkspace();
+    if (!wsId) return;
+    if (!confirm('Are you sure you want to delete this overlay?')) return;
+    const removed = overlays.find(o => o.id === id);
+    setOverlays((prev) => prev.filter(o => o.id !== id));
+    try {
+      await deleteOverlay(wsId, id);
+      if (selectedOverlayId === id) {
+        setSelectedOverlayId((prev) => {
+          const rest = overlays.filter(o => o.id !== id);
+          return prev === id ? (rest[0]?.id || '') : prev;
+        });
       }
+    } catch (err) {
+      if (removed) setOverlays((prev) => [removed, ...prev]);
+      showNotice(`Delete failed: ${err instanceof Error ? err.message : 'unknown error'}`);
     }
   };
 
@@ -394,24 +523,24 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
     setEditingOverlay({ ...editingOverlay, mobileTrigger: { ...current, ...patch } });
   };
 
-  const getEmbedCode = (o: WebsiteOverlay) => {
-    const mobile = o.mobileTrigger;
-    return `<!-- ChatMize Website Overlay Embed (${o.type}) -->
-<script
-  src="https://cdn.chatmize.com/sdk/overlays.js"
-  data-overlay-id="${o.id}"
-  data-trigger="${o.triggerType}"
-  data-mobile-trigger="${mobile && mobile.enabled ? mobile.triggerType : o.triggerType === 'exit_intent' ? 'time_delay' : o.triggerType}"
-  data-mobile-delay="${mobile?.delaySeconds ?? o.triggerDelaySeconds}"
-  data-mobile-scroll="${mobile?.scrollPercent ?? o.triggerScrollPercent}"
-  data-color="${o.brandColor}"
-  async>
-</script>`;
+  /** One snippet per workspace: it serves every active overlay. */
+  const getEmbedCode = (_o: WebsiteOverlay) => {
+    return workspaceId ? overlayEmbedCode(workspaceId) : '<!-- Select a workspace to get your embed code -->';
   };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      
+      {notice && (
+        <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-200 text-sm font-medium">
+          {notice}
+        </div>
+      )}
+      {loadError && !loading && (
+        <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-sm font-medium">
+          {loadError}
+        </div>
+      )}
+
       {/* Top Header Banner */}
       <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900/95 to-slate-950 border border-white/10 relative overflow-hidden shadow-xl">
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -558,6 +687,26 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
           </div>
 
           {/* Overlays Grid */}
+          {loading ? (
+            <div className="p-10 rounded-2xl bg-slate-900/60 border border-white/10 text-center text-slate-400 text-sm">
+              Loading overlays…
+            </div>
+          ) : filteredOverlays.length === 0 ? (
+            <div className="p-10 rounded-2xl bg-slate-900/60 border border-white/10 text-center space-y-3">
+              <p className="text-slate-300 font-semibold">No overlays yet</p>
+              <p className="text-slate-500 text-sm max-w-md mx-auto">
+                Create your first overlay or start from a template below. Paste the embed snippet
+                on your site and active overlays go live instantly.
+              </p>
+              <button
+                onClick={() => handleCreateNew('popup_modal')}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs inline-flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-blue-500/20"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create overlay</span>
+              </button>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {filteredOverlays.map((overlay) => {
               const info = OVERLAY_TYPE_INFO[overlay.type];
@@ -710,6 +859,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
               );
             })}
           </div>
+          )}
         </div>
       )}
 
@@ -821,7 +971,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">Overlay Campaign Name</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={editingOverlay.name}
                   onChange={(e) => setEditingOverlay({ ...editingOverlay, name: e.target.value })}
@@ -1013,6 +1163,130 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
               </div>
             </div>
 
+            {/* Display rules — frequency capping, page targeting, A/B test */}
+            <div className="space-y-3 p-4 rounded-xl bg-slate-950/60 border border-white/5">
+              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300">
+                <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Display Rules</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-slate-400">Cooldown Between Shows (hours)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="720"
+                    value={editingOverlay.frequency?.cooldownHours ?? 24}
+                    onChange={(e) => setEditingOverlay({
+                      ...editingOverlay,
+                      frequency: {
+                        cooldownHours: Math.max(0, parseInt(e.target.value) || 0),
+                        maxPerVisitor: editingOverlay.frequency?.maxPerVisitor ?? 0,
+                      },
+                    })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-500">0 = can show again on the next page load.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-slate-400">Max Shows Per Visitor</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000"
+                    value={editingOverlay.frequency?.maxPerVisitor ?? 0}
+                    onChange={(e) => setEditingOverlay({
+                      ...editingOverlay,
+                      frequency: {
+                        cooldownHours: editingOverlay.frequency?.cooldownHours ?? 24,
+                        maxPerVisitor: Math.max(0, parseInt(e.target.value) || 0),
+                      },
+                    })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-500">0 = unlimited. After this many shows the visitor never sees it again.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] text-slate-400">Page Targeting</label>
+                  <select
+                    value={editingOverlay.pageTargeting?.mode ?? 'all'}
+                    onChange={(e) => setEditingOverlay({
+                      ...editingOverlay,
+                      pageTargeting: {
+                        mode: e.target.value as 'all' | 'include' | 'exclude',
+                        patterns: editingOverlay.pageTargeting?.patterns ?? [],
+                      },
+                    })}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="all">All pages</option>
+                    <option value="include">Only these pages</option>
+                    <option value="exclude">Everywhere except these pages</option>
+                  </select>
+                </div>
+
+                {(editingOverlay.pageTargeting?.mode ?? 'all') !== 'all' && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-400">URL Patterns (one per line, * = wildcard)</label>
+                    <textarea
+                      rows={2}
+                      value={(editingOverlay.pageTargeting?.patterns ?? []).join('\n')}
+                      onChange={(e) => setEditingOverlay({
+                        ...editingOverlay,
+                        pageTargeting: {
+                          mode: editingOverlay.pageTargeting?.mode ?? 'include',
+                          patterns: e.target.value.split('\n').map((s) => s.trim()).filter(Boolean),
+                        },
+                      })}
+                      placeholder="/pricing*&#10;/blog/*"
+                      className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white font-mono focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-white/5">
+                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300 mb-3">
+                  <FlaskConical className="w-3.5 h-3.5 text-amber-400" />
+                  <span>A/B Test</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-400">Test Group Name</label>
+                    <input
+                      type="text"
+                      value={editingOverlay.abGroup || ''}
+                      onChange={(e) => setEditingOverlay({ ...editingOverlay, abGroup: e.target.value.trim() })}
+                      placeholder="e.g. headline-test-1 (empty = no test)"
+                      className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                    />
+                    <p className="text-[10px] text-slate-500">Overlays with the same group name compete — each visitor sees exactly one.</p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-400">Traffic Weight (1–100)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={editingOverlay.abWeight ?? 50}
+                      onChange={(e) => setEditingOverlay({
+                        ...editingOverlay,
+                        abWeight: Math.min(100, Math.max(1, parseInt(e.target.value) || 50)),
+                      })}
+                      className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                    />
+                    <p className="text-[10px] text-slate-500">Share of visitors in this group who see this variant. Sticky per visitor.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Offer Copy & Call to Action */}
             <div className="space-y-3 p-4 rounded-xl bg-slate-950/60 border border-white/5">
               <div className="flex items-center gap-2 text-xs font-bold text-white">
@@ -1034,7 +1308,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
 
                 <div className="space-y-1.5">
                   <label className="text-[11px] text-slate-400">Voucher / Coupon Code (Optional)</label>
-                  <input
+                  <input data-no-emoji
                     type="text"
                     value={editingOverlay.offerCode || ''}
                     onChange={(e) => setEditingOverlay({ ...editingOverlay, offerCode: e.target.value })}
@@ -1055,9 +1329,13 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[11px] text-slate-400">Subheadline Description</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] text-slate-400">Subheadline Description</label>
+                  <EmojiPickerButton onPick={(e) => overlayEmoji.insert(e, editingOverlay.subheadline, (v) => setEditingOverlay({ ...editingOverlay, subheadline: v }))} placement="down" />
+                </div>
                 <textarea
                   rows={2}
+                  ref={overlayEmoji.ref}
                   value={editingOverlay.subheadline}
                   onChange={(e) => setEditingOverlay({ ...editingOverlay, subheadline: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
@@ -1067,12 +1345,18 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                 <div className="space-y-1.5">
                   <label className="text-[11px] text-slate-400">CTA Button Text</label>
-                  <input
-                    type="text"
-                    value={editingOverlay.ctaText}
-                    onChange={(e) => setEditingOverlay({ ...editingOverlay, ctaText: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      ref={overlayCtaEmoji.ref}
+                      value={editingOverlay.ctaText}
+                      onChange={(e) => setEditingOverlay({ ...editingOverlay, ctaText: e.target.value })}
+                      className="w-full pl-3 pr-9 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
+                    />
+                    <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                      <EmojiPickerButton onPick={(e) => overlayCtaEmoji.insert(e, editingOverlay.ctaText, (v) => setEditingOverlay({ ...editingOverlay, ctaText: v }))} placement="up" />
+                    </span>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -1083,14 +1367,15 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                     className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-blue-500 focus:outline-none"
                   >
                     <option value="open_bot">Open Conversational Bot</option>
-                    <option value="lead_form">Submit Lead Form</option>
-                    <option value="redirect_url">Redirect to URL</option>
+                    <option value="open_url">Redirect to URL</option>
+                    <option value="copy_code">Copy Voucher Code</option>
                     <option value="enter_contest">Enter Contest / Giveaway</option>
+                    <option value="take_survey">Take Survey</option>
                   </select>
                 </div>
               </div>
 
-              {editingOverlay.ctaAction === 'redirect_url' && (
+              {editingOverlay.ctaAction === 'open_url' && (
                 <div className="space-y-1.5 pt-1">
                   <label className="text-[11px] text-slate-400">Destination Redirect URL</label>
                   <input
@@ -1103,6 +1388,39 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                 </div>
               )}
 
+              {editingOverlay.ctaAction === 'take_survey' && (
+                <div className="space-y-2 pt-1">
+                  <label className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                    <ClipboardList className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Survey to Show</span>
+                  </label>
+                  <select
+                    value={editingOverlay.surveyId || ''}
+                    onChange={(e) => {
+                      const survey = surveyOptions.find(s => s.id === e.target.value);
+                      setEditingOverlay({
+                        ...editingOverlay,
+                        surveyId: survey?.id || '',
+                        surveyName: survey?.title || ''
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                  >
+                    <option value="">Select a survey...</option>
+                    {surveyOptions.filter(s => s.status === 'active').map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.title} ({s.questions.length} questions)
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
+                    <span>The survey opens inside the popup or slide in, and each answer lands in the contact variables you named in the survey builder.</span>
+                  </p>
+                  {surveyOptions.filter(s => s.status === 'active').length === 0 && (
+                    <p className="text-[11px] text-amber-300">No active surveys yet. Build one in Growth Suite → Surveys and set it to Active.</p>
+                  )}
+                </div>
+              )}
               {editingOverlay.ctaAction === 'enter_contest' && (
                 <div className="space-y-2 pt-1">
                   <label className="text-[11px] text-slate-400 flex items-center gap-1.5">
@@ -1178,10 +1496,11 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
               <button
                 type="button"
                 onClick={() => handleSave(editingOverlay)}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-blue-500/20"
+                disabled={saving}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-wait"
               >
                 <Check className="w-4 h-4" />
-                <span>Save Overlay</span>
+                <span>{saving ? 'Saving…' : 'Save Overlay'}</span>
               </button>
             </div>
 
@@ -1485,6 +1804,9 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                       {currentOverlay.requireEmailCapture && (
                         <input
                           type="email"
+                          name="email"
+                          autoComplete="email"
+                          inputMode="email"
                           value={simEmail}
                           onChange={(e) => setSimEmail(e.target.value)}
                           placeholder="Enter your email to claim..."
@@ -1498,13 +1820,8 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                           const emailUsed = simEmail.trim() || 'visitor@example.com';
                           setLeadCapturedNotice(`Lead captured via ${currentOverlay.name} (${emailUsed})`);
                           setTimeout(() => setLeadCapturedNotice(null), 4000);
-                          // increment leads & interactions
-                          const updated = overlays.map(o => o.id === currentOverlay.id ? {
-                            ...o,
-                            totalInteractions: (o.totalInteractions || 0) + 1,
-                            totalLeads: (o.totalLeads || 0) + 1
-                          } : o);
-                          persistOverlays(updated);
+                          // Preview only: stats come from the live snippet via
+                          // /__overlay/track, so nothing is written here.
                         }}
                         className="w-full py-3 px-4 rounded-xl font-bold text-xs text-white shadow-xl cursor-pointer hover:opacity-95 transition-opacity"
                         style={{ backgroundColor: currentOverlay.brandColor }}
@@ -1568,12 +1885,12 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
             </div>
 
             <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-slate-300">
-              <span className="font-bold text-blue-300 block mb-1">Per-Device Triggers:</span>
+              <span className="font-bold text-blue-300 block mb-1">One snippet, every overlay:</span>
               <p className="text-slate-400">
-                Desktop fires on <span className="font-mono text-cyan-300">{embedModalOverlay.triggerType.replace('_', ' ')}</span>
-                {embedModalOverlay.triggerType === 'exit_intent' ? ' (desktop-only — no cursor on phones)' : ''};
-                mobile fires on <span className="font-mono text-violet-300">{describeMobileTrigger(embedModalOverlay).replace('Mobile: ', '')}</span>.
-                The snippet carries both configs for the embed SDK.
+                Paste it once before the closing <span className="font-mono">&lt;/body&gt;</span> tag.
+                It serves <span className="font-bold text-slate-200">all active overlays</span> in this
+                workspace — publish a change here and it goes live on your site within seconds,
+                no re-paste needed. Only <span className="font-mono text-cyan-300">active</span> overlays render.
               </p>
             </div>
 
@@ -1588,6 +1905,15 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
 
           </div>
         </div>
+      )}
+
+      {limitModalOpen && (
+        <UpgradePromptModal
+          resourceName="capture tool"
+          limit={captureToolLimit}
+          unit="per workspace"
+          onClose={() => setLimitModalOpen(false)}
+        />
       )}
 
     </div>

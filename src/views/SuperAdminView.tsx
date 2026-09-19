@@ -15,23 +15,28 @@ import {
   Plus, 
   Edit3, 
   Trash2, 
-  Database, 
   ExternalLink,
   Crown,
-  FileSpreadsheet,
   Check,
   Layers,
   Calculator,
-  Library
+  Library,
+
+  Rocket,
+  MailPlus
 } from 'lucide-react';
 import { SuperAdminKanban } from '../components/admin/SuperAdminKanban';
+import { BuildCatalogAdminTab } from '../components/admin/BuildCatalogAdminTab';
 import { PlanEditorModal } from '../components/admin/PlanEditorModal';
+import { PlanModulesManager } from '../components/admin/PlanModulesManager';
 import { SnapshotAdminTab } from '../components/admin/SnapshotAdminTab';
+import { SegMateMigrationTab } from '../components/admin/SegMateMigrationTab';
+import { WaitlistAdminTab } from '../components/admin/WaitlistAdminTab';
 import { Plan, PlanMode, PLAN_MODE_LABELS, FEATURE_LABELS, formatPrice, deletePlan } from '../lib/billing';
 import { usePlans } from '../lib/entitlements';
 
 interface SuperAdminViewProps {
-  initialTab?: 'kanban' | 'users' | 'plans' | 'migration' | 'snapshots';
+  initialTab?: 'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist' | 'catalog';
 }
 
 interface UserRecord {
@@ -209,7 +214,7 @@ const PlanTierCard: React.FC<PlanTierCardProps> = ({ plan, onEdit }) => (
 export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   initialTab = 'kanban'
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration' | 'snapshots'>(initialTab);
+  const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist' | 'catalog'>(initialTab);
   const [users, setUsers] = useState<UserRecord[]>(INITIAL_USERS);
   const [searchQuery, setSearchQuery] = useState('');
   const { plans, loading: plansLoading } = usePlans();
@@ -219,10 +224,6 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   const dfuPlans = plans.filter((p) => p.mode === 'dfu');
   
   // Platform Migration Simulation State
-  const [legacyApiKey, setLegacyApiKey] = useState('');
-  const [isMigrating, setIsMigrating] = useState(false);
-  const [migrationLogs, setMigrationLogs] = useState<string[]>([]);
-  const [migrationStep, setMigrationStep] = useState<'idle' | 'scanning' | 'converting' | 'completed'>('idle');
 
   // Super Admin claim bootstrap state
   const [claimState, setClaimState] = useState<'idle' | 'working' | 'done' | 'taken' | 'error'>('idle');
@@ -248,51 +249,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
     u.role.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleStartPlatformMigration = () => {
-    setIsMigrating(true);
-    setMigrationStep('scanning');
-    setMigrationLogs(['Connecting to legacy platform export API...', 'Authenticating account token...']);
 
-    setTimeout(() => {
-      setMigrationStep('converting');
-      setMigrationLogs(prev => [
-        ...prev,
-        'Found 1,280 contacts from legacy broadcast lists.',
-        'Found 14 conversation bot flows and menus.',
-        'Converting legacy JSON node triggers to Chatmize Next-Gen format...',
-        'Mapping Meta PSIDs & Page subscription tokens...'
-      ]);
-
-      setTimeout(() => {
-        setMigrationStep('completed');
-        setIsMigrating(false);
-        setMigrationLogs(prev => [
-          ...prev,
-          '✓ Successfully imported 1,280 Contacts into Audience View.',
-          '✓ Successfully recreated 14 Flows in Flow Builder.',
-          '✓ Tagged accounts with "Imported Account" badge.',
-          'Migration completed with 0 errors.'
-        ]);
-        
-        // Add new imported test user
-        setUsers(prev => [
-          ...prev,
-          {
-            id: `usr-${Date.now()}`,
-            name: 'Legacy Imported Account',
-            email: 'migrated.client@example.com',
-            role: 'Subscriber',
-            status: 'Active',
-            plan: 'Pro Automation',
-            contactsCount: 1280,
-            flowsCount: 14,
-            migratedFromLegacy: true,
-            joinedDate: 'Just Now (Migration)'
-          }
-        ]);
-      }, 2000);
-    }, 1800);
-  };
 
   return (
     <div className="flex-1 flex flex-col gap-6 max-w-7xl mx-auto w-full">
@@ -370,6 +327,29 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
             <span>Snapshot Library</span>
           </button>
           <button
+            onClick={() => setActiveSubTab('waitlist')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeSubTab === 'waitlist'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/25'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <MailPlus className="w-4 h-4" />
+            <span>Waitlist</span>
+          </button>
+          <button
+
+            onClick={() => setActiveSubTab('catalog')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeSubTab === 'catalog'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/25'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Rocket className="w-4 h-4" />
+            <span>Build Catalog</span>
+          </button>
+          <button
             onClick={() => setActiveSubTab('migration')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeSubTab === 'migration'
@@ -386,6 +366,11 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
       {/* TAB: ARCHITECTURE KANBAN */}
       {activeSubTab === 'kanban' && (
         <SuperAdminKanban />
+      )}
+
+      {/* TAB: WAITLIST SIGNUPS */}
+      {activeSubTab === 'waitlist' && (
+        <WaitlistAdminTab />
       )}
 
       {/* TAB 1: USERS MANAGEMENT */}
@@ -549,6 +534,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
             <div className="text-center py-12 text-slate-400 text-sm">Loading plans...</div>
           ) : (
             <>
+              <PlanModulesManager />
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -621,126 +607,14 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         <SnapshotAdminTab />
       )}
 
-      {/* TAB 3: PLATFORM MIGRATION BRIDGE */}
+
+      {/* TAB: BUILD CATALOG (RELEASE NOTES FEED) */}
+      {activeSubTab === 'catalog' && (
+        <BuildCatalogAdminTab />
+      )}
+      {/* TAB: SEGMATE MIGRATION IMPORTER */}
       {activeSubTab === 'migration' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7 bg-slate-900/80 border border-white/10 rounded-3xl p-6 space-y-5 backdrop-blur-md">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="p-1 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
-                  <Database className="w-4 h-4" />
-                </span>
-                <h3 className="text-lg font-bold text-white">1-Click Platform Migration Pipeline</h3>
-              </div>
-              <p className="text-xs text-slate-400">
-                Move bots, flows, tags, and audience subscribers seamlessly from your legacy chatbot account into Chatmize with complete Meta compliance mapping.
-              </p>
-            </div>
-
-            {/* Migration Strategy Steps */}
-            <div className="grid grid-cols-3 gap-3 text-xs">
-              <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl">
-                <div className="font-bold text-white mb-1">1. Audience Import</div>
-                <div className="text-slate-400 text-[11px]">Syncs FB/IG PSIDs, custom tags, and subscriber phone numbers.</div>
-              </div>
-              <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl">
-                <div className="font-bold text-white mb-1">2. Flow Converter</div>
-                <div className="text-slate-400 text-[11px]">Transforms legacy JSON block logic into modern visual canvas cards.</div>
-              </div>
-              <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl">
-                <div className="font-bold text-white mb-1">3. Meta Policy Upgrade</div>
-                <div className="text-slate-400 text-[11px]">Upgrades old broadcasts to 2026 Meta Recurring Notification opt-in tokens.</div>
-              </div>
-            </div>
-
-            {/* API / CSV Migration Form */}
-            <div className="space-y-3 pt-2">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Platform Export API Token or Webhook URL
-                </label>
-                <input
-                  type="text"
-                  value={legacyApiKey}
-                  onChange={(e) => setLegacyApiKey(e.target.value)}
-                  placeholder="e.g. platform_live_sec_9938b827f71a99..."
-                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-white/10 rounded-xl text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
-                />
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  disabled={isMigrating}
-                  onClick={handleStartPlatformMigration}
-                  className="flex-1 py-3 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 transition-all"
-                >
-                  {isMigrating ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Migrating Account Data...</span>
-                    </>
-                  ) : (
-                    <>
-                      <DownloadCloud className="w-4 h-4" />
-                      <span>Execute Migration Pipeline</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  disabled
-                  title="CSV import — Coming soon"
-                  className="py-3 px-4 bg-white/5 border border-white/10 text-slate-500 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-not-allowed transition-colors"
-                >
-                  <FileSpreadsheet className="w-4 h-4 text-slate-600" />
-                  <span>Upload CSV Export</span>
-                  <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded font-medium">Coming Soon</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Console Output & Real-time Status */}
-          <div className="lg:col-span-5 bg-slate-950 border border-white/10 rounded-3xl p-5 flex flex-col justify-between font-mono text-xs">
-            <div>
-              <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3">
-                <span className="text-slate-400 text-[11px] font-bold uppercase tracking-wider">Migration Terminal</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                  migrationStep === 'completed'
-                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                    : migrationStep === 'scanning' || migrationStep === 'converting'
-                    ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 animate-pulse'
-                    : 'bg-slate-800 text-slate-400'
-                }`}>
-                  {migrationStep === 'idle' && 'Standby'}
-                  {migrationStep === 'scanning' && 'Scanning API'}
-                  {migrationStep === 'converting' && 'Transforming'}
-                  {migrationStep === 'completed' && 'Migration Ready'}
-                </span>
-              </div>
-
-              <div className="space-y-2 text-slate-300 max-h-72 overflow-y-auto">
-                {migrationLogs.length === 0 ? (
-                  <p className="text-slate-600 italic">No migration initiated yet. Click "Execute Migration Pipeline" or upload a CSV export.</p>
-                ) : (
-                  migrationLogs.map((log, idx) => (
-                    <div key={idx} className="flex items-start gap-2">
-                      <span className="text-cyan-400 select-none">&gt;</span>
-                      <span className={log.startsWith('✓') ? 'text-emerald-400 font-bold' : ''}>{log}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-white/10 text-[11px] text-slate-500 flex items-center justify-between">
-              <span>Chatmize Bridge v2.4</span>
-              <span>100% Lossless Flow Guarantee</span>
-            </div>
-          </div>
-        </div>
+        <SegMateMigrationTab />
       )}
     </div>
   );

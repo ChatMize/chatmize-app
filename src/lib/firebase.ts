@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
-  getFirestore, 
+  getFirestore,
+  Firestore,
   collection, 
   doc, 
   getDocs, 
@@ -29,6 +30,7 @@ import {
   GoogleAuthProvider,
   User as FirebaseUser
 } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Firebase web config: environment variables take precedence so each deploy
@@ -55,6 +57,16 @@ const app = getApps().length === 0 ? initializeApp(resolvedConfig) : getApp();
 export const db = getFirestore(app, firestoreDatabaseId);
 
 /**
+ * The backend (Cloud Functions: webhooks, OAuth, senders) reads and writes
+ * the `chatmize-prod` database, NOT the applet database above. Any UI that
+ * must see live backend data (inbox contacts/conversations) has to use
+ * prodDb explicitly. The two databases diverged when backend work
+ * standardized on chatmize-prod while the frontend kept the AI Studio
+ * export's applet database id.
+ */
+export const prodDb = getFirestore(app, 'chatmize-prod');
+
+/**
  * Demo seeding is opt-in and dev-only. It must never run in staging or
  * production: fictional contacts and campaigns would pollute real customer
  * data. Enable locally with VITE_ENABLE_DEMO_SEED=true.
@@ -65,6 +77,15 @@ export function isDemoSeedEnabled(): boolean {
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);
+
+// Firebase Storage for user uploaded images. The app uses a dedicated bucket
+// (chatmize-uploads-246164058141) rather than the Firebase default bucket,
+// which was never provisioned on this project. Override with
+// VITE_CHATIMIZE_UPLOADS_BUCKET if the bucket ever changes.
+const uploadsBucket =
+  envVars.VITE_CHATIMIZE_UPLOADS_BUCKET || 'chatmize-uploads-246164058141';
+export const storage = getStorage(app, `gs://${uploadsBucket}`);
+export const uploadsBucketName = uploadsBucket;
 
 export interface AppUser {
   uid: string;
@@ -228,11 +249,15 @@ export interface ContactRecord {
   recurringTokens?: MetaRecurringToken[]; // Meta Marketing Messages / Recurring Notifications tokens
   otnTokens?: MetaOtnToken[]; // Meta One-Time Notification tokens
   whatsappOptIn?: boolean; // WhatsApp Business opt-in status
+  senderId?: string; // Meta PSID/IGSID for webhook-routed contacts
   tags: string[];
   variables: Record<string, string | number | boolean>; // Arbitrary dynamic captured variables: {{var_name}}
   customFields: Record<string, string | number | boolean>; // Synced with variables
   meta: MetaAttribution;
   notes?: string;
+  // BigMarker webinar statuses, keyed by conference id. Written by the
+  // BigMarker integration when a contact registers or the status is synced.
+  bigmarker?: Record<string, { status?: string; conferenceTitle?: string; syncedAtMs?: number }>;
   createdAt: string;
   lastInteractionAt: string;
 }
@@ -328,9 +353,10 @@ export async function testFirebaseConnection(): Promise<boolean> {
 export function subscribeToContacts(
   onUpdate: (contacts: ContactRecord[]) => void,
   onError?: (err: Error) => void,
-  maxResults = 500
+  maxResults = 500,
+  dbInstance: Firestore = db
 ) {
-  const contactsRef = collection(db, 'contacts');
+  const contactsRef = collection(dbInstance, 'contacts');
   const q = query(contactsRef, orderBy('lastInteractionAt', 'desc'), limit(maxResults));
 
   return onSnapshot(
@@ -347,6 +373,7 @@ export function subscribeToContacts(
           lastName: data.lastName || '',
           avatarUrl: data.avatarUrl || '',
           channel: data.channel || 'messenger',
+          senderId: data.senderId || '',
           email: data.email || '',
           phone: data.phone || data.mobile || '',
           company: data.company || '',
@@ -365,6 +392,7 @@ export function subscribeToContacts(
           customFields: vars,
           meta: data.meta || {},
           notes: data.notes || '',
+          bigmarker: data.bigmarker || {},
           createdAt: data.createdAt || new Date().toISOString(),
           lastInteractionAt: data.lastInteractionAt || new Date().toISOString(),
         });
@@ -373,6 +401,46 @@ export function subscribeToContacts(
     },
     (err) => {
       console.error('Error listening to contacts in Firestore:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Subscribe to real inbound/outbound messages for a Meta conversation.
+ * Messages live at workspaces/{ws}/conversations/{channel_senderId}/messages.
+ */
+export function subscribeToConversationMessages(
+  workspaceId: string,
+  convoId: string,
+  onUpdate: (messages: Array<{ id: string; direction: string; text: string; timestampMs: number; senderId: string; clientId?: string | null; ok?: boolean; error?: string | null }>) => void,
+  onError?: (err: Error) => void,
+  dbInstance: Firestore = db,
+) {
+  const messagesRef = collection(dbInstance, 'workspaces', workspaceId, 'conversations', convoId, 'messages');
+  const q = query(messagesRef, orderBy('timestampMs', 'asc'), limit(100));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const messages: Array<{ id: string; direction: string; text: string; timestampMs: number; senderId: string; clientId?: string | null; ok?: boolean; error?: string | null }> = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        messages.push({
+          id: doc.id,
+          direction: data.direction || 'inbound',
+          text: data.text || '',
+          timestampMs: data.timestampMs || 0,
+          senderId: data.senderId || '',
+          clientId: data.clientId ?? null,
+          ok: data.ok,
+          error: data.error ?? null,
+        });
+      });
+      onUpdate(messages);
+    },
+    (err) => {
+      console.error('Error listening to conversation messages:', err);
       if (onError) onError(err);
     }
   );
@@ -405,9 +473,10 @@ export async function saveContact(contact: ContactRecord): Promise<void> {
 // Update specific fields on a contact
 export async function updateContactField(
   contactId: string, 
-  updates: Partial<ContactRecord>
+  updates: Partial<ContactRecord>,
+  dbInstance: Firestore = db
 ): Promise<void> {
-  const contactRef = doc(db, 'contacts', contactId);
+  const contactRef = doc(dbInstance, 'contacts', contactId);
   const patch: Record<string, any> = {
     ...updates,
     lastInteractionAt: new Date().toISOString(),

@@ -20,7 +20,7 @@ export interface MobileTriggerConfig {
   scrollPercent: number;
 }
 
-export type OverlayCtaAction = 'open_bot' | 'lead_form' | 'redirect_url' | 'enter_contest';
+export type OverlayCtaAction = 'open_bot' | 'open_url' | 'copy_code' | 'enter_contest' | 'take_survey';
 
 /**
  * STUB — Contest entities don't exist yet (see viral-contests-spec.md).
@@ -53,6 +53,10 @@ export interface WebsiteOverlay {
   /** Set when ctaAction === 'enter_contest'. Resolves against Contest entities once the Contests module ships. */
   contestId?: string;
   contestName?: string;
+  /** Set when ctaAction === 'take_survey'. The SDK renders the survey inside
+      the overlay in an iframe pointed at the standalone survey link. */
+  surveyId?: string;
+  surveyName?: string;
   brandColor: string;
   theme: 'dark' | 'light';
   position: OverlayPosition;
@@ -69,10 +73,15 @@ export interface WebsiteOverlay {
   requireNameCapture: boolean;
   removeBranding: boolean;
   whitelistedDomains: string[];
-  // EXTENSION POINTS (not yet implemented — see convertmate-comparison.md):
-  // - page/URL targeting + frequency capping (display rules)
-  // - A/B variant traffic splitting + per-variant stats
-  // - real embed SDK runtime (overlays.js) + Firestore backend
+  /** Display rules: frequency capping + page/URL targeting (enforced by overlays.js). */
+  frequency: { cooldownHours: number; maxPerVisitor: number };
+  pageTargeting: { mode: 'all' | 'include' | 'exclude'; patterns: string[] };
+  /** A/B test allocation: overlays sharing an abGroup compete; the snippet
+      picks one winner per visitor weighted by abWeight, sticky per visitor. */
+  abGroup: string;
+  abWeight: number;
+  // EXTENSION POINTS (remaining — see convertmate-comparison.md):
+  // - per-variant stats in the admin dashboard
   totalViews: number;
   totalInteractions: number;
   totalLeads: number;
@@ -109,11 +118,19 @@ export interface SupportChatWidgetConfig {
   updatedAt: string;
 }
 
-export type CloakedDestinationType = 'messenger' | 'instagram' | 'web_chat' | 'custom_url';
+export type CloakedDestinationType = 'takeover' | 'messenger' | 'instagram' | 'url';
 
 export type CloakingMode = 'bridge' | 'direct' | 'masked';
 
+/**
+ * send.chat branded link record. Mirrors the Firestore `cloaked_links`
+ * contract exactly: document ID `${workspaceSlug}_${slug}`, URL-safe lowercase.
+ * Legacy localStorage-era fields (`refPayload`, `totalClicks`, `totalConversions`,
+ * `lastClickedAt`) are optional aliases kept for the one-time migration and
+ * existing in-memory previews.
+ */
 export interface SendChatCloakedLink {
+  /** Firestore doc id is `${workspaceSlug}_${slug}`. `id` is the local list key. */
   id: string;
   workspaceSlug: string;
   slug: string; // e.g. "summer-promo" => send.chat/workspace/summer-promo
@@ -125,11 +142,22 @@ export interface SendChatCloakedLink {
   previewImage?: string; // OpenGraph Image
   cloakingMode: CloakingMode;
   connectedBotId?: string;
-  refPayload?: string;
+  /** Meta ref payload passed through to m.me / ig.me destinations. */
+  ref?: string;
+  /** Incremented by the hosted link resolver. Read-only in this UI. */
+  clickCount: number;
+  createdBy?: string;
+  createdAt: string; // ISO 8601
+  updatedAt?: string; // ISO 8601
+  /** Frontend-only active toggle; persisted on the Firestore record. */
   status: 'active' | 'paused';
-  totalClicks: number;
-  totalConversions: number;
-  createdAt: string;
+  /** @deprecated migrated to `ref` */
+  refPayload?: string;
+  /** @deprecated migrated to `clickCount` */
+  totalClicks?: number;
+  /** @deprecated legacy local analytics, kept for old records */
+  totalConversions?: number;
+  /** @deprecated legacy local analytics, kept for old records */
   lastClickedAt?: string;
 }
 

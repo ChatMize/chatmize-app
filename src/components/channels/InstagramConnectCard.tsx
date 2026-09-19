@@ -5,6 +5,8 @@ import {
   getInstagramOAuthStatus,
   InstagramOAuthStatus,
 } from '../../lib/instagram';
+import { startMetaOAuth } from '../../lib/meta';
+import { useCachedConnectionStatus, timeAgo } from '../../lib/useCachedConnectionStatus';
 
 interface InstagramConnectCardProps {
   workspaceId: string;
@@ -28,23 +30,25 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
   returnTo,
   onConnected,
 }) => {
-  const [status, setStatus] = useState<InstagramOAuthStatus | null>(null);
-  const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
+  const [oauthError, setOauthError] = useState<string | null>(null);
 
-  const refresh = async (): Promise<InstagramOAuthStatus | null> => {
-    try {
-      const s = await getInstagramOAuthStatus(workspaceId);
-      setStatus(s);
-      return s;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load Instagram status.');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Last known status renders instantly; a background check refreshes it and
+  // only raises a flag when a working connection actually breaks.
+  const {
+    status,
+    loading,
+    revalidating,
+    lastCheckedAt,
+    connectionLost,
+    error: checkError,
+    refresh,
+  } = useCachedConnectionStatus<InstagramOAuthStatus>({
+    cacheKey: `chatmize_conn_ig_${workspaceId}`,
+    fetchStatus: () => getInstagramOAuthStatus(workspaceId),
+    isConnected: (s) => s?.connected ?? false,
+  });
 
   useEffect(() => {
     // Handle the redirect back from Instagram.
@@ -56,46 +60,78 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
       clean.searchParams.delete('instagram_oauth_error');
       window.history.replaceState({}, '', clean.toString());
       if (outcome === 'error') {
-        setError(
+        setOauthError(
           params.get('instagram_oauth_error') || 'Instagram login failed. Please try again.',
         );
-        setLoading(false);
         return;
       }
     }
-    refresh().then((s) => {
-      if (s?.connected && s.igUserId && outcome === 'success') {
-        onConnected?.(s.username || '', s.igUserId);
-      }
-    });
+    if (outcome === 'success') {
+      refresh().then((s) => {
+        if (s?.connected && s.igUserId) {
+          onConnected?.(s.username || '', s.igUserId);
+        }
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
   const handleConnect = async () => {
     setStarting(true);
-    setError(null);
+    setOauthError(null);
     try {
       const url = await startInstagramOAuth(workspaceId, returnTo);
       window.location.href = url;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not start Instagram login.');
+      setOauthError(e instanceof Error ? e.message : 'Could not start Instagram login.');
       setStarting(false);
     }
   };
 
   const connected = status?.connected ?? false;
 
+  /**
+   * One click upgrade to the Facebook Page anchor (ManyChat style "change
+   * connection"): reuses the Meta OAuth flow for the same workspace. The
+   * backend re-anchors this Instagram account to the picked Page without
+   * deleting anything; contacts, conversations, and automations stay put.
+   */
+  const handleUpgrade = async () => {
+    setUpgrading(true);
+    setOauthError(null);
+    try {
+      const url = await startMetaOAuth(workspaceId, returnTo);
+      window.location.href = url;
+    } catch (e) {
+      setOauthError(e instanceof Error ? e.message : 'Could not start Facebook login.');
+      setUpgrading(false);
+    }
+  };
+
+  /** Plain connection type label so the anchor is always obvious. */
+  const connectionLabel = status?.anchoredViaPage
+    ? 'Connected via Facebook Page'
+    : 'Connected via Instagram only';
+
   return (
-    <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5 flex flex-col justify-between hover:border-white/20 transition-all">
+    <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-5 flex flex-col justify-between hover:border-white/20 transition-all md:col-span-2">
       <div>
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-3">
             {connected && status?.pictureUrl ? (
-              <img
-                src={status.pictureUrl}
-                alt={status.username ?? 'Instagram account'}
-                className="w-12 h-12 rounded-xl object-cover border border-white/10"
-              />
+              <div className="relative flex-shrink-0">
+                <img
+                  src={status.pictureUrl}
+                  alt={status.username ?? 'Instagram account'}
+                  className="w-12 h-12 rounded-xl object-cover border border-white/10"
+                />
+                <span
+                  className="absolute -bottom-1.5 -right-1.5 w-6 h-6 rounded-full bg-gradient-to-br from-pink-500 via-fuchsia-500 to-purple-600 border-2 border-slate-900 flex items-center justify-center"
+                  title="Instagram"
+                >
+                  <Instagram className="w-3 h-3 text-white" />
+                </span>
+              </div>
             ) : (
               <div className="p-3 bg-slate-900/80 rounded-xl border border-white/10">
                 <Instagram className="w-6 h-6 text-pink-400" />
@@ -131,22 +167,87 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
         </p>
 
         {connected && status?.igUserId && (
-          <p className="text-[11px] text-slate-500 font-mono mb-3">IG ID {status.igUserId}</p>
+          <p className="text-[11px] text-slate-500 font-mono mb-3">
+            IG ID {status.igUserId} · {connectionLabel}
+          </p>
         )}
 
-        {connected && !hasPageAnchor && (
-          <div className="mb-4 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25">
-            <p className="text-xs text-cyan-200 leading-relaxed">
-              Upgrade path: also run a Facebook Page? Connect it as your Meta anchor to add
-              Messenger and merge both channels under one workspace.
+        {connected && (
+          <div className="mb-4">
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              Connected channels
             </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                {status?.pictureUrl ? (
+                  <span className="relative flex-shrink-0">
+                    <img src={status.pictureUrl} alt="" className="w-6 h-6 rounded-full object-cover" />
+                    <span
+                      className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 border border-slate-900 flex items-center justify-center"
+                      title="Instagram"
+                    >
+                      <Instagram className="w-2 h-2 text-white" />
+                    </span>
+                  </span>
+                ) : (
+                  <Instagram className="w-4 h-4 text-pink-400 ml-1" />
+                )}
+                <span className="text-[11px] font-medium text-emerald-200">
+                  @{status?.username} · DMs
+                </span>
+              </span>
+              <span className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+                <Instagram className="w-4 h-4 text-pink-400 ml-1" />
+                <span className="text-[11px] font-medium text-emerald-200">Comments</span>
+              </span>
+            </div>
           </div>
         )}
 
-        {error && (
+        {connected && !hasPageAnchor && !status?.anchoredViaPage && (
+          <div className="mb-4 p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/25">
+            <p className="text-xs text-cyan-200 leading-relaxed mb-2.5">
+              Also run a Facebook Page? Upgrade to a Facebook connection to add
+              Messenger and send Instagram DMs on your Page token. Your
+              contacts, conversations, and automations stay put.
+            </p>
+            <button
+              onClick={handleUpgrade}
+              disabled={upgrading}
+              className="px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-sm disabled:opacity-60"
+            >
+              {upgrading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Redirecting...
+                </>
+              ) : (
+                'Upgrade to Facebook connection'
+              )}
+            </button>
+          </div>
+        )}
+
+        {connectionLost && (
+          <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs text-amber-200 font-semibold">Instagram connection lost</p>
+              <p className="text-xs text-amber-200/70">Reconnect to keep DMs and comments working.</p>
+            </div>
+            <button
+              onClick={handleConnect}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-gradient-to-r from-pink-500 to-purple-600 text-white cursor-pointer"
+            >
+              Reconnect
+            </button>
+          </div>
+        )}
+
+        {(oauthError || checkError) && (
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/25 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-red-300">{error}</p>
+            <p className="text-xs text-red-300">{oauthError || checkError}</p>
           </div>
         )}
       </div>
@@ -156,7 +257,12 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
           {connected ? (
             <>
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <Instagram className="w-3.5 h-3.5 text-pink-400" />
               Instagram DMs ready
+              {lastCheckedAt && (
+                <span className="text-slate-500">· checked {timeAgo(lastCheckedAt)}</span>
+              )}
+              {revalidating && <Loader2 className="w-3 h-3 animate-spin text-slate-500" />}
             </>
           ) : (
             'No Facebook Page needed'

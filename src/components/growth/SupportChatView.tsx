@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { EmojiPickerButton, useEmojiTarget } from '../emoji';
 import { 
   MessageSquare, 
   Plus, 
@@ -31,6 +32,7 @@ import {
 } from 'lucide-react';
 import { SupportChatWidgetConfig } from '../../types/growthTools';
 import { DEFAULT_SUPPORT_WIDGETS } from '../../data/growthToolsDefaults';
+import { ImageUpload } from '../ImageUpload';
 
 interface SupportChatViewProps {
   availableBots?: Array<{ id: string; name: string }>;
@@ -130,6 +132,10 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
   const [isSimOpen, setIsSimOpen] = useState(true);
   const [simDevice, setSimDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [newReplyLabel, setNewReplyLabel] = useState('');
+  const headlineEmoji = useEmojiTarget<HTMLInputElement>();
+  const subheadlineEmoji = useEmojiTarget<HTMLInputElement>();
+  const welcomeEmoji = useEmojiTarget<HTMLTextAreaElement>();
+  const chipEmoji = useEmojiTarget<HTMLInputElement>();
   const [isSimTyping, setIsSimTyping] = useState(false);
   const [leadCapturedNotice, setLeadCapturedNotice] = useState<string | null>(null);
   const [showQuickGuide, setShowQuickGuide] = useState(true);
@@ -696,7 +702,7 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-300">Widget Name</label>
-                <input
+                <input data-no-emoji
                   type="text"
                   value={editingWidget.name}
                   onChange={(e) => setEditingWidget({ ...editingWidget, name: e.target.value })}
@@ -816,12 +822,11 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[11px] text-slate-400">Avatar Image URL</label>
-                <input
-                  type="text"
+                <ImageUpload
+                  label="Avatar Image"
                   value={editingWidget.avatarUrl}
-                  onChange={(e) => setEditingWidget({ ...editingWidget, avatarUrl: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                  onChange={(url) => setEditingWidget({ ...editingWidget, avatarUrl: url })}
+                  accentClass="focus-within:border-cyan-500"
                 />
               </div>
             </div>
@@ -835,32 +840,50 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
 
               <div className="space-y-1.5">
                 <label className="text-[11px] text-slate-400">Header Headline</label>
-                <input
-                  type="text"
-                  value={editingWidget.headline}
-                  onChange={(e) => setEditingWidget({ ...editingWidget, headline: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    ref={headlineEmoji.ref}
+                    value={editingWidget.headline}
+                    onChange={(e) => setEditingWidget({ ...editingWidget, headline: e.target.value })}
+                    className="w-full pl-3 pr-9 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                  />
+                  <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                    <EmojiPickerButton onPick={(e) => headlineEmoji.insert(e, editingWidget.headline, (v) => setEditingWidget({ ...editingWidget, headline: v }))} placement="up" />
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[11px] text-slate-400">Header Subheadline</label>
-                <input
-                  type="text"
-                  value={editingWidget.subheadline}
-                  onChange={(e) => setEditingWidget({ ...editingWidget, subheadline: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    ref={subheadlineEmoji.ref}
+                    value={editingWidget.subheadline}
+                    onChange={(e) => setEditingWidget({ ...editingWidget, subheadline: e.target.value })}
+                    className="w-full pl-3 pr-9 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                  />
+                  <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                    <EmojiPickerButton onPick={(e) => subheadlineEmoji.insert(e, editingWidget.subheadline, (v) => setEditingWidget({ ...editingWidget, subheadline: v }))} placement="up" />
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[11px] text-slate-400">Initial Welcome Message (Chat Bubble)</label>
-                <textarea
-                  rows={2}
-                  value={editingWidget.welcomeMessage}
-                  onChange={(e) => setEditingWidget({ ...editingWidget, welcomeMessage: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
-                />
+                <div className="relative">
+                  <textarea
+                    rows={2}
+                    ref={welcomeEmoji.ref}
+                    value={editingWidget.welcomeMessage}
+                    onChange={(e) => setEditingWidget({ ...editingWidget, welcomeMessage: e.target.value })}
+                    className="w-full px-3 py-2 pr-9 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                  />
+                  <span className="absolute right-1.5 bottom-1.5">
+                    <EmojiPickerButton onPick={(e) => welcomeEmoji.insert(e, editingWidget.welcomeMessage, (v) => setEditingWidget({ ...editingWidget, welcomeMessage: v }))} placement="up" />
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -893,27 +916,33 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({
               </div>
 
               <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="text"
-                  placeholder="e.g. 🚀 Schedule VIP Demo"
-                  value={newReplyLabel}
-                  onChange={(e) => setNewReplyLabel(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (newReplyLabel.trim()) {
-                        const newChip = {
-                          id: `qr-${Date.now().toString().slice(-4)}`,
-                          label: newReplyLabel.trim(),
-                          payload: newReplyLabel.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_')
-                        };
-                        setEditingWidget({ ...editingWidget, quickReplies: [...editingWidget.quickReplies, newChip] });
-                        setNewReplyLabel('');
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="e.g. 🚀 Schedule VIP Demo"
+                    ref={chipEmoji.ref}
+                    value={newReplyLabel}
+                    onChange={(e) => setNewReplyLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newReplyLabel.trim()) {
+                          const newChip = {
+                            id: `qr-${Date.now().toString().slice(-4)}`,
+                            label: newReplyLabel.trim(),
+                            payload: newReplyLabel.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_')
+                          };
+                          setEditingWidget({ ...editingWidget, quickReplies: [...editingWidget.quickReplies, newChip] });
+                          setNewReplyLabel('');
+                        }
                       }
-                    }
-                  }}
-                  className="flex-1 px-3 py-1.5 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
-                />
+                    }}
+                    className="w-full pl-3 pr-9 py-1.5 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:border-cyan-500 focus:outline-none"
+                  />
+                  <span className="absolute right-1 top-1/2 -translate-y-1/2">
+                    <EmojiPickerButton onPick={(e) => chipEmoji.insert(e, newReplyLabel, setNewReplyLabel)} placement="up" />
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => {

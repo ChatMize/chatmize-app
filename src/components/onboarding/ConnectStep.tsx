@@ -174,7 +174,7 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
           )}
           {which === 'whatsapp' && (
             <>
-              <input className={inputCls} value={waNumber} onChange={(e) => setWaNumber(e.target.value)} placeholder="WhatsApp Business number (+1 ...)" />
+              <input data-no-emoji className={inputCls} value={waNumber} onChange={(e) => setWaNumber(e.target.value)} placeholder="WhatsApp Business number (+1 ...)" />
               <button type="button" onClick={saveWhatsapp} disabled={!waNumber.trim()} className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold cursor-pointer">
                 Connect WhatsApp
               </button>
@@ -182,7 +182,7 @@ export const ConnectStep: React.FC<ConnectStepProps> = ({ workspace, onUpdate, o
           )}
           {which === 'sms' && (
             <>
-              <input className={inputCls} value={smsNumber} onChange={(e) => setSmsNumber(e.target.value)} placeholder="SMS sending number (+1 ...)" />
+              <input data-no-emoji className={inputCls} value={smsNumber} onChange={(e) => setSmsNumber(e.target.value)} placeholder="SMS sending number (+1 ...)" />
               <div className="flex gap-2">
                 {(['twilio', 'telnyx', 'bandwidth'] as SmsConnection['provider'][]).map((p) => (
                   <button

@@ -9,6 +9,12 @@ import {
   FEATURE_LABELS,
   savePlan,
 } from '../../lib/billing';
+import {
+  usePlanModules,
+  moduleValueFor,
+  MODULE_CATEGORY_LABELS,
+  type PlanModuleCategory,
+} from '../../lib/planModules';
 
 interface PlanEditorModalProps {
   plan: Plan | null; // null = create new
@@ -28,6 +34,7 @@ const blankPlan = (mode: PlanMode = 'diy'): Plan => ({
   aiCreditsMonthly: 1000,
   smsAllowanceMonthly: 0,
   features: ['messenger', 'instagram', 'flow_builder'],
+  modules: {},
   serviceInclusions: [],
   isPublic: true,
   subscribersCount: 0,
@@ -36,11 +43,29 @@ const blankPlan = (mode: PlanMode = 'diy'): Plan => ({
 
 export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, defaultMode = 'diy' as PlanMode, onClose, onSaved }) => {
   const [form, setForm] = useState<Plan>(
-    plan ? { ...plan, features: [...plan.features], serviceInclusions: [...(plan.serviceInclusions || [])] } : blankPlan(defaultMode)
+    plan
+      ? { ...plan, features: [...plan.features], modules: { ...(plan.modules || {}) }, serviceInclusions: [...(plan.serviceInclusions || [])] }
+      : blankPlan(defaultMode)
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newInclusion, setNewInclusion] = useState('');
+  const { modules: registry } = usePlanModules();
+
+  const setModuleValue = (moduleId: string, value: boolean | number) => {
+    setForm((prev) => ({
+      ...prev,
+      modules: { ...(prev.modules || {}), [moduleId]: value },
+    }));
+  };
+
+  const clearModuleValue = (moduleId: string) => {
+    setForm((prev) => {
+      const next = { ...(prev.modules || {}) };
+      delete next[moduleId];
+      return { ...prev, modules: next };
+    });
+  };
 
   const set = <K extends keyof Plan>(key: K, value: Plan[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -78,7 +103,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, defaultM
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-white/10 rounded-2xl shadow-2xl p-6">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-slate-900 border border-white/10 rounded-2xl shadow-2xl p-6" data-no-emoji>
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-bold text-white">
             {plan ? `Edit Tier: ${plan.name}` : 'Create New Tier'}
@@ -187,6 +212,71 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, defaultM
               </label>
             ))}
           </div>
+        </div>
+
+        <div className="mb-4">
+          <label className={labelCls}>Modules (modular plan builder)</label>
+          <p className="text-[11px] text-slate-500 mb-2">
+            Compose this plan from modules. A value set here overrides the registry default; clearing it falls back to the default.
+          </p>
+          {(['capture', 'seats', 'workspaces', 'credits', 'channels', 'integrations', 'features'] as PlanModuleCategory[]).map((cat) => {
+            const list = registry.filter((m) => m.category === cat);
+            if (list.length === 0) return null;
+            return (
+              <div key={cat} className="mb-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  {MODULE_CATEGORY_LABELS[cat]}
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {list.map((m) => {
+                    const override = form.modules?.[m.id];
+                    const effective = moduleValueFor(form, m.id, registry);
+                    return (
+                      <div
+                        key={m.id}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs transition-all ${
+                          override !== undefined
+                            ? 'bg-purple-500/15 border-purple-500/40 text-white'
+                            : 'bg-slate-800/50 border-white/10 text-slate-400'
+                        }`}
+                      >
+                        {m.type === 'boolean' ? (
+                          <input
+                            type="checkbox"
+                            checked={effective === true}
+                            onChange={(e) => setModuleValue(m.id, e.target.checked)}
+                            className="accent-purple-500 w-3.5 h-3.5 shrink-0"
+                          />
+                        ) : (
+                          <input
+                            type="number"
+                            min={0}
+                            value={typeof effective === 'number' ? effective : 0}
+                            onChange={(e) => setModuleValue(m.id, Math.max(0, Number(e.target.value) || 0))}
+                            className="w-16 px-1.5 py-1 bg-slate-800/80 border border-white/10 rounded-lg text-white text-xs shrink-0"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <span className="block truncate">{m.name}</span>
+                          {m.unit && <span className="block text-[10px] text-slate-500">{m.unit}</span>}
+                        </div>
+                        {override !== undefined && (
+                          <button
+                            type="button"
+                            onClick={() => clearModuleValue(m.id)}
+                            title="Clear override, use registry default"
+                            className="text-slate-500 hover:text-white shrink-0 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="mb-4">

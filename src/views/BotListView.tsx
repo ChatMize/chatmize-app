@@ -229,9 +229,11 @@ interface BotListViewProps {
   onNewBotMap: (newBot: BotMapRecord) => void;
   triggerCreateModal?: number;
   onOpenLibrary?: () => void;
+  /** Current workspace slug; used for Firestore-backed snapshot exports. */
+  workspaceSlug?: string;
 }
 
-export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onOpenLibrary }: BotListViewProps) {
+export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onOpenLibrary, workspaceSlug }: BotListViewProps) {
   // Groups State & Persistence
   const [groups, setGroups] = useState<BotGroup[]>(() => {
     try {
@@ -1370,7 +1372,7 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onO
                 <label className="block text-xs font-bold text-slate-300 mb-1">
                   Bot Map Name *
                 </label>
-                <input 
+                <input data-no-emoji 
                   type="text"
                   required
                   value={newBotName}
@@ -1541,7 +1543,7 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onO
                 <label className="block text-xs font-bold text-slate-300 mb-1">
                   Group Name *
                 </label>
-                <input 
+                <input data-no-emoji 
                   type="text"
                   required
                   value={createGroupName}
@@ -1644,7 +1646,7 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onO
                   return (
                     <div key={grp.id} className="p-3 rounded-2xl bg-slate-950 border border-cyan-500/40 space-y-3">
                       <div className="flex items-center gap-2">
-                        <input
+                        <input data-no-emoji
                           type="text"
                           value={editingGroupName}
                           onChange={(e) => setEditingGroupName(e.target.value)}
@@ -1753,7 +1755,7 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onO
       )}
 
       {/* Modal: Share Workspace Snapshot */}
-      {showShareModal && <ShareSnapshotModal onClose={() => setShowShareModal(false)} />}
+      {showShareModal && <ShareSnapshotModal onClose={() => setShowShareModal(false)} workspaceSlug={workspaceSlug} />}
 
     </div>
   );

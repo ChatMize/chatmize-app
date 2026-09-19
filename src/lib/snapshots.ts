@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   addDoc,
+  setDoc,
   getDoc,
   getDocs,
   deleteDoc,
@@ -10,7 +11,7 @@ import {
   where,
   orderBy,
 } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db, auth, prodDb } from './firebase';
 
 export type SnapshotAssetKind =
   | 'botMaps'
@@ -36,9 +37,32 @@ export interface SnapshotPayload {
   botMaps?: Array<{ record: any; data: any | null }>;
   botGroups?: any[];
   nurtureTools?: any[];
-  growthLinks?: any[];
+  growthLinks?: SnapshotLinkItem[];
   overlays?: any[];
   supportWidgets?: any[];
+}
+
+/**
+ * Growth link record carried in snapshot payloads. Mirrors the Firestore
+ * `cloaked_links` contract (document ID `${workspaceSlug}_${slug}`).
+ */
+export interface SnapshotLinkItem {
+  workspaceSlug: string;
+  slug: string;
+  fullShortUrl?: string;
+  destinationUrl: string;
+  destinationType: 'takeover' | 'messenger' | 'instagram' | 'url';
+  cloakingMode: 'masked' | 'bridge' | 'direct';
+  title?: string;
+  description?: string;
+  previewImage?: string;
+  connectedBotId?: string;
+  ref?: string;
+  clickCount?: number;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  status?: 'active' | 'paused';
 }
 
 export interface SnapshotDoc {
@@ -85,11 +109,145 @@ function readJson(key: string): any {
   }
 }
 
-/** Build a snapshot payload from this browser's local workspace data. */
-export function exportWorkspaceSnapshot(kinds: SnapshotAssetKind[]): {
+// --- Growth links: Firestore cloaked_links -----------------------------------
+
+const CLOAKED_LINKS_COLLECTION = 'cloaked_links';
+const LEGACY_LINKS_KEY = 'chatmize_sendchat_links';
+
+const cleanLinkSlug = (input: string): string =>
+  input
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'link';
+
+const linkDocId = (workspaceSlug: string, slug: string) => `${workspaceSlug}_${slug}`;
+
+const normalizeDestType = (t: unknown): SnapshotLinkItem['destinationType'] => {
+  if (t === 'messenger' || t === 'instagram' || t === 'takeover' || t === 'url') return t;
+  if (t === 'web_chat') return 'takeover';
+  return 'url';
+};
+
+/** Normalize a cloaked_links doc (or a legacy localStorage record) to the snapshot shape. */
+function toSnapshotLink(data: any, workspaceSlug: string): SnapshotLinkItem {
+  const slug = cleanLinkSlug(String(data?.slug || 'link'));
+  return {
+    workspaceSlug,
+    slug,
+    fullShortUrl: String(data?.fullShortUrl || `https://send.chat/${workspaceSlug}/${slug}`),
+    destinationType: normalizeDestType(data?.destinationType),
+    destinationUrl: String(data?.destinationUrl || ''),
+    cloakingMode:
+      data?.cloakingMode === 'direct' || data?.cloakingMode === 'masked' ? data.cloakingMode : 'bridge',
+    title: String(data?.title || 'Untitled link'),
+    description: String(data?.description || ''),
+    ...(data?.previewImage ? { previewImage: String(data.previewImage) } : {}),
+    ...(data?.connectedBotId ? { connectedBotId: String(data.connectedBotId) } : {}),
+    ...(data?.ref || data?.refPayload ? { ref: String(data.ref || data.refPayload) } : {}),
+    clickCount:
+      typeof data?.clickCount === 'number'
+        ? data.clickCount
+        : typeof data?.totalClicks === 'number'
+          ? data.totalClicks
+          : 0,
+    ...(data?.createdBy ? { createdBy: String(data.createdBy) } : {}),
+    createdAt: String(data?.createdAt || new Date().toISOString()),
+    ...(data?.updatedAt ? { updatedAt: String(data.updatedAt) } : {}),
+    status: data?.status === 'paused' ? 'paused' : 'active',
+  };
+}
+
+/**
+ * One-time migration: move any legacy localStorage growth links into the
+ * Firestore cloaked_links collection, then clear the key so nobody loses
+ * links. Safe to call repeatedly; docs that already exist are skipped.
+ */
+export async function migrateLegacyLinksToFirestore(workspaceSlug: string): Promise<number> {
+  const raw = readJson(LEGACY_LINKS_KEY);
+  if (!Array.isArray(raw) || raw.length === 0) return 0;
+  const ws = cleanLinkSlug(workspaceSlug) || 'workspace';
+  const now = new Date().toISOString();
+  let migrated = 0;
+  for (const item of raw) {
+    try {
+      const link = toSnapshotLink(item, ws);
+      const ref = doc(prodDb, CLOAKED_LINKS_COLLECTION, linkDocId(ws, link.slug));
+      const existing = await getDoc(ref);
+      if (!existing.exists()) {
+        await setDoc(ref, {
+          ...link,
+          createdBy: 'snapshot-migration (migrated from browser storage)',
+          updatedAt: now,
+        });
+        migrated++;
+      }
+    } catch {
+      // Skip malformed records; keep going with the rest.
+    }
+  }
+  try {
+    localStorage.removeItem(LEGACY_LINKS_KEY);
+  } catch {
+    // storage unavailable
+  }
+  return migrated;
+}
+
+/** Read this workspace's growth links from Firestore (newest first). */
+async function fetchWorkspaceLinks(workspaceSlug: string): Promise<SnapshotLinkItem[]> {
+  const ws = cleanLinkSlug(workspaceSlug) || 'workspace';
+  const q = query(collection(prodDb, CLOAKED_LINKS_COLLECTION), where('workspaceSlug', '==', ws));
+  const snap = await getDocs(q);
+  const links = snap.docs.map((d) => toSnapshotLink(d.data(), ws));
+  links.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  return links;
+}
+
+/**
+ * Write imported growth links into Firestore under the target workspace.
+ * Slugs are remapped per import so they never collide with existing links.
+ * Click counts are zeroed: analytics belong to the source workspace.
+ */
+async function importLinksToFirestore(
+  workspaceSlug: string,
+  items: SnapshotLinkItem[],
+  stamp: string
+): Promise<number> {
+  const ws = cleanLinkSlug(workspaceSlug) || 'workspace';
+  const now = new Date().toISOString();
+  let count = 0;
+  for (const item of items) {
+    try {
+      const link = toSnapshotLink(item, ws);
+      const slug = cleanLinkSlug(`imp_${stamp}_${link.slug}`);
+      const record: SnapshotLinkItem = {
+        ...link,
+        workspaceSlug: ws,
+        slug,
+        fullShortUrl: `https://send.chat/${ws}/${slug}`,
+        clickCount: 0,
+        createdBy: 'snapshot import',
+        createdAt: now,
+        updatedAt: now,
+      };
+      await setDoc(doc(prodDb, CLOAKED_LINKS_COLLECTION, linkDocId(ws, slug)), record);
+      count++;
+    } catch {
+      // Skip malformed records; keep going with the rest.
+    }
+  }
+  return count;
+}
+
+/** Build a snapshot payload from this workspace's data. */
+export async function exportWorkspaceSnapshot(
+  kinds: SnapshotAssetKind[],
+  opts?: { workspaceSlug?: string }
+): Promise<{
   payload: SnapshotPayload;
   counts: Record<SnapshotAssetKind, number>;
-} {
+}> {
   const payload: SnapshotPayload = {};
   const counts = {
     botMaps: 0,
@@ -125,10 +283,21 @@ export function exportWorkspaceSnapshot(kinds: SnapshotAssetKind[]): {
     }
   }
   if (kinds.includes('growthLinks')) {
-    const links = readJson('chatmize_sendchat_links');
-    if (Array.isArray(links)) {
+    const ws = opts?.workspaceSlug ? cleanLinkSlug(opts.workspaceSlug) : '';
+    if (ws) {
+      // Growth links live in Firestore now; pull in any stragglers left in
+      // browser storage first so nobody loses links.
+      await migrateLegacyLinksToFirestore(ws);
+      const links = await fetchWorkspaceLinks(ws);
       payload.growthLinks = links;
       counts.growthLinks = links.length;
+    } else {
+      // No workspace context (legacy fallback): read the old browser key.
+      const links = readJson(LEGACY_LINKS_KEY);
+      if (Array.isArray(links)) {
+        payload.growthLinks = links.map((l: any) => toSnapshotLink(l, 'workspace'));
+        counts.growthLinks = links.length;
+      }
     }
   }
   if (kinds.includes('overlays')) {
@@ -154,11 +323,14 @@ function remapId(oldId: string, stamp: string): string {
 }
 
 /**
- * Merge a snapshot payload into this browser's local workspace data.
+ * Merge a snapshot payload into this workspace's data.
  * Imported bots always land as drafts with zeroed stats so nothing goes
  * live by surprise. Returns per-kind import counts.
  */
-export function importSnapshotPayload(payload: SnapshotPayload): Record<SnapshotAssetKind, number> {
+export async function importSnapshotPayload(
+  payload: SnapshotPayload,
+  opts?: { workspaceSlug?: string }
+): Promise<Record<SnapshotAssetKind, number>> {
   const stamp = Date.now().toString(36);
   const counts = {
     botMaps: 0,
@@ -246,7 +418,13 @@ export function importSnapshotPayload(payload: SnapshotPayload): Record<Snapshot
     counts.nurtureTools = appendToList('chatmize_nurture_tools', payload.nurtureTools);
   }
   if (payload.growthLinks?.length) {
-    counts.growthLinks = appendToList('chatmize_sendchat_links', payload.growthLinks);
+    const ws = opts?.workspaceSlug ? cleanLinkSlug(opts.workspaceSlug) : '';
+    if (ws) {
+      counts.growthLinks = await importLinksToFirestore(ws, payload.growthLinks, stamp);
+    } else {
+      // No workspace context (legacy fallback): append to the old browser key.
+      counts.growthLinks = appendToList(LEGACY_LINKS_KEY, payload.growthLinks);
+    }
   }
   if (payload.overlays?.length) {
     counts.overlays = appendToList('chatmize_website_overlays', payload.overlays);

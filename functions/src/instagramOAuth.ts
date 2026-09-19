@@ -38,7 +38,10 @@ const REFRESH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const PROJECT_ID = "gen-lang-client-0433776094";
 
 function db() {
-  return getFirestore();
+  // Must match the database used everywhere else (metaOAuth.ts, index.ts).
+  // A bare getFirestore() here silently wrote IG connections to the project's
+  // default database, where the webhook router could never find them.
+  return getFirestore("chatmize-prod");
 }
 
 function sanitizeReturnTo(value: unknown): string | undefined {
@@ -291,6 +294,9 @@ export interface InstagramConnection {
   username: string | null;
   pictureUrl: string | null;
   expiresAtMs: number | null;
+  /** True after the non-destructive "Upgrade to Facebook connection" flow
+   * re-anchored this account to the workspace's Facebook Page. */
+  anchoredViaPage: boolean;
 }
 
 /** Read the IG-only connection doc (no tokens leave the server). */
@@ -320,7 +326,148 @@ export async function getInstagramConnection(workspaceId: string): Promise<Insta
     username: conn.username ?? null,
     pictureUrl: conn.pictureUrl ?? null,
     expiresAtMs: conn.expiresAtMs ?? null,
+    anchoredViaPage: (conn as { anchoredViaPage?: boolean }).anchoredViaPage ?? false,
   };
+}
+
+/** In-memory token cache (mirrors the pattern in metaOAuth.ts). */
+const cache = new Map<string, { value: string; expiresAt: number }>();
+
+function cacheGet(key: string): string | null {
+  const hit = cache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+  cache.delete(key);
+  return null;
+}
+
+function cacheSet(key: string, value: string, ttlMs: number) {
+  cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
+/** Read the latest version of a Secret Manager secret. Null on any failure. */
+async function readSecretPayload(secretName: string): Promise<string | null> {
+  try {
+    const { GoogleAuth } = await import("google-auth-library");
+    const auth = new GoogleAuth({
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    });
+    const client = await auth.getClient();
+    const gtoken = await client.getAccessToken();
+    const res = await fetch(
+      `https://secretmanager.googleapis.com/v1/projects/${PROJECT_ID}/secrets/${secretName}/versions/latest:access`,
+      { headers: { Authorization: `Bearer ${gtoken.token}` } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { payload?: { data?: string } };
+    const payload = data.payload?.data;
+    if (!payload) return null;
+    return Buffer.from(payload, "base64").toString("utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the workspace's IG-only token from Secret Manager (briefly cached).
+ * Null when the connection is missing or the secret is unreadable.
+ * Never logs the token.
+ */
+export async function getIgToken(workspaceId: string): Promise<string | null> {
+  const snap = await db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("integrations")
+    .doc("instagram")
+    .get();
+  const conn = snap.data() as
+    | { status?: string; secretName?: string }
+    | undefined;
+  if (conn?.status !== "connected" || !conn.secretName) return null;
+  const cached = cacheGet(`igtoken:${workspaceId}`);
+  if (cached) return cached;
+  const token = await readSecretPayload(conn.secretName);
+  if (token) {
+    cacheSet(`igtoken:${workspaceId}`, token, 5 * 60 * 1000);
+    return token;
+  }
+  logger.warn("Workspace IG token unreadable, failing soft", { workspaceId });
+  return null;
+}
+
+/** Result of a proactive IG-token health check. */
+export type IgTokenHealth = "ok" | "invalid" | "unconnected";
+
+/**
+ * Proactive IG token self-heal, mirroring ensureFreshPageToken:
+ * refresh a near-expiry token, or flag the integration token_invalid when
+ * Meta rejects the token outright. Health is cached 24h per workspace.
+ * A dead token cannot be revived via API; the owner must re-run Instagram Login.
+ */
+export async function ensureFreshIgToken(workspaceId: string): Promise<IgTokenHealth> {
+  const ref = db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("integrations")
+    .doc("instagram");
+  const snap = await ref.get();
+  const conn = snap.data() as
+    | { status?: string; secretName?: string; expiresAtMs?: number; igUserId?: string }
+    | undefined;
+  if (!conn || !conn.secretName) return "unconnected";
+  if (conn.status === "token_invalid") return "invalid";
+  if (conn.status !== "connected") return "unconnected";
+
+  await refreshIgTokenIfNeeded(workspaceId, conn).catch(() => undefined);
+
+  const healthKey = `ighealth:${workspaceId}`;
+  if (cacheGet(healthKey)) return "ok";
+
+  const token = await getIgToken(workspaceId);
+  if (!token) return "unconnected";
+  try {
+    const res = await fetch(
+      `https://graph.instagram.com/me?fields=id&access_token=${encodeURIComponent(token)}`,
+    );
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      if (
+        /invalid oauth access token|error validating access token|session has been invalidated|session has expired/i.test(
+          errText,
+        )
+      ) {
+        await markIgTokenInvalid(workspaceId, "Instagram token rejected by Meta");
+        return "invalid";
+      }
+      // Transient Meta error: leave the connection alone.
+      return "ok";
+    }
+  } catch {
+    // Network hiccup: leave the connection alone.
+    return "ok";
+  }
+  cacheSet(healthKey, "1", 24 * 3600 * 1000);
+  return "ok";
+}
+
+/** Flag the IG-only integration token_invalid so the UI prompts a reconnect. */
+export async function markIgTokenInvalid(workspaceId: string, reason: string): Promise<void> {
+  await db()
+    .collection("workspaces")
+    .doc(workspaceId)
+    .collection("integrations")
+    .doc("instagram")
+    .set(
+      {
+        status: "token_invalid",
+        tokenInvalidAt: FieldValue.serverTimestamp(),
+        tokenInvalidReason: reason,
+      },
+      { merge: true },
+    );
+  cache.delete(`igtoken:${workspaceId}`);
+  // Fire-and-forget owner email; never breaks the invalidation path.
+  const { notifyOwnerReconnect } = await import("./notifications.js");
+  void notifyOwnerReconnect(workspaceId, "instagram");
 }
 
 /** Step 3: persist the IG token as the workspace's own secret + connection doc. */
@@ -364,6 +511,9 @@ export async function connectInstagramAccount(
         expiresAtMs: profile.expiresAtMs,
         connectedAt: FieldValue.serverTimestamp(),
         connectedBy: uid,
+        // Clear stale invalidation flags from an earlier dead token.
+        tokenInvalidAt: FieldValue.delete(),
+        tokenInvalidReason: FieldValue.delete(),
       },
       { merge: true },
     );

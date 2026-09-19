@@ -298,8 +298,34 @@ export const CHATMIZE_INTEGRATIONS: IntegrationApp[] = [
       { name: 'webhookUrl', label: 'Integrately Webhook URL', placeholder: 'https://webhooks.integrately.com/a/webhooks/...', helpText: 'Copy from your active automation recipe' },
     ],
   },
+  {
+    id: 'google_sheets',
+    name: 'Google Sheets',
+    category: 'automation',
+    tagline: 'Log chat answers straight into a spreadsheet',
+    description: 'Connect a Google Sheet, then log captured answers and contact fields as new rows. Flows can also look up rows to personalize replies.',
+    logoBg: 'bg-[#0F9D58]',
+    logoTextColor: 'text-white',
+    initials: 'GS',
+    connected: false,
+    authType: 'OAuth / API Token',
+    fields: [],
+  },
 
   // Affiliate & E-commerce & Contests
+  {
+    id: 'shopify',
+    name: 'Shopify',
+    category: 'ecommerce',
+    tagline: 'Abandoned cart recovery & order updates',
+    description: 'Trigger BotMaps flows from carts, orders, and fulfillments. Recover abandoned checkouts and send shipping updates by chat.',
+    logoBg: 'bg-[#96BF48]',
+    logoTextColor: 'text-white',
+    initials: 'SH',
+    connected: false,
+    authType: 'OAuth / API Token',
+    fields: [],
+  },
   {
     id: 'paykickstart',
     name: 'PayKickStart',
@@ -412,6 +438,10 @@ export const INTEGRATION_ACTION_TEMPLATES: Record<string, { label: string; actio
   ],
   paykickstart: [
     { label: 'Verify Customer License', action: 'PayKickstart: Verify License' },
+  ],
+  shopify: [
+    { label: 'Send Cart Recovery Message', action: 'Shopify: Send Cart Recovery' },
+    { label: 'Send Order Update Message', action: 'Shopify: Send Order Update' },
   ],
   perkzilla: [
     { label: 'Register Referral Participant', action: 'PerkZilla: Register Referral Participant' },
