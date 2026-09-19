@@ -44,8 +44,8 @@ const OVERLAY_TYPES = new Set(["popup_modal", "slider", "page_takeover", "sticky
 const OVERLAY_TRIGGERS = new Set(["immediate", "time_delay", "exit_intent", "scroll_depth", "button_click"]);
 const OVERLAY_POSITIONS = new Set(["bottom_right", "bottom_left", "center", "top_bar", "bottom_bar"]);
 const OVERLAY_STATUSES = new Set(["active", "paused", "draft"]);
-const OVERLAY_CTA_ACTIONS = new Set(["open_bot", "open_url", "copy_code", "enter_contest"]);
-const TRACK_EVENTS = new Set(["impression", "click", "lead"]);
+const OVERLAY_CTA_ACTIONS = new Set(["open_bot", "open_url", "copy_code", "enter_contest", "take_survey"]);
+const TRACK_EVENTS = new Set(["impression", "click", "lead", "survey_completed"]);
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const WS_RE = /^[A-Za-z0-9_-]{1,128}$/;
@@ -118,6 +118,8 @@ export interface SanitizedOverlay {
   whitelistedDomains: string[];
   connectedBotId: string;
   botName: string;
+  surveyId: string;
+  surveyName: string;
   requireEmailCapture: boolean;
   requireNameCapture: boolean;
   removeBranding: boolean;
@@ -192,6 +194,8 @@ function sanitizeOverlay(input: unknown, fallbackId: string): SanitizedOverlay {
     whitelistedDomains: strArr(o.whitelistedDomains, 10, 100),
     connectedBotId: str(o.connectedBotId, 128),
     botName: str(o.botName, 80),
+    surveyId: typeof o.surveyId === "string" && ID_RE.test(o.surveyId) ? o.surveyId : "",
+    surveyName: str(o.surveyName, 80),
     requireEmailCapture: o.requireEmailCapture === true,
     requireNameCapture: o.requireNameCapture === true,
     removeBranding: o.removeBranding === true,
@@ -231,6 +235,8 @@ function toPublicShape(o: Record<string, unknown>): Record<string, unknown> {
     requireEmailCapture: o.requireEmailCapture === true,
     requireNameCapture: o.requireNameCapture === true,
     removeBranding: o.removeBranding === true,
+    surveyId: o.surveyId ?? "",
+    surveyName: o.surveyName ?? "",
   };
 }
 

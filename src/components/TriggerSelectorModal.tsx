@@ -22,7 +22,8 @@ import {
   UserCheck,
   Check,
   BookOpen,
-  ArrowRight
+  ArrowRight,
+  ClipboardList
 } from 'lucide-react';
 import { 
   TriggerChannel, 
@@ -128,6 +129,7 @@ export function TriggerSelectorModal({
       case 'ExternalLink': return <ExternalLink className="w-4 h-4" />;
       case 'Webhook': return <Webhook className="w-4 h-4" />;
       case 'FileText': return <FileText className="w-4 h-4" />;
+      case 'ClipboardList': return <ClipboardList className="w-4 h-4" />;
       default: return getChannelStyle(channel).icon;
     }
   };

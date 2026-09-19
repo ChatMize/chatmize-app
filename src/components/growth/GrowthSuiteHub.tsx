@@ -10,14 +10,16 @@ import {
   Sparkles,
   Zap,
   CheckCircle2,
-  ShieldCheck
+  ShieldCheck,
+  ClipboardList
 } from 'lucide-react';
 import { SupportChatView } from './SupportChatView';
 import { WebsiteOverlaysView } from './WebsiteOverlaysView';
 import { GrowthLinksView } from './GrowthLinksView';
+import { SurveysView } from './SurveysView';
 import { OverlayType } from '../../types/growthTools';
 
-export type GrowthSuiteTab = 'support_chat' | 'overlays' | 'growth_links';
+export type GrowthSuiteTab = 'support_chat' | 'overlays' | 'growth_links' | 'surveys';
 
 interface GrowthSuiteHubProps {
   initialTab?: GrowthSuiteTab;
@@ -65,7 +67,7 @@ export const GrowthSuiteHub: React.FC<GrowthSuiteHubProps> = ({
       
       {/* Top Main Navigation Bar for Separated Growth Tools */}
       <div className="bg-slate-900/90 border border-white/10 rounded-2xl p-2 shadow-lg backdrop-blur-md">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
           
           {/* Tool 1: Live Support Chat */}
           <button
@@ -142,6 +144,31 @@ export const GrowthSuiteHub: React.FC<GrowthSuiteHubProps> = ({
             </div>
           </button>
 
+          {/* Tool 4: Surveys */}
+          <button
+            onClick={() => handleTabSwitch('surveys')}
+            className={`p-3 rounded-xl transition-all cursor-pointer flex items-center gap-3 text-left ${
+              activeTab === 'surveys'
+                ? 'bg-gradient-to-r from-cyan-500/20 to-teal-500/20 text-white border border-cyan-500/40 shadow-md ring-1 ring-cyan-500/30'
+                : 'text-slate-400 hover:text-white hover:bg-white/5 border border-transparent'
+            }`}
+          >
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+              activeTab === 'surveys' ? 'bg-cyan-600 text-white' : 'bg-slate-800 text-cyan-400'
+            }`}>
+              <ClipboardList className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold truncate">Surveys</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 font-mono">
+                  Builder
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 truncate">Questions, ratings, NPS, results</p>
+            </div>
+          </button>
+
         </div>
       </div>
 
@@ -168,6 +195,12 @@ export const GrowthSuiteHub: React.FC<GrowthSuiteHubProps> = ({
           workspaceSlug={workspaceSlug}
           availableBots={availableBots}
           onNavigateToFlows={onNavigateToFlows}
+        />
+      )}
+
+      {activeTab === 'surveys' && (
+        <SurveysView
+          workspaceId={workspaceId}
         />
       )}
 

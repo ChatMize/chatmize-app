@@ -20,7 +20,7 @@ export interface MobileTriggerConfig {
   scrollPercent: number;
 }
 
-export type OverlayCtaAction = 'open_bot' | 'open_url' | 'copy_code' | 'enter_contest';
+export type OverlayCtaAction = 'open_bot' | 'open_url' | 'copy_code' | 'enter_contest' | 'take_survey';
 
 /**
  * STUB — Contest entities don't exist yet (see viral-contests-spec.md).
@@ -53,6 +53,10 @@ export interface WebsiteOverlay {
   /** Set when ctaAction === 'enter_contest'. Resolves against Contest entities once the Contests module ships. */
   contestId?: string;
   contestName?: string;
+  /** Set when ctaAction === 'take_survey'. The SDK renders the survey inside
+      the overlay in an iframe pointed at the standalone survey link. */
+  surveyId?: string;
+  surveyName?: string;
   brandColor: string;
   theme: 'dark' | 'light';
   position: OverlayPosition;

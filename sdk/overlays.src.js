@@ -363,6 +363,25 @@
           card.appendChild(addClose(el("button", "cmz-x", "×")));
         });
         card.appendChild(form);
+      } else if (ov.ctaAction === "take_survey" && typeof ov.surveyId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(ov.surveyId)) {
+        /* Survey placement: render the standalone survey link in an iframe.
+           Completion posts a message (see SurveyTakePage) which we turn into
+           a tracked survey_completed event. */
+        var frame = document.createElement("iframe");
+        frame.src = SCRIPT_ORIGIN + "/survey/" + encodeURIComponent(ov.surveyId) + "?embed=1";
+        frame.title = ov.surveyName || "Survey";
+        frame.style.cssText = "width:100%;height:420px;border:0;border-radius:10px;background:transparent;";
+        frame.setAttribute("loading", "lazy");
+        card.appendChild(frame);
+        var surveyDone = false;
+        on(window, "message", function (e) {
+          if (surveyDone) return;
+          var d = e && e.data;
+          if (d && d.type === "chatmize:survey-completed" && d.surveyId === ov.surveyId) {
+            surveyDone = true;
+            track(ov.id, "survey_completed", {});
+          }
+        });
       } else {
         var cta = el("button", "cmz-cta", ov.ctaText || "Learn More");
         on(cta, "click", function () {
@@ -398,6 +417,9 @@
       on(barCta, "click", function () {
         track(ov.id, "click");
         var url = safeUrl(ov.redirectUrl);
+        if (ov.ctaAction === "take_survey" && typeof ov.surveyId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(ov.surveyId)) {
+          url = SCRIPT_ORIGIN + "/survey/" + encodeURIComponent(ov.surveyId);
+        }
         if (url) location.href = url;
       });
       bar.appendChild(barCta);
