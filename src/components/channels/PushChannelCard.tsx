@@ -144,7 +144,7 @@ export const PushChannelCard: React.FC<PushChannelCardProps> = ({ workspaceId })
 
       <p className="text-xs text-slate-400 mb-4 leading-relaxed">
         Send browser notifications straight to subscriber devices. No app install, no per message
-        cost. Businesses collect subscribers with the opt-in prompt, then send from broadcasts,
+        cost. Businesses collect subscribers with the opt in prompt, then send from broadcasts,
         BotMaps flows, and booking reminders.
       </p>
 

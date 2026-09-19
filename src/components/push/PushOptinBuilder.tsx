@@ -96,7 +96,7 @@ export const PushOptinBuilder: React.FC<PushOptinBuilderProps> = ({ workspaceId 
           <BellRing className="w-5 h-5 text-violet-300" />
         </div>
         <div>
-          <h3 className="font-bold text-white text-sm">Push opt-in prompt</h3>
+          <h3 className="font-bold text-white text-sm">Push opt in prompt</h3>
           <p className="text-xs text-slate-400">A friendly soft ask that lives on your site and grows your push list.</p>
         </div>
       </div>
@@ -126,7 +126,7 @@ export const PushOptinBuilder: React.FC<PushOptinBuilderProps> = ({ workspaceId 
           </button>
           <p className="text-[10px] text-slate-500 leading-relaxed">
             The prompt soft asks first. Only when a visitor taps allow does the browser show its
-            own permission dialog. That keeps opt-in rates high and avoids permanent blocks.
+            own permission dialog. That keeps opt in rates high and avoids permanent blocks.
           </p>
         </div>
 
