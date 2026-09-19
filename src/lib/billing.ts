@@ -93,6 +93,12 @@ export interface Plan {
   /** SMS segments included each month before credit billing kicks in. Draft default. */
   smsAllowanceMonthly: number;
   features: PlanFeature[];
+  /**
+   * Modular plan composition: moduleId -> value (boolean for on/off modules,
+   * number for limit/metered modules). Overrides the module registry defaults.
+   * See src/lib/planModules.ts. Built in the Super Admin plan builder UI.
+   */
+  modules?: Record<string, boolean | number>;
   /** DFU service line items, e.g. "We build your first 3 flows". */
   serviceInclusions: string[];
   badge?: string;
@@ -238,7 +244,7 @@ const plansRef = collection(db, "plans");
 
 /** Backfill defaults for plan docs written before a field existed. */
 function normalizePlan(id: string, data: Omit<Plan, "id">): Plan {
-  return { id, smsAllowanceMonthly: 0, ...data };
+  return { id, smsAllowanceMonthly: 0, modules: {}, ...data };
 }
 
 export function subscribeToPlans(

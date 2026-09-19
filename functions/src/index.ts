@@ -24,6 +24,13 @@ import {
 } from "./gamification";
 import { aiComplete, projectTestCost, AI_SECRETS, ModelTier, ChatMessage } from "./ai/router";
 import {
+  DEFAULT_PLAN_MODULES,
+  moduleValueFor,
+  canUse,
+  limitFor,
+  type PlanModule as PlanModuleDef,
+} from "./planModules";
+import {
   META_APP_SECRET,
   META_VERIFY_TOKEN,
   META_PAGE_TOKEN_DEFAULT,
@@ -657,6 +664,69 @@ export const resetMonthlyCredits = onSchedule(
     await resetAllMonthlyCredits();
   },
 );
+
+// ---------------------------------------------------------------------------
+// Modular plan builder (system_settings/plan_modules + plan.modules)
+// ---------------------------------------------------------------------------
+
+/**
+ * Super Admin only: seed the module registry with the canonical catalog.
+ * Idempotent: only writes when the registry doc does not exist.
+ */
+export const seedPlanModules = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  if (request.auth?.token?.superadmin !== true) {
+    throw new HttpsError("permission-denied", "Super Admin only.");
+  }
+  const ref = db().collection("system_settings").doc("plan_modules");
+  const snap = await ref.get();
+  if (snap.exists) return { ok: true, seeded: false };
+  const modules: Record<string, PlanModuleDef> = {};
+  for (const m of DEFAULT_PLAN_MODULES) modules[m.id] = m;
+  await ref.set({ modules, updatedAt: new Date().toISOString() });
+  return { ok: true, seeded: true, count: DEFAULT_PLAN_MODULES.length };
+});
+
+/**
+ * Resolve a workspace's plan and return the effective module value.
+ * Workspace members and Super Admin only. Used by feature code that runs
+ * server-side (bookings, surveys, analytics) to enforce plan modules.
+ */
+export const getModuleValue = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, moduleId } = (request.data ?? {}) as {
+    workspaceId?: string;
+    moduleId?: string;
+  };
+  if (!workspaceId || !moduleId) {
+    throw new HttpsError("invalid-argument", "workspaceId and moduleId are required.");
+  }
+  await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+
+  const ws = await db().collection("workspaces").doc(workspaceId).get();
+  const planId = ws.data()?.planId as string | undefined;
+
+  let planModules: Record<string, boolean | number> | undefined;
+  if (planId) {
+    const planSnap = await db().collection("plans").doc(planId).get();
+    planModules = (planSnap.data() as { modules?: Record<string, boolean | number> } | undefined)?.modules;
+  }
+
+  const regSnap = await db().collection("system_settings").doc("plan_modules").get();
+  const registry: PlanModuleDef[] = regSnap.exists
+    ? Object.values((regSnap.data() as { modules?: Record<string, PlanModuleDef> }).modules || {})
+    : DEFAULT_PLAN_MODULES;
+
+  const value = moduleValueFor({ modules: planModules }, moduleId, registry);
+  return {
+    moduleId,
+    value,
+    allowed: canUse({ modules: planModules }, moduleId, registry),
+    limit: limitFor({ modules: planModules }, moduleId, registry),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // SMS via Twilio (ChatMize-owned account; billed via allowance then credits)
