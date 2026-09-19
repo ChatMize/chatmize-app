@@ -30,7 +30,7 @@ import {
   runTransaction,
   increment,
 } from 'firebase/firestore';
-import { db, storage } from './firebase';
+import { db, getStorageInstance } from './firebase';
 
 export type KbArticleStatus = 'draft' | 'published' | 'archived';
 
@@ -230,7 +230,7 @@ export async function uploadKbImage(
   if (validationError) throw new Error(validationError);
   const compressed = await compressImage(file);
   const path = `workspaces/${workspaceId}/kb_media/${articleId}/${stepId}.${compressed.extension}`;
-  const storageRef = ref(storage, path);
+  const storageRef = ref(await getStorageInstance(), path);
   await uploadBytes(storageRef, compressed.blob, {
     contentType: compressed.extension === 'gif' ? 'image/gif' : `image/${compressed.extension}`,
   });
@@ -239,7 +239,7 @@ export async function uploadKbImage(
 
 /** Resolve a stored kb_media path to a download URL for display. */
 export async function kbImageUrl(path: string): Promise<string> {
-  return getDownloadURL(ref(storage, path));
+  return getDownloadURL(ref(await getStorageInstance(), path));
 }
 
 /** Raw video cap. Videos are stored as uploaded, so the cap stays generous. */
@@ -278,7 +278,7 @@ export async function uploadKbVideo(
   const nameExt = file.name.split('.').pop()?.toLowerCase() || '';
   const ext = file.type === 'video/webm' || nameExt === 'webm' ? 'webm' : 'mp4';
   const path = `workspaces/${workspaceId}/kb_media/${articleId}/${stepId}.${ext}`;
-  const storageRef = ref(storage, path);
+  const storageRef = ref(await getStorageInstance(), path);
   await uploadBytes(storageRef, file, {
     contentType: ext === 'webm' ? 'video/webm' : 'video/mp4',
   });

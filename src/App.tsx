@@ -39,33 +39,54 @@ import {
   Rocket,
   X
 } from 'lucide-react';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 
 import { ChatMizeLogo } from './components/Logo';
-import { Dashboard } from './views/Dashboard';
-import { AIAgents } from './views/AIAgents';
-import { FlowBuilder } from './views/FlowBuilder';
-import { BotListView } from './views/BotListView';
-import { SettingsView } from './views/SettingsView';
-import { AudienceView } from './views/AudienceView';
-import { LiveConversationsView } from './views/LiveConversationsView';
-import { SuperAdminView } from './views/SuperAdminView';
-import { WorkspacesView } from './views/WorkspacesView';
-import { NurtureToolsView } from './views/NurtureToolsView';
-import { SupportChatView } from './components/growth/SupportChatView';
-import { WebsiteOverlaysView } from './components/growth/WebsiteOverlaysView';
-import { GrowthLinksView } from './components/growth/GrowthLinksView';
-import { GrowthSuiteHub } from './components/growth/GrowthSuiteHub';
-import { ContestsView } from './components/growth/ContestsView';
-import { KnowledgeBaseView } from './views/KnowledgeBaseView';
-import { ContestEntryPage } from './components/growth/ContestEntryPage';
-import { SurveyTakePage } from './components/growth/SurveyTakePage';
-import { BookingWidgetPage } from './components/bookings/BookingWidgetPage';
-import { ManageBookingPage } from './components/bookings/ManageBookingPage';
+// Route-level code splitting: every view ships as its own chunk and loads
+// on first navigation. The app shell (nav, auth gate, onboarding chrome)
+// stays in the main bundle so first paint stays fast.
+const Dashboard = lazy(() => import('./views/Dashboard').then(m => ({ default: m.Dashboard })));
+const AIAgents = lazy(() => import('./views/AIAgents').then(m => ({ default: m.AIAgents })));
+const FlowBuilder = lazy(() => import('./views/FlowBuilder').then(m => ({ default: m.FlowBuilder })));
+const BotListView = lazy(() => import('./views/BotListView').then(m => ({ default: m.BotListView })));
+const SettingsView = lazy(() => import('./views/SettingsView').then(m => ({ default: m.SettingsView })));
+const AudienceView = lazy(() => import('./views/AudienceView').then(m => ({ default: m.AudienceView })));
+const LiveConversationsView = lazy(() => import('./views/LiveConversationsView').then(m => ({ default: m.LiveConversationsView })));
+const SuperAdminView = lazy(() => import('./views/SuperAdminView').then(m => ({ default: m.SuperAdminView })));
+const WorkspacesView = lazy(() => import('./views/WorkspacesView').then(m => ({ default: m.WorkspacesView })));
+const NurtureToolsView = lazy(() => import('./views/NurtureToolsView').then(m => ({ default: m.NurtureToolsView })));
+const SupportChatView = lazy(() => import('./components/growth/SupportChatView').then(m => ({ default: m.SupportChatView })));
+const WebsiteOverlaysView = lazy(() => import('./components/growth/WebsiteOverlaysView').then(m => ({ default: m.WebsiteOverlaysView })));
+const GrowthLinksView = lazy(() => import('./components/growth/GrowthLinksView').then(m => ({ default: m.GrowthLinksView })));
+const GrowthSuiteHub = lazy(() => import('./components/growth/GrowthSuiteHub').then(m => ({ default: m.GrowthSuiteHub })));
+const ContestsView = lazy(() => import('./components/growth/ContestsView').then(m => ({ default: m.ContestsView })));
+const KnowledgeBaseView = lazy(() => import('./views/KnowledgeBaseView').then(m => ({ default: m.KnowledgeBaseView })));
+const ContestEntryPage = lazy(() => import('./components/growth/ContestEntryPage').then(m => ({ default: m.ContestEntryPage })));
+const SurveyTakePage = lazy(() => import('./components/growth/SurveyTakePage').then(m => ({ default: m.SurveyTakePage })));
+const BookingWidgetPage = lazy(() => import('./components/bookings/BookingWidgetPage').then(m => ({ default: m.BookingWidgetPage })));
+const ManageBookingPage = lazy(() => import('./components/bookings/ManageBookingPage').then(m => ({ default: m.ManageBookingPage })));
+const RecurringNotificationBroadcastHub = lazy(() => import('./components/RecurringNotificationBroadcastHub').then(m => ({ default: m.RecurringNotificationBroadcastHub })));
+const OnboardingWizard = lazy(() => import('./components/onboarding/OnboardingWizard').then(m => ({ default: m.OnboardingWizard })));
+const SnapshotImportView = lazy(() => import('./views/SnapshotImportView').then(m => ({ default: m.SnapshotImportView })));
+const SnapshotLibraryView = lazy(() => import('./views/SnapshotLibraryView').then(m => ({ default: m.SnapshotLibraryView })));
+const SmsBroadcastView = lazy(() => import('./views/SmsBroadcastView').then(m => ({ default: m.SmsBroadcastView })));
+const PushBlastView = lazy(() => import('./views/PushBlastView').then(m => ({ default: m.PushBlastView })));
+const PushSubscribePage = lazy(() => import('./components/push/PushSubscribePage').then(m => ({ default: m.PushSubscribePage })));
+const BuildCatalogView = lazy(() => import('./views/BuildCatalogView').then(m => ({ default: m.BuildCatalogView })));
+/** Shared loading state while a lazily loaded view chunk downloads. */
+function ViewLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center h-64" aria-label="Loading">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+        <p className="text-sm text-slate-500">Loading…</p>
+      </div>
+    </div>
+  );
+}
 import { ManageLinkAuth, parseManageLinkAuth } from './lib/bookings';
 import { NurtureToolType } from './types/nurture';
 import { OverlayType } from './types/growthTools';
-import { RecurringNotificationBroadcastHub } from './components/RecurringNotificationBroadcastHub';
 import { AuthGateModal } from './components/AuthGateModal';
 import { subscribeToAuthChanges, signOutUser, AppUser, db } from './lib/firebase';
 import { WorkspaceSwitcher } from './components/navigation/WorkspaceSwitcher';
@@ -76,13 +97,6 @@ import GlobalPersonalizationBuddy from './components/personalization/GlobalPerso
 import { BadgeToast } from './components/BadgeToast';
 import { MetaReconnectBanner } from './components/MetaReconnectBanner';
 import { isWorkspaceOwner } from './lib/workspaceAccess';
-import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
-import { SnapshotImportView } from './views/SnapshotImportView';
-import { SnapshotLibraryView } from './views/SnapshotLibraryView';
-import { SmsBroadcastView } from './views/SmsBroadcastView';
-import { PushBlastView } from './views/PushBlastView';
-import { PushSubscribePage } from './components/push/PushSubscribePage';
-import { BuildCatalogView } from './views/BuildCatalogView';
 import { WorkspaceSilo } from './types/workspace';
 import { DEFAULT_WORKSPACES } from './data/workspaceDefaults';
 
@@ -99,7 +113,11 @@ export default function App() {
     return null;
   });
   if (pushSignup) {
-    return <PushSubscribePage workspaceId={pushSignup.workspaceId} embed={pushSignup.embed} />;
+    return (
+      <Suspense fallback={<ViewLoadingFallback />}>
+        <PushSubscribePage workspaceId={pushSignup.workspaceId} embed={pushSignup.embed} />
+      </Suspense>
+    );
   }
 
   const [activeTab, setActiveTab] = useState(() => {
@@ -662,29 +680,47 @@ export default function App() {
   // goes through the wizard (connect accounts -> choose DIY/DFU route -> tier).
   if (!authLoading && currentUser && activeWorkspace && !activeWorkspace.onboardingComplete) {
     return (
-      <OnboardingWizard
-        workspace={activeWorkspace}
-        onUpdateWorkspace={handleUpdateWorkspace}
-        onComplete={() => {}}
-        initialStep={oauthReturnTo === 'onboarding:connect' ? 'connect' : undefined}
-      />
+      <Suspense fallback={<ViewLoadingFallback />}>
+        <OnboardingWizard
+          workspace={activeWorkspace}
+          onUpdateWorkspace={handleUpdateWorkspace}
+          onComplete={() => {}}
+          initialStep={oauthReturnTo === 'onboarding:connect' ? 'connect' : undefined}
+        />
+      </Suspense>
     );
   }
 
   if (publicContestId) {
-    return <ContestEntryPage contestId={publicContestId} />;
+    return (
+      <Suspense fallback={<ViewLoadingFallback />}>
+        <ContestEntryPage contestId={publicContestId} />
+      </Suspense>
+    );
   }
 
   if (publicSurveyId) {
-    return <SurveyTakePage surveyId={publicSurveyId} />;
+    return (
+      <Suspense fallback={<ViewLoadingFallback />}>
+        <SurveyTakePage surveyId={publicSurveyId} />
+      </Suspense>
+    );
   }
 
   if (publicBook) {
-    return <BookingWidgetPage workspaceId={publicBook.workspaceId} embed={publicBook.embed} />;
+    return (
+      <Suspense fallback={<ViewLoadingFallback />}>
+        <BookingWidgetPage workspaceId={publicBook.workspaceId} embed={publicBook.embed} />
+      </Suspense>
+    );
   }
 
   if (publicManage) {
-    return <ManageBookingPage auth={publicManage} />;
+    return (
+      <Suspense fallback={<ViewLoadingFallback />}>
+        <ManageBookingPage auth={publicManage} />
+      </Suspense>
+    );
   }
 
   const showGuide = Boolean(
@@ -1223,7 +1259,9 @@ export default function App() {
               </button>
             </div>
           )}
-          {renderContent()}
+          <Suspense fallback={<ViewLoadingFallback />}>
+            {renderContent()}
+          </Suspense>
         </main>
       </div>
 

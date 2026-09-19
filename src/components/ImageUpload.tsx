@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Upload, X, Link2, Image as ImageIcon, AlertCircle } from 'lucide-react';
-import { storage } from '../lib/firebase';
+import { getStorageInstance } from '../lib/firebase';
 
 interface ImageUploadProps {
   /** Current image URL. Empty string means no image yet. */
@@ -68,7 +68,7 @@ export function ImageUpload({
       const compressed = await compressImage(file);
       const wsId = resolveWorkspaceId(workspaceId);
       const path = `workspaces/${wsId}/images/${randomSuffix()}.${compressed.extension}`;
-      const storageRef = ref(storage, path);
+      const storageRef = ref(await getStorageInstance(), path);
       const task = uploadBytesResumable(storageRef, compressed.blob, {
         contentType: compressed.extension === 'gif' ? 'image/gif' : `image/${compressed.extension}`,
       });

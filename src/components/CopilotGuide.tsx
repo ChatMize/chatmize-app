@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import confetti from 'canvas-confetti';
 import { Sparkles, Check, ChevronRight, X, Minus } from 'lucide-react';
 import { WorkspaceSilo } from '../types/workspace';
 import { getStoredIntegrationCredentials } from '../data/integrations';
@@ -115,8 +114,11 @@ export const CopilotGuide: React.FC<CopilotGuideProps> = ({
   useEffect(() => {
     if (allDone && !celebrated) {
       setCelebrated(true);
-      confetti({ particleCount: 120, spread: 75, origin: { y: 0.7 } });
-      setTimeout(() => confetti({ particleCount: 60, spread: 100, origin: { y: 0.7 } }), 400);
+      // Loaded on demand: confetti only fires once, when the guide completes.
+      import('canvas-confetti').then(({ default: confetti }) => {
+        confetti({ particleCount: 120, spread: 75, origin: { y: 0.7 } });
+        setTimeout(() => confetti({ particleCount: 60, spread: 100, origin: { y: 0.7 } }), 400);
+      }).catch(() => {});
     }
   }, [allDone, celebrated]);
 

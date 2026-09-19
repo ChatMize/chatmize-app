@@ -7,6 +7,7 @@ import {
   getDocs,
   query,
   where,
+  limit,
 } from "firebase/firestore";
 import { getApp } from "firebase/app";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -267,7 +268,8 @@ export function subscribeToPlans(
 
 /** Seed the default tiers when the collection is empty (idempotent). */
 export async function ensureDefaultPlans(): Promise<void> {
-  const snap = await getDocs(plansRef);
+  // Emptiness probe: limit(1) so we never scan the whole collection.
+  const snap = await getDocs(query(plansRef, limit(1)));
   if (!snap.empty) return;
   for (const plan of DEFAULT_PLANS) {
     const { id, ...data } = plan;

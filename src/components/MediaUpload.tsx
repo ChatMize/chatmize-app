@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Upload, X, Link2, Video as VideoIcon, Mic, AlertCircle } from 'lucide-react';
-import { storage } from '../lib/firebase';
+import { getStorageInstance } from '../lib/firebase';
 
 export type BotMediaKind = 'video' | 'audio';
 
@@ -104,7 +104,7 @@ export function MediaUpload({
       const wsId = resolveWorkspaceId(workspaceId);
       const ext = allowed[file.type];
       const path = `workspaces/${wsId}/bot_media/${randomSuffix()}.${ext}`;
-      const storageRef = ref(storage, path);
+      const storageRef = ref(await getStorageInstance(), path);
       const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
       const url = await new Promise<string>((resolve, reject) => {
         task.on(

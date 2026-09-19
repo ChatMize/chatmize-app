@@ -1,7 +1,9 @@
-import {StrictMode} from 'react';
+import {StrictMode, Suspense, lazy} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
-import { WaitlistPage } from './views/WaitlistPage';
+// WaitlistPage is its own chunk: app users never download it, and public
+// visitors on /waitlist never download the app shell's views.
+const WaitlistPage = lazy(() => import('./views/WaitlistPage').then(m => ({ default: m.WaitlistPage })));
 import './index.css';
 
 // Public waitlist page: served at /waitlist (hosting rewrites ** to
@@ -11,6 +13,12 @@ const isWaitlistRoute =
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {isWaitlistRoute ? <WaitlistPage /> : <App />}
+    {isWaitlistRoute ? (
+      <Suspense fallback={null}>
+        <WaitlistPage />
+      </Suspense>
+    ) : (
+      <App />
+    )}
   </StrictMode>,
 );

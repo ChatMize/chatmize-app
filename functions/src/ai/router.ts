@@ -1,9 +1,9 @@
 import { defineSecret } from "firebase-functions/params";
 import { logger } from "firebase-functions";
-import Anthropic from "@anthropic-ai/sdk";
-import OpenAI from "openai";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import LlamaAPIClient from "llama-api-client";
+// AI provider SDKs are intentionally NOT imported at top level: every
+// function in this bundle shares one cold start, and only the AI callables
+// ever touch these SDKs. Each call* function dynamically imports the one
+// SDK it needs, so non-AI cold starts skip loading all four packages.
 import { spendCredits, getBalance, CreditReason } from "../credits";
 
 // ---------------------------------------------------------------------------
@@ -125,6 +125,7 @@ function splitSystem(messages: ChatMessage[]): { system?: string; rest: { role: 
 }
 
 async function callGoogle(spec: ModelSpec, messages: ChatMessage[], maxOutputTokens: number): Promise<ProviderResult> {
+  const { GoogleGenerativeAI } = await import("@google/generative-ai");
   const client = new GoogleGenerativeAI(GEMINI_API_KEY.value());
   const { system, rest } = splitSystem(messages);
   const model = client.getGenerativeModel({ model: spec.model, systemInstruction: system });
@@ -144,6 +145,7 @@ async function callGoogle(spec: ModelSpec, messages: ChatMessage[], maxOutputTok
 }
 
 async function callAnthropic(spec: ModelSpec, messages: ChatMessage[], maxOutputTokens: number): Promise<ProviderResult> {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
   const { system, rest } = splitSystem(messages);
   const res = await client.messages.create({
@@ -164,6 +166,7 @@ async function callOpenAI(
   messages: ChatMessage[],
   maxOutputTokens: number,
 ): Promise<ProviderResult> {
+  const { default: OpenAI } = await import("openai");
   const client = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
   const res = await client.chat.completions.create({
     model: spec.model,
@@ -187,6 +190,7 @@ async function callMeta(
   messages: ChatMessage[],
   maxOutputTokens: number,
 ): Promise<ProviderResult> {
+  const { default: LlamaAPIClient } = await import("llama-api-client");
   const client = new LlamaAPIClient({ apiKey: META_API_KEY.value() });
   const res = await client.chat.completions.create({
     model: spec.model,
