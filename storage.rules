@@ -59,6 +59,7 @@ service firebase.storage {
 
     // Bot builder video and audio attachments. Restricted to workspace
     // members (same posture as kb_media). Stored under
+    // Bot builder media attachments (video, audio, images) live under
     // workspaces/{workspaceId}/bot_media/{fileName}. Capped at 25 MB to
     // match Meta's attachment limit for Messenger and Instagram DMs.
     // Note: Meta fetches the file via the Firebase Storage download URL
@@ -69,7 +70,7 @@ service firebase.storage {
       allow create, update: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
         && request.resource.size < 25 * 1024 * 1024
         && request.resource.contentType.matches(
-          'video/(mp4|webm|ogg|quicktime)|audio/(mpeg|mp3|wav|x-wav|vnd.wave|mp4|x-m4a|aac)');
+          'video/(mp4|webm|ogg|quicktime)|audio/(mpeg|mp3|wav|x-wav|vnd.wave|mp4|x-m4a|aac)|image/(jpeg|png|webp|gif)');
 
       allow delete: if isWorkspaceMember(workspaceId) || isSuperAdmin();
     }

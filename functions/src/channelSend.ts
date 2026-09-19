@@ -89,8 +89,9 @@ export interface ChannelMedia {
  * Send one message through the workspace's connected Meta channels.
  * Throws ChannelSendError on validation / connection / provider failures.
  *
- * Either text or media (or both — the caption is dropped for attachment
- * sends today) must be provided.
+ * Either text or media (or both) must be provided. When both are given,
+ * the media attachment sends first and the text follows as a second
+ * message, so media always leads the conversation.
  */
 export async function sendChannelMessageInternal(
   workspaceId: string,
@@ -132,8 +133,12 @@ export async function sendChannelMessageInternal(
   // record so merge tags never go out as raw text.
   const contact = await getContactForRecipient(channel, recipientId);
   const resolvedText = resolvePersonalizationTags(text, contact);
-  // What lands in the conversation log for an attachment send.
-  const logText = media?.url ? `[${media.type} attachment] ${media.url}` : resolvedText;
+
+  // Media always leads: when both media and text are present, the
+  // attachment goes out first and the text follows as its own message.
+  const units: Array<{ media?: ChannelMedia; text?: string }> = [];
+  if (media?.url) units.push({ media });
+  if (text && text.trim()) units.push({ text: resolvedText });
 
   // Token self-heal, per connection:
   // - Messenger always runs on the Page token.
@@ -143,12 +148,27 @@ export async function sendChannelMessageInternal(
   let result;
   let igRoute: "ig" | "page" | null = null;
   if (channel === "whatsapp") {
-    result = await CHANNEL_SENDERS[channel](
-      WHATSAPP_TOKEN_DEFAULT.value(),
-      recipientId,
-      resolvedText,
-      WHATSAPP_PHONE_NUMBER_ID.value(),
-    );
+    // Media is rejected above, so every unit here is text.
+    for (const unit of units) {
+      const r = await CHANNEL_SENDERS[channel](
+        WHATSAPP_TOKEN_DEFAULT.value(),
+        recipientId,
+        unit.text ?? resolvedText,
+        WHATSAPP_PHONE_NUMBER_ID.value(),
+      );
+      await recordOutboundMessage(
+        workspaceId,
+        channel,
+        recipientId,
+        unit.text ?? resolvedText,
+        r.metaMessageId,
+        r.ok,
+        r.error,
+        clientMessageId ?? null,
+      );
+      result = r;
+      if (!r.ok) break;
+    }
   } else if (channel === "instagram") {    igRoute = await resolveInstagramRoute(workspaceId, recipientId);
     if (igRoute === null) {
       throw new ChannelSendError(
@@ -177,9 +197,26 @@ export async function sendChannelMessageInternal(
           "Could not read the Instagram token. Reconnect Instagram in Settings under Channels, then send again.",
         );
       }
-      result = media?.url
-        ? await sendInstagramDirectMedia(igToken, recipientId, media.url, media.type)
-        : await sendInstagramDirectMessage(igToken, recipientId, resolvedText);
+      for (const unit of units) {
+        const unitText = unit.media
+          ? `[${unit.media.type} attachment] ${unit.media.url}`
+          : resolvedText;
+        const r = unit.media
+          ? await sendInstagramDirectMedia(igToken, recipientId, unit.media.url, unit.media.type)
+          : await sendInstagramDirectMessage(igToken, recipientId, resolvedText);
+        await recordOutboundMessage(
+          workspaceId,
+          channel,
+          recipientId,
+          unitText,
+          r.metaMessageId,
+          r.ok,
+          r.error,
+          clientMessageId ?? null,
+        );
+        result = r;
+        if (!r.ok) break;
+      }
     } else {
       const health = await ensureFreshPageToken(workspaceId);
       if (health === "invalid") {
@@ -189,9 +226,26 @@ export async function sendChannelMessageInternal(
         );
       }
       const pageToken = await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value());
-      result = media?.url
-        ? await sendInstagramMedia(pageToken, recipientId, media.url, media.type)
-        : await sendInstagramMessage(pageToken, recipientId, resolvedText);
+      for (const unit of units) {
+        const unitText = unit.media
+          ? `[${unit.media.type} attachment] ${unit.media.url}`
+          : resolvedText;
+        const r = unit.media
+          ? await sendInstagramMedia(pageToken, recipientId, unit.media.url, unit.media.type)
+          : await sendInstagramMessage(pageToken, recipientId, resolvedText);
+        await recordOutboundMessage(
+          workspaceId,
+          channel,
+          recipientId,
+          unitText,
+          r.metaMessageId,
+          r.ok,
+          r.error,
+          clientMessageId ?? null,
+        );
+        result = r;
+        if (!r.ok) break;
+      }
     }
   } else {
     const health = await ensureFreshPageToken(workspaceId);
@@ -202,22 +256,31 @@ export async function sendChannelMessageInternal(
       );
     }
     const pageToken = await resolvePageToken(workspaceId, META_PAGE_TOKEN_DEFAULT.value());
-    result = media?.url
-      ? await sendMessengerMedia(pageToken, recipientId, media.url, media.type)
-      : await CHANNEL_SENDERS[channel](pageToken, recipientId, resolvedText);
+    for (const unit of units) {
+      const unitText = unit.media
+        ? `[${unit.media.type} attachment] ${unit.media.url}`
+        : resolvedText;
+      const r = unit.media
+        ? await sendMessengerMedia(pageToken, recipientId, unit.media.url, unit.media.type)
+        : await CHANNEL_SENDERS[channel](pageToken, recipientId, resolvedText);
+      await recordOutboundMessage(
+        workspaceId,
+        channel,
+        recipientId,
+        unitText,
+        r.metaMessageId,
+        r.ok,
+        r.error,
+        clientMessageId ?? null,
+      );
+      result = r;
+      if (!r.ok) break;
+    }
   }
 
-  await recordOutboundMessage(
-    workspaceId,
-    channel,
-    recipientId,
-    logText,
-    result.metaMessageId,
-    result.ok,
-    result.error,
-    clientMessageId ?? null,
-  );
-
+  if (!result) {
+    throw new ChannelSendError("internal", "Send failed.");
+  }
   if (!result.ok) {
     logger.error("Outbound send failed", { workspaceId, channel, error: result.error });
     if (isWrongScopeRecipientError(result.error)) {

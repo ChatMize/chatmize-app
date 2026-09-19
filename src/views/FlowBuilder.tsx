@@ -4949,7 +4949,7 @@ function NodeEditor({
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <label className="text-xs font-bold uppercase text-slate-400">Step Components Sequence</label>
-                  <span className="text-[10px] text-slate-500">Order executes top-to-bottom</span>
+                  <span className="text-[10px] text-slate-500">Media attachments send first, then the rest top to bottom</span>
                 </div>
 
                 <div className="space-y-3">
@@ -6168,6 +6168,8 @@ type SimulatorItem =
   | { id: string; sender: 'user'; text: string }
   | { id: string; sender: 'bot'; type: 'text'; text: string }
   | { id: string; sender: 'bot'; type: 'image'; imageUrl: string; caption?: string }
+  | { id: string; sender: 'bot'; type: 'video'; videoUrl: string; caption?: string }
+  | { id: string; sender: 'bot'; type: 'audio'; audioUrl: string; caption?: string }
   | { id: string; sender: 'bot'; type: 'card'; title: string; subtitle?: string; imageUrl?: string; buttonLabel?: string; buttonUrl?: string }
   | { id: string; sender: 'bot'; type: 'gallery'; cards: CardItem[] }
   | { id: string; sender: 'bot'; type: 'rn_optin'; topic: string; frequency: string; title: string; buttonText: string; tokenGranted?: boolean }
@@ -6311,34 +6313,14 @@ function PhoneSimulator({
     }
 
     // Build the sequential steps for this message node:
-    // 1. Primary content (if any)
-    // 2. Each component in node.components
-    // 3. Final interactive buttons
+    // 1. Media components (image, video, audio) always lead
+    // 2. Primary content (if any)
+    // 3. Every other component in sequence
+    // 4. Final interactive buttons
     const queue: Array<() => void> = [];
 
-    // Primary content block
-    if (node.content && node.content.trim()) {
-      queue.push(() => {
-        setChatItems(prev => [
-          ...prev, 
-          { 
-            id: `msg-${Date.now()}-${Math.random()}`, 
-            sender: 'bot', 
-            type: 'text', 
-            text: replaceVars(node.content!) 
-          }
-        ]);
-        // Trigger next queue item if available
-        if (stepQueueRef.current.length > 0) {
-          const next = stepQueueRef.current.shift();
-          next?.();
-        }
-      });
-    }
-
-    // Components in order (typing, text, image, card, gallery)
-    if (node.components && node.components.length > 0) {
-      node.components.forEach((comp) => {
+    // One component becomes one queued send step.
+    const pushComponent = (comp: MessageComponent) => {
         if (comp.type === 'typing') {
           // Push a typing pause step
           queue.push(() => {
@@ -6373,6 +6355,40 @@ function PhoneSimulator({
                 type: 'image',
                 imageUrl: comp.imageUrl!,
                 caption: comp.imageCaption ? replaceVars(comp.imageCaption) : undefined
+              }
+            ]);
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
+        } else if (comp.type === 'video' && comp.videoUrl) {
+          queue.push(() => {
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'video',
+                videoUrl: comp.videoUrl!,
+                caption: comp.videoCaption ? replaceVars(comp.videoCaption) : undefined
+              }
+            ]);
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
+        } else if (comp.type === 'audio' && comp.audioUrl) {
+          queue.push(() => {
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'audio',
+                audioUrl: comp.audioUrl!,
+                caption: comp.audioCaption ? replaceVars(comp.audioCaption) : undefined
               }
             ]);
             if (stepQueueRef.current.length > 0) {
@@ -6472,8 +6488,37 @@ function PhoneSimulator({
             }
           });
         }
+    };
+
+    const isMediaComponent = (c: MessageComponent) =>
+      c.type === 'image' || c.type === 'video' || c.type === 'audio';
+    const orderedComps = node.components || [];
+
+    // Media always leads the message.
+    orderedComps.filter(isMediaComponent).forEach(pushComponent);
+
+    // Primary content block
+    if (node.content && node.content.trim()) {
+      queue.push(() => {
+        setChatItems(prev => [
+          ...prev,
+          {
+            id: `msg-${Date.now()}-${Math.random()}`,
+            sender: 'bot',
+            type: 'text',
+            text: replaceVars(node.content!)
+          }
+        ]);
+        // Trigger next queue item if available
+        if (stepQueueRef.current.length > 0) {
+          const next = stepQueueRef.current.shift();
+          next?.();
+        }
       });
     }
+
+    // Everything else runs in sequence after the media and text.
+    orderedComps.filter((c) => !isMediaComponent(c)).forEach(pushComponent);
 
     // Final interactive buttons
     queue.push(() => {
@@ -6710,6 +6755,48 @@ function PhoneSimulator({
                     />
                     {item.caption && (
                       <div className="p-2.5 text-[11px] text-slate-300 font-medium border-t border-white/5">
+                        {item.caption}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // Bot video attachment
+            if (item.type === 'video') {
+              return (
+                <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 max-w-[88%]">
+                  <div className="bg-slate-800/95 border border-white/10 rounded-2xl rounded-bl-none overflow-hidden shadow-md w-full">
+                    <video
+                      src={item.videoUrl}
+                      controls
+                      preload="metadata"
+                      className="w-full max-h-48"
+                    />
+                    {item.caption && (
+                      <div className="p-2.5 text-[11px] text-slate-300 font-medium border-t border-white/5">
+                        {item.caption}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // Bot audio attachment
+            if (item.type === 'audio') {
+              return (
+                <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 max-w-[88%]">
+                  <div className="bg-slate-800/95 border border-white/10 rounded-2xl rounded-bl-none p-3 shadow-md w-full">
+                    <audio
+                      src={item.audioUrl}
+                      controls
+                      preload="metadata"
+                      className="w-full h-8"
+                    />
+                    {item.caption && (
+                      <div className="pt-2 text-[11px] text-slate-300 font-medium">
                         {item.caption}
                       </div>
                     )}
