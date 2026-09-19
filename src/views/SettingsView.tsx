@@ -31,6 +31,7 @@ import {
 import { RewardsTab } from '../components/RewardsTab';
 import React, { useState, useEffect } from 'react';
 import { KbHelpCenter } from '../components/kb/KbHelpCenter';
+import { GoogleSheetsConnect } from '../components/integrations/GoogleSheetsConnect';
 import { 
   IntegrationApp, 
   CHATMIZE_INTEGRATIONS, 
@@ -43,6 +44,7 @@ import { WorkspaceSilo } from '../types/workspace';
 import { SmsChannelCard } from '../components/channels/SmsChannelCard';
 import { MetaConnectCard } from '../components/channels/MetaConnectCard';
 import { InstagramConnectCard } from '../components/channels/InstagramConnectCard';
+import { BigMarkerConnectCard } from '../components/channels/BigMarkerConnectCard';
 import { WhatsAppConnectCard } from '../components/channels/WhatsAppConnectCard';
 import { ShopifyConnectCard } from '../components/channels/ShopifyConnectCard';
 import { getMetaOAuthStatus, startMetaOAuth } from '../lib/meta';
@@ -259,6 +261,30 @@ export function SettingsView({
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeModalApp, setActiveModalApp] = useState<IntegrationApp | null>(null);
+
+  // One time pointer to the Google Sheets connection (Karl's intro ask).
+  // Dismissed per browser so it never nags.
+  const [sheetsHintDismissed, setSheetsHintDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('chatmize_sheets_hint_dismissed') === '1';
+    } catch {
+      return true;
+    }
+  });
+
+  const openSheetsModal = () => {
+    const sheetsApp = CHATMIZE_INTEGRATIONS.find((a) => a.id === 'google_sheets');
+    if (sheetsApp) handleOpenModal({ ...sheetsApp, connected: Boolean(savedCredentials['google_sheets']) });
+  };
+
+  const dismissSheetsHint = () => {
+    try {
+      localStorage.setItem('chatmize_sheets_hint_dismissed', '1');
+    } catch {
+      // ignore
+    }
+    setSheetsHintDismissed(true);
+  };
   const [formInputs, setFormInputs] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -524,6 +550,7 @@ export function SettingsView({
             {workspace?.id && <WhatsAppConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={handleWhatsAppConnected} />}
             {workspace?.id && <ShopifyConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
+            {workspace?.id && <BigMarkerConnectCard workspaceId={workspace.id} />}
             {channels.map(channel => (
               <div
                 key={channel.id}
@@ -605,6 +632,44 @@ export function SettingsView({
               </button>
             </div>
           </div>
+
+          {/* New integration pointer: Google Sheets (dismissible, shows once) */}
+          {!sheetsHintDismissed && (
+            <div className="p-4 bg-gradient-to-r from-emerald-950/50 via-emerald-950/30 to-slate-900/60 border border-emerald-500/25 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#0F9D58] flex items-center justify-center font-bold text-white text-sm flex-shrink-0">
+                GS
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white">
+                  New: Google Sheets connection
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                  Log every captured answer straight into a spreadsheet row, automatically. Connect
+                  once, pick your sheet, then map columns in BotMaps.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissSheetsHint();
+                    openSheetsModal();
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Connect Sheets
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissSheetsHint}
+                  className="p-2 text-slate-500 hover:text-white transition-colors cursor-pointer"
+                  title="Dismiss"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Filter and Search */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -830,6 +895,15 @@ export function SettingsView({
               </div>
             </div>
 
+            {/* Google Sheets gets its own OAuth card instead of the generic fields form */}
+            {activeModalApp.id === 'google_sheets' ? (
+              workspace?.id ? (
+                <GoogleSheetsConnect workspaceId={workspace.id} />
+              ) : (
+                <p className="text-xs text-slate-400 py-4 text-center">Pick a workspace first.</p>
+              )
+            ) : (
+              <>
             {/* In-app Documentation Guide Link (No external links) */}
             <div className="mb-4 p-3 bg-blue-950/30 border border-blue-500/20 rounded-xl text-xs text-slate-300 flex items-start justify-between gap-2.5">
               <div className="flex items-start gap-2.5">
@@ -892,8 +966,11 @@ export function SettingsView({
                 </div>
               </div>
             )}
+              </>
+            )}
 
-            {/* Modal Actions */}
+            {/* Modal Actions (the Sheets card manages its own connect/disconnect) */}
+            {activeModalApp.id !== 'google_sheets' && (
             <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/10">
               {activeModalApp.connected ? (
                 <button
@@ -949,6 +1026,7 @@ export function SettingsView({
                 </button>
               </div>
             </div>
+            )}
           </div>
         </div>
       )}
