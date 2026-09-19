@@ -44,6 +44,8 @@ export type { IntegrationApp };
 export { CHATMIZE_INTEGRATIONS };
 import { WorkspaceSilo } from '../types/workspace';
 import { SmsChannelCard } from '../components/channels/SmsChannelCard';
+import { PushChannelCard } from '../components/channels/PushChannelCard';
+import { PushOptinBuilder } from '../components/push/PushOptinBuilder';
 import { MetaConnectCard } from '../components/channels/MetaConnectCard';
 import { InstagramConnectCard } from '../components/channels/InstagramConnectCard';
 import { BigMarkerConnectCard } from '../components/channels/BigMarkerConnectCard';
@@ -563,6 +565,8 @@ export function SettingsView({
             {workspace?.id && <WhatsAppConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" onConnected={handleWhatsAppConnected} />}
             {workspace?.id && <ShopifyConnectCard workspaceId={workspace.id} returnTo="app:settings_channels" />}
             {workspace?.id && <SmsChannelCard workspaceId={workspace.id} />}
+            {workspace?.id && <PushChannelCard workspaceId={workspace.id} />}
+            {workspace?.id && <PushOptinBuilder workspaceId={workspace.id} />}
             {workspace?.id && <BigMarkerConnectCard workspaceId={workspace.id} />}
             {channels.map(channel => (
               <div

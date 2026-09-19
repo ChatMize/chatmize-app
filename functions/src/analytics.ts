@@ -34,6 +34,7 @@ export type AnalyticsChannel =
   | "instagram"
   | "whatsapp"
   | "sms"
+  | "push"
   | "web";
 
 export const ANALYTICS_CHANNELS: AnalyticsChannel[] = [
@@ -41,6 +42,7 @@ export const ANALYTICS_CHANNELS: AnalyticsChannel[] = [
   "instagram",
   "whatsapp",
   "sms",
+  "push",
   "web",
 ];
 

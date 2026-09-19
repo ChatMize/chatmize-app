@@ -80,11 +80,28 @@ import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { SnapshotImportView } from './views/SnapshotImportView';
 import { SnapshotLibraryView } from './views/SnapshotLibraryView';
 import { SmsBroadcastView } from './views/SmsBroadcastView';
+import { PushBlastView } from './views/PushBlastView';
+import { PushSubscribePage } from './components/push/PushSubscribePage';
 import { BuildCatalogView } from './views/BuildCatalogView';
 import { WorkspaceSilo } from './types/workspace';
 import { DEFAULT_WORKSPACES } from './data/workspaceDefaults';
 
 export default function App() {
+  // Public push signup page: ?push=<workspaceId> renders standalone, no login.
+  const [pushSignup] = useState<{ workspaceId: string; embed: boolean } | null>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const ws = params.get('push');
+      if (ws && /^[A-Za-z0-9_-]{1,128}$/.test(ws)) {
+        return { workspaceId: ws, embed: params.get('embed') === '1' };
+      }
+    } catch { /* ignore */ }
+    return null;
+  });
+  if (pushSignup) {
+    return <PushSubscribePage workspaceId={pushSignup.workspaceId} embed={pushSignup.embed} />;
+  }
+
   const [activeTab, setActiveTab] = useState(() => {
     // Restore the last viewed tab so refresh keeps you on the same page
     try {
@@ -493,6 +510,13 @@ export default function App() {
           <SmsBroadcastView
             workspace={activeWorkspace}
             onEnableSms={() => setActiveTab('settings')}
+          />
+        );
+      case 'push-blast':
+        return (
+          <PushBlastView
+            workspace={activeWorkspace}
+            onEnablePush={() => setActiveTab('settings')}
           />
         );
       case 'super-admin':
@@ -1044,6 +1068,14 @@ export default function App() {
               label="SMS Blasts" 
               active={activeTab === 'sms-broadcast'} 
               onClick={() => setActiveTab('sms-broadcast')} 
+              collapsed={isSidebarCollapsed} 
+            />
+
+            <NavItem 
+              icon={<BellRing className="w-4 h-4 text-violet-400" />} 
+              label="Push Blasts" 
+              active={activeTab === 'push-blast'} 
+              onClick={() => setActiveTab('push-blast')} 
               collapsed={isSidebarCollapsed} 
             />
           </div>

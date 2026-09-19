@@ -2176,3 +2176,34 @@ export const shopifyAbandonedCartSweep = onSchedule(
     }
   },
 );
+
+/** Web push notification channel (FCM). See functions/src/push.ts. */
+export {
+  getPushPublicConfig,
+  getPushStatus,
+  setPushVapidKey,
+  setPushPromptCopy,
+  subscribePush,
+  unsubscribePush,
+  sendPush,
+  sendPushBroadcast,
+  schedulePush,
+  cancelScheduledPush,
+  trackPushEvent,
+} from "./push";
+import { runPushScheduleSweep } from "./push";
+
+/** Fire due scheduled pushes every 10 minutes (delayed BotMaps push + escalation chain). */
+export const pushScheduleSweep = onSchedule(
+  {
+    region: REGION,
+    schedule: "*/10 * * * *",
+    timeZone: "America/Phoenix",
+    timeoutSeconds: 300,
+    memory: "256MiB",
+  },
+  async () => {
+    const result = await runPushScheduleSweep();
+    logger.info("Push schedule sweep complete", result);
+  },
+);

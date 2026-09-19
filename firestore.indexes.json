@@ -202,6 +202,34 @@
         }
       ],
       "queryScope": "COLLECTION_GROUP"
+    },
+    {
+      "collectionGroup": "push_scheduled",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sendAt",
+          "order": "ASCENDING"
+        }
+      ],
+      "queryScope": "COLLECTION_GROUP"
+    },
+    {
+      "collectionGroup": "messages",
+      "fields": [
+        {
+          "fieldPath": "direction",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestampMs",
+          "order": "ASCENDING"
+        }
+      ],
+      "queryScope": "COLLECTION"
     }
   ]
 }

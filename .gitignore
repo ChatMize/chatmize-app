@@ -10,3 +10,4 @@ functions/lib/
 functions/node_modules/
 .firebase/
 landing-dist/
+firebase-messaging-sw.js

@@ -33,7 +33,7 @@ const db = () => getFirestore("chatmize-prod");
 
 export type BookingStatus = "confirmed" | "completed" | "cancelled" | "no_show";
 export type BookingSource = "widget" | "embed" | "botmap" | "admin" | "mcp";
-export type ReminderChannel = "email" | "sms" | "chat";
+export type ReminderChannel = "email" | "sms" | "chat" | "push";
 
 export interface BookingWorkingDay {
   day: number; // 0 = Sunday ... 6 = Saturday
@@ -210,7 +210,7 @@ function sanitizeSettings(input: Partial<BookingSettings>): BookingSettings {
       id: String(r?.id || `r${i}`).slice(0, 20),
       offsetMinutes: Math.max(5, Math.min(7 * 24 * 60, Number(r?.offsetMinutes) || 60)),
       channels: (Array.isArray(r?.channels) ? r.channels : []).filter((c: string) =>
-        c === "email" || c === "sms" || c === "chat",
+        c === "email" || c === "sms" || c === "chat" || c === "push",
       ) as ReminderChannel[],
       enabled: r?.enabled !== false,
       message: r?.message ? String(r.message).slice(0, 1000) : undefined,
@@ -937,6 +937,15 @@ async function sendBookingReminder(
           text,
         );
         results.push({ ruleId: rule.id, channel, at: Timestamp.now(), ok: true });
+      } else if (channel === "push" && booking.contactId) {
+        const { sendPushToContact } = await import("./push.js");
+        const ok = await sendPushToContact(workspaceId, booking.contactId, {
+          title: `Reminder: ${settings.eventName}`,
+          body: text,
+          linkType: "website",
+          linkValue: link,
+        });
+        results.push({ ruleId: rule.id, channel, at: Timestamp.now(), ok, error: ok ? undefined : "no-subscribers" });
       } else {
         results.push({ ruleId: rule.id, channel, at: Timestamp.now(), ok: false, error: "no-address" });
       }

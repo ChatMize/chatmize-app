@@ -303,6 +303,20 @@ export interface FlowNode {
   // SMS action (sent via the workspace's provisioned Twilio number; requires opt-in)
   smsMessage?: string;
   smsCollectOptIn?: boolean;
+  // Push notification action (sent via FCM to the contact's push subscribers;
+  // a chain step: optional delay, then optional "only if no reply" gate)
+  pushTitle?: string;
+  pushBody?: string;
+  pushLinkType?: 'messenger' | 'onpage' | 'website';
+  pushLinkValue?: string;
+  /** Send the push this many minutes after the step is reached (escalation delay). */
+  pushDelayMinutes?: number;
+  /** Escalation gate: only send if the contact did not reply within pushNoReplyMinutes. */
+  pushOnlyIfNoReply?: boolean;
+  pushNoReplyMinutes?: number;
+  // No-reply condition (condition nodes): "no reply within X minutes/hours"
+  conditionType?: string;
+  conditionValue?: string;
   // Webhook action: POST the contact's collected variables to a third
   // party URL as JSON. Configured per node, stored on the flow document.
   // variableNames limits the push; empty means all variables.
@@ -2900,6 +2914,14 @@ const NodeCard = React.memo(function NodeCard({
           </div>
         )}
 
+        {isAction && node.pushBody && (
+          <div className="text-xs bg-violet-500/10 text-violet-100 px-2.5 py-1.5 rounded-lg border border-violet-500/20 flex items-start gap-2 mt-1.5">
+            <BellRing className="w-3.5 h-3.5 text-violet-400 flex-shrink-0 mt-0.5" />
+            <span className="line-clamp-2">
+              Push{node.pushDelayMinutes ? ` in ${node.pushDelayMinutes >= 60 ? `${Math.round(node.pushDelayMinutes / 60 * 10) / 10}h` : `${node.pushDelayMinutes}m`}` : ''}{node.pushOnlyIfNoReply ? ' when silent' : ''}: {node.pushTitle ? `${node.pushTitle} ` : ''}{node.pushBody}
+            </span>
+          </div>
+        )}
         {isAction && node.smsMessage && (
           <div className="text-xs bg-amber-500/10 text-amber-100 px-2.5 py-1.5 rounded-lg border border-amber-500/20 flex items-start gap-2 mt-1.5">
             <MessageSquareText className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
@@ -3434,6 +3456,8 @@ const NodeCard = React.memo(function NodeCard({
   if (p.aiModel !== n.aiModel || p.aiSystemPrompt !== n.aiSystemPrompt) return false;
   if (p.actionType !== n.actionType || p.actionTag !== n.actionTag) return false;
   if (p.conditionType !== n.conditionType || p.conditionValue !== n.conditionValue) return false;
+  if (p.pushTitle !== n.pushTitle || p.pushBody !== n.pushBody || p.pushLinkType !== n.pushLinkType || p.pushLinkValue !== n.pushLinkValue) return false;
+  if (p.pushDelayMinutes !== n.pushDelayMinutes || p.pushOnlyIfNoReply !== n.pushOnlyIfNoReply || p.pushNoReplyMinutes !== n.pushNoReplyMinutes) return false;
   if (p.buttons !== n.buttons && JSON.stringify(p.buttons) !== JSON.stringify(n.buttons)) return false;
   if (p.components !== n.components && JSON.stringify(p.components) !== JSON.stringify(n.components)) return false;
   if (p.triggers !== n.triggers && JSON.stringify(p.triggers) !== JSON.stringify(n.triggers)) return false;
@@ -4962,6 +4986,84 @@ function NodeEditor({
           </div>
         )}
 
+        {/* 2b. CONDITION: No-reply gate for the escalation chain */}
+        {isCondition && (
+          <div className="space-y-4">
+            <div className="bg-slate-900/90 border border-white/10 rounded-2xl p-4 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold uppercase text-slate-300 flex items-center gap-1.5">
+                  <Workflow className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>No Reply Condition</span>
+                </label>
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                  Escalation
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Branch the flow on silence. Use it to chain steps across channels: send Messenger, then only continue to SMS when there is no reply, then only continue to push, and later email.
+              </p>
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-slate-400 mb-2">
+                  No reply within
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    { label: '15 Minutes', minutes: 15 },
+                    { label: '30 Minutes', minutes: 30 },
+                    { label: '1 Hour', minutes: 60 },
+                    { label: '4 Hours', minutes: 240 },
+                    { label: '12 Hours', minutes: 720 },
+                    { label: '24 Hours', minutes: 1440 },
+                  ].map((preset) => (
+                    <button
+                      key={preset.minutes}
+                      type="button"
+                      onClick={() => onAutoUpdate({
+                        conditionType: 'no_reply',
+                        conditionValue: String(preset.minutes),
+                        conditionText: `No reply within ${preset.label.toLowerCase()}`,
+                      })}
+                      className={`px-2.5 py-2 rounded-xl text-xs font-bold border transition-all text-center cursor-pointer ${
+                        node.conditionType === 'no_reply' && node.conditionValue === String(preset.minutes)
+                          ? 'bg-emerald-600 text-white border-emerald-400'
+                          : 'bg-slate-950/80 text-slate-300 border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400">Custom minutes:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={43200}
+                  value={node.conditionType === 'no_reply' ? (node.conditionValue || '') : ''}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.floor(Number(e.target.value) || 0));
+                    onAutoUpdate({
+                      conditionType: 'no_reply',
+                      conditionValue: String(v),
+                      conditionText: `No reply within ${v} minutes`,
+                    });
+                  }}
+                  placeholder="e.g. 45"
+                  className="w-28 bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+              {node.conditionType === 'no_reply' && node.conditionValue && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                  <p className="text-[11px] text-emerald-200/90 leading-relaxed">
+                    The flow continues down this path only when the contact has not replied on any channel within {node.conditionValue} minutes. Connect this to the next escalation step (SMS, then push, then email later).
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* 3. MESSAGE STEPS: Standard 24h Window OR Outside 24-Hour Rule Setup */}
         {isMessage && (
           <div>
@@ -6392,6 +6494,133 @@ function NodeEditor({
               <p className="text-[10px] text-slate-500 leading-relaxed">
                 Sends only to contacts who opted in. STOP/START/HELP are handled automatically.
               </p>
+            </div>
+
+            {/* Push notification action: a chain step with delay + no-reply gate */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <BellRing className="w-3 h-3 text-violet-400" />
+                <span>Send Push Notification</span>
+              </label>
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                One step in an escalation chain: send a Messenger or SMS step first, then this push step waits and only fires when the contact stays silent.
+              </p>
+              <input
+                type="text"
+                value={node.pushTitle || ''}
+                onChange={(e) => onAutoUpdate({ pushTitle: e.target.value })}
+                maxLength={120}
+                placeholder="Notification title"
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-violet-500 transition-colors"
+              />
+              <textarea
+                value={node.pushBody || ''}
+                onChange={(e) => onAutoUpdate({ pushBody: e.target.value })}
+                rows={3}
+                maxLength={500}
+                placeholder="Notification message (leave empty for no push)..."
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-violet-500 transition-colors resize-none"
+              />
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Tap link type</label>
+                <div className="grid grid-cols-3 gap-1.5 text-xs">
+                  {([
+                    ['messenger', 'Messenger'],
+                    ['onpage', 'On page chat'],
+                    ['website', 'Website'],
+                  ] as const).map(([val, label]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => onAutoUpdate({ pushLinkType: val })}
+                      className={`px-2 py-2 rounded-xl border text-left cursor-pointer transition-all font-semibold ${
+                        (node.pushLinkType || 'website') === val
+                          ? 'bg-violet-500/20 border-violet-500/50 text-violet-200'
+                          : 'bg-slate-900 border-white/10 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <input
+                type="text"
+                value={node.pushLinkValue || ''}
+                onChange={(e) => onAutoUpdate({ pushLinkValue: e.target.value })}
+                placeholder={
+                  (node.pushLinkType || 'website') === 'messenger'
+                    ? 'Username or m.me link (optional)'
+                    : (node.pushLinkType || 'website') === 'onpage'
+                      ? 'Your page URL, chat opens on tap (optional)'
+                      : 'Full https URL (optional)'
+                }
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-violet-500 transition-colors"
+              />
+              {/* Delay: "send push in X minutes/hours" */}
+              <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-3 space-y-2">
+                <label className="block text-[10px] font-bold uppercase text-slate-400">Wait before sending (minutes)</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="number"
+                    min={0}
+                    max={43200}
+                    value={node.pushDelayMinutes ?? 0}
+                    onChange={(e) => onAutoUpdate({ pushDelayMinutes: Math.max(0, Math.min(43200, Math.floor(Number(e.target.value) || 0))) })}
+                    className="w-24 bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-violet-500"
+                  />
+                  <div className="flex gap-1">
+                    {[15, 30, 60, 240, 1440].map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => onAutoUpdate({ pushDelayMinutes: m })}
+                        className={`px-2 py-1.5 rounded-lg border text-[10px] font-semibold cursor-pointer transition-all ${
+                          (node.pushDelayMinutes ?? 0) === m
+                            ? 'bg-violet-500/20 border-violet-500/50 text-violet-200'
+                            : 'bg-slate-950 border-white/10 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {m >= 60 ? `${m / 60}h` : `${m}m`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-500">0 sends right away. Use this to build the escalation wait, e.g. 30 minutes after the Messenger step.</p>
+              </div>
+              {/* No-reply gate: "only send if no reply within X" */}
+              <div className="bg-slate-900/60 border border-white/10 rounded-2xl p-3 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => onAutoUpdate({ pushOnlyIfNoReply: !node.pushOnlyIfNoReply })}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <span className={`w-8 h-4.5 rounded-full p-0.5 transition-colors ${node.pushOnlyIfNoReply ? 'bg-violet-500' : 'bg-slate-700'}`}>
+                    <span className={`block w-3.5 h-3.5 rounded-full bg-white transition-transform ${node.pushOnlyIfNoReply ? 'translate-x-3.5' : ''}`} />
+                  </span>
+                  <span className="text-xs font-semibold text-slate-200">Only send when there is no reply</span>
+                </button>
+                {node.pushOnlyIfNoReply && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400">No reply within</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10080}
+                      value={node.pushNoReplyMinutes ?? 30}
+                      onChange={(e) => {
+                        const v = Math.max(1, Math.floor(Number(e.target.value) || 30));
+                        onAutoUpdate({ pushNoReplyMinutes: v, conditionText: `No reply within ${v} min`, conditionType: 'no_reply', conditionValue: String(v) });
+                      }}
+                      className="w-20 bg-slate-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-violet-500"
+                    />
+                    <span className="text-[10px] text-slate-400">minutes</span>
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  When on, the push is skipped if the contact replies on any channel inside the window. This is what chains the steps: Messenger, then SMS, then push, each one standing down when the contact answers.
+                </p>
+              </div>
             </div>
 
             {/* Webhook action: POST collected variables to a third party */}
