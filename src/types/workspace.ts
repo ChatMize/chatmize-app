@@ -107,6 +107,11 @@ export interface Workspace {
   createdAt: string;
   /** Set once the new-user onboarding wizard has been completed. */
   onboardingComplete?: boolean;
+  /** The signed-in user's membership role, from users/{uid}/workspaceAccess.
+   * Only set on workspaces built from real memberships. */
+  membershipRole?: 'owner' | 'admin' | 'member';
+  /** True for demo sandbox workspaces (demo: true on the membership doc). */
+  demo?: boolean;
   /** Firestore plan id chosen during onboarding (or later in Settings). */
   planId?: string;
   /** Fulfillment track of the chosen plan: diy self-service or dfu white-glove. */

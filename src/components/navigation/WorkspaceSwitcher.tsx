@@ -107,6 +107,11 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
             <span className="text-xs font-bold text-slate-100 truncate block">
               {activeWorkspace?.name || 'Workspace'}
             </span>
+            {activeWorkspace?.demo && (
+              <span className="px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30 text-[9px] font-bold uppercase tracking-wide flex-shrink-0">
+                Demo
+              </span>
+            )}
             {activeWorkspace?.whitelabel.enabled && (
               <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />
             )}
@@ -202,6 +207,11 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs font-bold truncate block">{ws.name}</span>
+                          {ws.demo && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30 text-[9px] font-bold uppercase tracking-wide flex-shrink-0">
+                              Demo
+                            </span>
+                          )}
                           {ws.whitelabel.enabled && (
                             <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 font-mono">WL</span>
                           )}
