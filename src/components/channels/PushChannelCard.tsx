@@ -12,7 +12,7 @@ interface PushChannelCardProps {
 
 /**
  * Web push notification channel card. Status, subscriber count, Super Admin
- * VAPID setup, test send, and the business subscribe link. The opt-in prompt
+ * VAPID setup, test send, and the business subscribe link. The opt in prompt
  * builder lives in PushOptinBuilder, mounted right below in Settings.
  */
 export const PushChannelCard: React.FC<PushChannelCardProps> = ({ workspaceId }) => {

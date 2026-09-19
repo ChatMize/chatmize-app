@@ -300,7 +300,7 @@ export interface FlowNode {
   buttons?: string[];
   quickReplies?: string[];
   actionTags?: string[];
-  // SMS action (sent via the workspace's provisioned Twilio number; requires opt-in)
+  // SMS action (sent via the workspace's provisioned Twilio number; requires opt in)
   smsMessage?: string;
   smsCollectOptIn?: boolean;
   // Push notification action (sent via FCM to the contact's push subscribers;
@@ -1472,7 +1472,7 @@ export function FlowBuilder({
       newNode = {
         id: newId,
         type: 'message',
-        title: `Step ${nodes.filter(n => n.type === 'message').length + 1}: Recurring Notification Opt-In`,
+        title: `Step ${nodes.filter(n => n.type === 'message').length + 1}: Recurring Notification Opt In`,
         content: 'Want insider deals, VIP alerts, and weekly drops delivered right here?',
         components: [
           {
@@ -1665,7 +1665,7 @@ export function FlowBuilder({
     <button
       onClick={() => setShowMetaPolicyModal(true)}
       className="px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 hover:text-blue-200 rounded-xl text-[10px] sm:text-xs font-bold flex items-center gap-1 sm:gap-1.5 transition-all shadow-sm cursor-pointer flex-shrink-0 whitespace-nowrap"
-      title="Scan Flow for Meta 24-Hour Messaging Policy, Message Tags & Opt-In Permissions"
+      title="Scan Flow for Meta 24-Hour Messaging Policy, Message Tags & Opt In Permissions"
     >
       <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-400 flex-shrink-0" />
       <span className="hidden md:inline">24h Policy Audit</span>
@@ -1869,7 +1869,7 @@ export function FlowBuilder({
                         <span>Recurring Notification</span>
                         <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">RN API</span>
                       </div>
-                      <div className="text-[10px] text-slate-400">Collect opt-in for marketing outside 24h</div>
+                      <div className="text-[10px] text-slate-400">Collect opt in for marketing outside 24h</div>
                     </div>
                   </button>
                   <button 
@@ -2848,7 +2848,7 @@ const NodeCard = React.memo(function NodeCard({
                                 ? `Ref: ${trig.refPayload}`
                                 : trig.widgetHeadline
                                 ? `Popup: ${trig.widgetHeadline}`
-                                : trig.webhookSource || 'Inbound Opt-in'}
+                                : trig.webhookSource || 'Inbound Opt in'}
                             </div>
                           )}
                         </div>
@@ -2930,7 +2930,7 @@ const NodeCard = React.memo(function NodeCard({
         )}
         {isAction && node.smsCollectOptIn && (
           <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 mt-1.5">
-            Collects SMS opt-in
+            Collects SMS opt in
           </div>
         )}
         {isAction && node.webhookAction?.url && (
@@ -3722,7 +3722,7 @@ function NodeEditor({
     if (isAnyMode) {
       matched = true;
       ruleDesc = 'Any Inbound Interaction Mode';
-      details = `Opt-in tool is configured to trigger on any interaction or comment! 24-hour window opened, routing to ${nextTitle}.`;
+      details = `Opt in tool is configured to trigger on any interaction or comment! 24-hour window opened, routing to ${nextTitle}.`;
     } else if (matchRule === 'exact') {
       const found = kws.find(k => k.trim().toLowerCase() === input.toLowerCase());
       matched = !!found;
@@ -4357,7 +4357,7 @@ function NodeEditor({
                               />
                             </div>
 
-                            {/* Universal Opt-In Trigger Keywords & Matching Rules */}
+                            {/* Universal Opt In Trigger Keywords & Matching Rules */}
                             <div className="bg-slate-950/80 border border-blue-500/30 rounded-2xl p-3.5 space-y-3 shadow-inner">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
@@ -4369,10 +4369,10 @@ function NodeEditor({
                                 </span>
                               </div>
 
-                              {/* Opt-In Triggering Mode: Specific Keywords vs Any Interaction */}
+                              {/* Opt In Triggering Mode: Specific Keywords vs Any Interaction */}
                               <div>
                                 <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
-                                  Opt-In Triggering Mode
+                                  Opt In Triggering Mode
                                 </label>
                                 <div className="grid grid-cols-2 gap-2 text-xs">
                                   <button
@@ -5266,7 +5266,7 @@ function NodeEditor({
                       if (!hasUpstreamOptin) {
                         return (
                           <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-2">
-                            <span className="text-[11px] text-amber-200">No OTN Opt-In card detected in earlier steps.</span>
+                            <span className="text-[11px] text-amber-200">No OTN Opt In card detected in earlier steps.</span>
                             <button
                               type="button"
                               onClick={() => {
@@ -5283,7 +5283,7 @@ function NodeEditor({
                               }}
                               className="text-[10px] font-bold text-cyan-300 hover:text-white bg-cyan-500/20 hover:bg-cyan-500/30 px-2 py-1 rounded-lg border border-cyan-500/40 whitespace-nowrap transition-colors cursor-pointer"
                             >
-                              + Add Opt-In to Step 2
+                              + Add Opt In to Step 2
                             </button>
                           </div>
                         );
@@ -5351,7 +5351,7 @@ function NodeEditor({
                       if (!hasUpstreamOptin) {
                         return (
                           <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-2">
-                            <span className="text-[11px] text-amber-200">No Recurring Opt-In card detected in earlier steps.</span>
+                            <span className="text-[11px] text-amber-200">No Recurring Opt In card detected in earlier steps.</span>
                             <button
                               type="button"
                               onClick={() => {
@@ -5370,7 +5370,7 @@ function NodeEditor({
                               }}
                               className="text-[10px] font-bold text-blue-300 hover:text-white bg-blue-500/20 hover:bg-blue-500/30 px-2 py-1 rounded-lg border border-blue-500/40 whitespace-nowrap transition-colors cursor-pointer"
                             >
-                              + Add Opt-In to Step 2
+                              + Add Opt In to Step 2
                             </button>
                           </div>
                         );
@@ -5509,7 +5509,7 @@ function NodeEditor({
                           {comp.type === 'recurring_notification_optin' && (
                             <span className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
                               <BellRing className="w-4 h-4 text-cyan-400" />
-                              Recurring Notification Opt-In
+                              Recurring Notification Opt In
                             </span>
                           )}
                           {comp.type === 'one_time_notification_optin' && (
@@ -6116,11 +6116,11 @@ function NodeEditor({
                         </div>
                       )}
 
-                      {/* RECURRING NOTIFICATION OPT-IN EDITOR */}
+                      {/* RECURRING NOTIFICATION OPT IN EDITOR */}
                       {comp.type === 'recurring_notification_optin' && (
                         <div className="space-y-3 pt-1">
                           <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[11px] leading-relaxed">
-                            💡 <strong>Meta Recurring Notifications (Messenger & Instagram):</strong> When the user taps the opt-in button, Meta grants a secure subscription token allowing your bot to send recurring messages past the 24-hour window at the chosen frequency without policy violations!
+                            💡 <strong>Meta Recurring Notifications (Messenger & Instagram):</strong> When the user taps the opt in button, Meta grants a secure subscription token allowing your bot to send recurring messages past the 24-hour window at the chosen frequency without policy violations!
                           </div>
 
                           <div className="grid grid-cols-2 gap-2">
@@ -6160,7 +6160,7 @@ function NodeEditor({
                           </div>
 
                           <div>
-                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Opt-In Button Text</label>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Opt In Button Text</label>
                             <input 
                               type="text" 
                               value={comp.rnButtonText || ''} 
@@ -6466,7 +6466,7 @@ function NodeEditor({
               <p className="text-[10px] text-slate-500 mt-1.5">Adds up in your Rewards tab and counts toward money badges.</p>
             </div>
 
-            {/* SMS action: sent via the workspace's Twilio number; requires opt-in */}
+            {/* SMS action: sent via the workspace's Twilio number; requires opt in */}
             <div className="pt-3 border-t border-white/10 space-y-2.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 <MessageSquareText className="w-3 h-3 text-amber-400" />
@@ -6489,7 +6489,7 @@ function NodeEditor({
                   onChange={(e) => onAutoUpdate({ smsCollectOptIn: e.target.checked })}
                   className="accent-amber-500"
                 />
-                Collect SMS opt-in at this step (asks for phone number + consent)
+                Collect SMS opt in at this step (asks for phone number + consent)
               </label>
               <p className="text-[10px] text-slate-500 leading-relaxed">
                 Sends only to contacts who opted in. STOP/START/HELP are handled automatically.
@@ -7193,7 +7193,7 @@ function NodeEditor({
             </button>
           </div>
 
-          {/* Meta Post-24h Compliance Opt-in Components */}
+          {/* Meta Post-24h Compliance Opt in Components */}
           <div className="pt-1.5 border-t border-white/5">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400">Meta Post-24h Compliance</span>
@@ -7204,10 +7204,10 @@ function NodeEditor({
                 type="button"
                 onClick={() => handleAddComponent('recurring_notification_optin')}
                 className="flex items-center justify-center gap-1.5 py-1.5 px-2 bg-cyan-950/40 border border-cyan-500/30 hover:border-cyan-400 hover:bg-cyan-500/20 rounded-lg text-[10px] font-bold text-cyan-300 transition-all cursor-pointer"
-                title="Add Meta Recurring Notification Opt-In Card"
+                title="Add Meta Recurring Notification Opt In Card"
               >
                 <BellRing className="w-3 h-3 text-cyan-400 flex-shrink-0" />
-                <span className="truncate">RN Opt-In</span>
+                <span className="truncate">RN Opt In</span>
               </button>
               <button 
                 type="button"
@@ -8322,7 +8322,7 @@ function PhoneSimulator({
               );
             }
 
-            // Recurring Notification Opt-In Card (Meta RN)
+            // Recurring Notification Opt In Card (Meta RN)
             if (item.type === 'rn_optin') {
               return (
                 <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 w-full max-w-[90%]">
@@ -8343,7 +8343,7 @@ function PhoneSimulator({
                     {item.tokenGranted ? (
                       <div className="p-2 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center justify-center gap-1.5">
                         <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Opt-in Confirmed! Meta Token Saved</span>
+                        <span>Opt in Confirmed! Meta Token Saved</span>
                       </div>
                     ) : (
                       <button
@@ -8365,7 +8365,7 @@ function PhoneSimulator({
                               id: `rn-granted-${Date.now()}`,
                               sender: 'bot',
                               type: 'text',
-                              text: `🔔 Opt-in confirmed! Granted Meta Recurring Token for "${item.topic}". Your bot can now send weekly updates past the 24-hour window!`
+                              text: `🔔 Opt in confirmed! Granted Meta Recurring Token for "${item.topic}". Your bot can now send weekly updates past the 24-hour window!`
                             }
                           ]);
                         }}
@@ -8380,7 +8380,7 @@ function PhoneSimulator({
               );
             }
 
-            // One-Time Notification Opt-In Card (Meta OTN)
+            // One-Time Notification Opt In Card (Meta OTN)
             if (item.type === 'otn_optin') {
               return (
                 <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 w-full max-w-[90%]">

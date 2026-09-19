@@ -32,7 +32,7 @@ const STEP_LABELS: Record<Step, string> = {
 
 /**
  * New-user onboarding: connect Meta/WhatsApp/SMS accounts, plug in the rest
- * of the marketing stack, pick the DIY vs Done-For-You track with the
+ * of the marketing stack, pick the DIY vs Done For You track with the
  * trade-offs spelled out, choose a tier (changeable anytime in Settings),
  * then launch.
  */
@@ -262,7 +262,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     {chosenMode && (
                       <p className="text-sm text-slate-300">
                         <span className="text-slate-500">Route:</span>{' '}
-                        <span className="font-bold text-white">{chosenMode === 'dfu' ? 'Done-For-You' : 'DIY Self-Service'}</span>
+                        <span className="font-bold text-white">{chosenMode === 'dfu' ? 'Done For You' : 'DIY Self Service'}</span>
                       </p>
                     )}
                     {chosenPlan && (

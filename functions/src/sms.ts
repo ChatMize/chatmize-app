@@ -1,5 +1,5 @@
 /**
- * SMS via Twilio, Telnyx, and Bandwidth: sending, provisioning, opt-in
+ * SMS via Twilio, Telnyx, and Bandwidth: sending, provisioning, opt in
  * compliance, and logging.
  *
  * Twilio: ChatMize owns the account; each workspace gets a provisioned number.
@@ -447,7 +447,7 @@ export async function setOptIn(
     updatedAt: now,
   };
   await optInRef(workspaceId, phone).set(record);
-  logger.info("SMS opt-in state changed", { workspaceId, phone, optedIn, source });
+  logger.info("SMS opt in state changed", { workspaceId, phone, optedIn, source });
 }
 
 export async function countOptIns(workspaceId: string): Promise<number> {

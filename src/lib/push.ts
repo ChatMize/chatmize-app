@@ -32,6 +32,12 @@ export async function setPushVapidKey(vapidPublicKey: string): Promise<{ ok: boo
   return (await fn({ vapidPublicKey })).data;
 }
 
+/** Super Admin only: whether a VAPID key is configured. Powers the Super Admin push section. */
+export async function getPushVapidStatus(): Promise<{ configured: boolean }> {
+  const fn = httpsCallable<Record<string, never>, { configured: boolean }>(functions, "getPushVapidStatus");
+  return (await fn({})).data;
+}
+
 export async function setPushPromptCopy(
   workspaceId: string,
   copy: { headline: string; subtext: string; allowLabel: string; dismissLabel: string },

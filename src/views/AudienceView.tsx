@@ -435,7 +435,7 @@ Status             : COMPLETED - 100% DATA PURGED
 
 RECORDS PURGED FROM SYSTEM:
 - Full Name and Personal Identifiers
-- Verified Mobile Phone Number & SMS Opt-In Consent
+- Verified Mobile Phone Number & SMS Opt In Consent
 - Verified Email Address & Marketing Consent
 - Company Name, Job Title & Physical Location
 - Platform Graph IDs (Page-Scoped PSID, Instagram IGSID, WhatsApp ID)
@@ -1000,7 +1000,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> 24h Window
                             </span>
                           ) : (contact.recurringTokens || []).some(t => t.status === 'active') ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-cyan-300 font-medium bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/30" title="Active Meta Recurring Notification Opt-In">
+                            <span className="inline-flex items-center gap-1 text-[10px] text-cyan-300 font-medium bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/30" title="Active Meta Recurring Notification Opt In">
                               <BellRing className="w-2.5 h-2.5 text-cyan-400" /> RN Token Active
                             </span>
                           ) : (contact.otnTokens || []).some(t => t.status === 'available') ? (
@@ -1362,7 +1362,7 @@ data subject, Meta Developer Compliance, and regulatory authorities.
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${selectedContact.smsConsent ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' : 'bg-slate-950 border-white/5 text-slate-500'}`}>
                       <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                      <span>SMS Opt-In (TCPA)</span>
+                      <span>SMS Opt In (TCPA)</span>
                     </div>
                     <div className={`p-2 rounded-xl border text-[10px] flex items-center gap-1.5 ${selectedContact.emailConsent ? 'bg-blue-500/10 border-blue-500/20 text-blue-300' : 'bg-slate-950 border-white/5 text-slate-500'}`}>
                       <CheckCircle2 className="w-3 h-3 text-blue-400" />

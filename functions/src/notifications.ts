@@ -504,7 +504,7 @@ export const onHandoffCreated = onDocumentCreated(
 );
 
 // ---------------------------------------------------------------------------
-// Waitlist double opt-in: confirmation email for a pending waitlist signup.
+// Waitlist double opt in: confirmation email for a pending waitlist signup.
 // Sent straight through SES (no workspace-scoped suppression/dedupe: the
 // signup handler already dedupes per email, and SES account-level
 // suppression still applies). One send per signup call; re-signups resend.

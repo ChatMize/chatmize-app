@@ -2,7 +2,7 @@
  * Shared SMS send pipeline.
  *
  * The exact production pipeline previously embedded in the sendSms callable:
- * plan allowance, connection + monthly rollover, E.164 normalization, opt-in
+ * plan allowance, connection + monthly rollover, E.164 normalization, opt in
  * enforcement, personalization tag resolution, segment calculation, charge
  * (allowance then credits), provider send, persistence + logging, and a
  * compensating refund when the provider send fails after charging.

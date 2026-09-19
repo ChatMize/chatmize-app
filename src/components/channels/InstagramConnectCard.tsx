@@ -143,7 +143,7 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
                 {loading
                   ? 'Checking connection...'
                   : connected
-                    ? `@${status?.username}`
+                    ? `@${(status?.username ?? '').replace(/^@/, '')}`
                     : 'Not connected'}
               </p>
             </div>
@@ -193,7 +193,7 @@ export const InstagramConnectCard: React.FC<InstagramConnectCardProps> = ({
                   <Instagram className="w-4 h-4 text-pink-400 ml-1" />
                 )}
                 <span className="text-[11px] font-medium text-emerald-200">
-                  @{status?.username} · DMs
+                  @{(status?.username ?? '').replace(/^@/, '')} · DMs
                 </span>
               </span>
               <span className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">

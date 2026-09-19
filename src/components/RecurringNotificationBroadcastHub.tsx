@@ -457,7 +457,7 @@ export function RecurringNotificationBroadcastHub({
           </span>
           <span className="text-xl font-black text-white">{expiringSoonCount}</span>
           <span className="text-[10px] text-amber-300 font-semibold mt-0.5 flex items-center gap-1">
-            {expiringSoonCount > 0 ? 'Action: Re-Opt-In Prompt' : 'All tokens healthy'}
+            {expiringSoonCount > 0 ? 'Action: Opt In Renewal Prompt' : 'All tokens healthy'}
             {expiringSoonCount > 0 && <ArrowRight className="w-2.5 h-2.5" />}
           </span>
         </div>
@@ -511,7 +511,7 @@ export function RecurringNotificationBroadcastHub({
           }`}
         >
           <RefreshCw className="w-3.5 h-3.5" />
-          <span>Token Refresh & Re-Opt-In Automation</span>
+          <span>Token Refresh & Opt In Renewal Automation</span>
           {expiringSoonCount > 0 && (
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
           )}
@@ -953,21 +953,21 @@ export function RecurringNotificationBroadcastHub({
           </div>
         )}
 
-        {/* Tab 2: Token Refresh & Automated Re-Opt-In Engine */}
+        {/* Tab 2: Token Refresh & Automated Opt In Renewal Engine */}
         {activeTab === 'token_health' && (
           <div className="space-y-6">
             <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-slate-900 to-cyan-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-bold text-white">
-                    Meta Token Renewal & Automated Re-Opt-In Engine
+                    Meta Token Renewal & Automated Opt In Renewal Engine
                   </h3>
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                     Churn Prevention
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                  Meta Recurring Notification tokens expire after 6 months (Daily) or 9 months (Weekly). When tokens near expiration (≤ 14 days), trigger an automated Re-Opt-In renewal card before the token dies.
+                  Meta Recurring Notification tokens expire after 6 months (Daily) or 9 months (Weekly). When tokens near expiration (≤ 14 days), trigger an automated Opt In renewal card before the token dies.
                 </p>
               </div>
 
@@ -1044,14 +1044,14 @@ export function RecurringNotificationBroadcastHub({
                           disabled={refreshingTokenId === item.token.id}
                           onClick={() => handleSimulateTokenRenewal(item.contact.id, item.token.id, item.token.frequency)}
                           className="px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                          title="Simulate subscriber accepting re-opt-in card (renews for +180 / +270 days)"
+                          title="Simulate subscriber accepting opt in renewal card (renews for +180 / +270 days)"
                         >
                           {refreshingTokenId === item.token.id ? (
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             <RefreshCw className="w-3.5 h-3.5" />
                           )}
-                          <span>Renew / Re-Opt-In</span>
+                          <span>Renew Opt In</span>
                         </button>
                       </div>
                     </div>
@@ -1086,7 +1086,7 @@ export function RecurringNotificationBroadcastHub({
                     <CheckCircle2 className="w-4 h-4 text-cyan-400" /> The RN Solution (Ongoing Cadence)
                   </div>
                   <p className="text-slate-300 leading-relaxed">
-                    Recurring Notifications grant permission for <strong>ongoing scheduled updates</strong> (up to 1/day for 6 months or 1/week for 9 months) with 100% policy-cleared promotional copy and automatic native re-opt-in prompts.
+                    Recurring Notifications grant permission for <strong>ongoing scheduled updates</strong> (up to 1/day for 6 months or 1/week for 9 months) with 100% policy-cleared promotional copy and automatic native opt in renewal prompts.
                   </p>
                 </div>
               </div>

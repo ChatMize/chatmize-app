@@ -5,7 +5,7 @@ import { ChatMizeLogo } from '../components/Logo';
 /**
  * Public waitlist signup page, served at /waitlist (hosting rewrites ** to
  * index.html; App.tsx short-circuits to this view before the auth gate).
- * Writes go to the production waitlist API (double opt-in via SES), never to
+ * Writes go to the production waitlist API (double opt in via SES), never to
  * browser storage.
  */
 const WAITLIST_API = 'https://us-west2-gen-lang-client-0433776094.cloudfunctions.net/metaWebhook?wl=signup';

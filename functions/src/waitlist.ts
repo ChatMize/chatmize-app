@@ -18,7 +18,7 @@
  *   }
  *   waitlist_rate_limits/{ipHash_hourBucket} = { count, expiresAt }
  *
- * Double opt-in: signup writes a pending doc and emails a confirm link from
+ * Double opt in: signup writes a pending doc and emails a confirm link from
  * notifications@chatmize.com via SES. Same email signing up again updates the
  * record and resends the confirm email (never a duplicate doc). Tokens expire
  * after 7 days; unconfirmed signups stay pending and are simply never mailed

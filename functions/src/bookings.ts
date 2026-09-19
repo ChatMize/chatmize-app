@@ -627,7 +627,7 @@ export async function createBooking(
     );
   }
 
-  // SMS consent: a checked "text me reminders" box counts as opt-in for
+  // SMS consent: a checked "text me reminders" box counts as opt in for
   // transactional reminders.
   if (booking.smsConsent && booking.phone) {
     try {

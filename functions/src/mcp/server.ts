@@ -37,7 +37,7 @@ const INSTRUCTIONS = [
   "Conversations are identified by conversationId (e.g. instagram_123456).",
   "Use list_conversations to discover threads, read_conversation for history,",
   "and send_message to reply (pass conversationId and the bot resolves the recipient).",
-  "SMS sends require prior opt-in and consume the workspace SMS allowance/credits.",
+  "SMS sends require prior opt in and consume the workspace SMS allowance/credits.",
   "API keys are managed in the agency dashboard (one key per workspace).",
 ].join(" ");
 
@@ -92,7 +92,7 @@ export function buildMcpServer(key: VerifiedKey): McpServer {
 
   server.tool(
     "send_message",
-    "Send one outbound message through the workspace's connected channels. Uses the production send pipeline (token self-heal, personalization tags, SMS opt-in and billing). Supports text and media attachments (video/audio on Messenger and Instagram).",
+    "Send one outbound message through the workspace's connected channels. Uses the production send pipeline (token self-heal, personalization tags, SMS opt in and billing). Supports text and media attachments (video/audio on Messenger and Instagram).",
     {
       channel: z.enum(["messenger", "instagram", "whatsapp", "sms"]),
       recipientId: z.string().optional()

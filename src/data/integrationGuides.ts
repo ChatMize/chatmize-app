@@ -80,7 +80,7 @@ const BASE_INTEGRATION_GUIDES: Record<string, IntegrationGuide> = {
         description: 'Paste the key into the connection modal and click "Save Changes".',
       },
     ],
-    howItWorksInFlows: 'After collecting email using a Free Type or Quick Reply input block, use the Mailchimp action to add the contact to your Audience with Double Opt-in optionally enabled or disabled.',
+    howItWorksInFlows: 'After collecting email using a Free Type or Quick Reply input block, use the Mailchimp action to add the contact to your Audience with Double Opt in optionally enabled or disabled.',
     troubleshooting: [
       'Make sure you include the full key suffix (e.g., -us19, -us20).',
       'Verify that your Audience does not have required custom fields that your bot flow is not sending.',

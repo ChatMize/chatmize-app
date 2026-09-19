@@ -153,7 +153,7 @@ async function resolveSendTarget(
 /**
  * send_message: one outbound message through the workspace's real, connected
  * channels — the exact production send pipelines, including token self-heal,
- * personalization tag resolution, opt-in enforcement (SMS), billing, and
+ * personalization tag resolution, opt in enforcement (SMS), billing, and
  * single-writer persistence.
  */
 export async function sendMessage(
@@ -396,7 +396,7 @@ export async function sendWebhook(
 /**
  * create_broadcast: SMS broadcast to opted-in numbers (v1 supports SMS only;
  * Meta-channel broadcasts are UI-only in ChatMize today). Runs the exact
- * production broadcast pipeline: idempotent, resumable, per-recipient opt-in
+ * production broadcast pipeline: idempotent, resumable, per-recipient opt in
  * re-check and personalization. When `phones` is omitted, broadcasts to every
  * opted-in number in the workspace.
  */

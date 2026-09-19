@@ -3,7 +3,7 @@
  *
  * The exact production pipeline previously embedded in the sendSmsBroadcast
  * callable: idempotent on a client key (retries resume or replay), recipient
- * resolution (explicit list or all opted-in numbers), per-recipient opt-in
+ * resolution (explicit list or all opted-in numbers), per-recipient opt in
  * re-check, per-recipient personalization, chunked sends with persisted
  * progress, billing stop-short-circuit, and a delivery report.
  *

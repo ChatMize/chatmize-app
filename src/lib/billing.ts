@@ -74,15 +74,15 @@ export const ALL_FEATURES = Object.keys(FEATURE_LABELS) as PlanFeature[];
 export type PlanMode = "diy" | "dfu";
 
 export const PLAN_MODE_LABELS: Record<PlanMode, string> = {
-  diy: "DIY Self-Service",
-  dfu: "Done-For-You",
+  diy: "DIY Self Service",
+  dfu: "Done For You",
 };
 
 export interface Plan {
   id: string;
   name: string;
   tagline?: string;
-  /** DIY self-service vs DFU white-glove fulfillment. */
+  /** DIY self service vs DFU white-glove fulfillment. */
   mode: PlanMode;
   /** Monthly price in cents (4900 = $49). */
   priceMonthlyCents: number;

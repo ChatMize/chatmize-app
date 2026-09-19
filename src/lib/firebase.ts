@@ -67,7 +67,7 @@ export const db = getFirestore(app, firestoreDatabaseId);
 export const prodDb = getFirestore(app, 'chatmize-prod');
 
 /**
- * Demo seeding is opt-in and dev-only. It must never run in staging or
+ * Demo seeding is opt in and dev-only. It must never run in staging or
  * production: fictional contacts and campaigns would pollute real customer
  * data. Enable locally with VITE_ENABLE_DEMO_SEED=true.
  */
@@ -248,7 +248,7 @@ export interface ContactRecord {
   humanAgentExpiresAt?: string; // ISO string for Meta 7-day Human Agent extension
   recurringTokens?: MetaRecurringToken[]; // Meta Marketing Messages / Recurring Notifications tokens
   otnTokens?: MetaOtnToken[]; // Meta One-Time Notification tokens
-  whatsappOptIn?: boolean; // WhatsApp Business opt-in status
+  whatsappOptIn?: boolean; // WhatsApp Business opt in status
   senderId?: string; // Meta PSID/IGSID for webhook-routed contacts
   tags: string[];
   variables: Record<string, string | number | boolean>; // Arbitrary dynamic captured variables: {{var_name}}
@@ -769,7 +769,7 @@ export async function seedInitialMetaContacts(): Promise<void> {
             status: 'available',
           }
         ],
-        tags: ['VIP Lead', 'Webinar Registered', 'Ad Referral', 'RN Opt-In: Daily'],
+        tags: ['VIP Lead', 'Webinar Registered', 'Ad Referral', 'RN Opt In: Daily'],
         variables: {
           business_type: 'E-Commerce Brand',
           monthly_ad_spend: '$25,000 - $50,000',
@@ -935,7 +935,7 @@ export async function seedInitialMetaContacts(): Promise<void> {
             status: 'available',
           }
         ],
-        tags: ['Cart Abandoner', 'Discount Requested', 'RN Opt-In: Weekly'],
+        tags: ['Cart Abandoner', 'Discount Requested', 'RN Opt In: Weekly'],
         variables: {
           last_viewed_package: 'Agency Tier',
           coupon_attempted: 'SUMMER20',
@@ -1124,10 +1124,10 @@ export async function seedInitialCampaigns(): Promise<void> {
             stepNumber: 3,
             delayValue: 5,
             delayUnit: 'days',
-            title: 'RN Opt-In Renewal & Secret VIP Drop',
+            title: 'RN Opt In Renewal & Secret VIP Drop',
             messageText: '{{first_name}}, want us to keep sending you exclusive weekly flash sales and AI bot templates?',
             rnTopicRequired: 'Weekly Automation Playbook & Promos',
-            ctaTitle: 'Opt-In to Weekly Drops 🔔',
+            ctaTitle: 'Opt In to Weekly Drops 🔔',
             ctaUrl: 'https://chatmize.io/optin'
           }
         ],

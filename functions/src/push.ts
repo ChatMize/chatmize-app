@@ -2,7 +2,7 @@
  * Web push notifications as a native ChatMize channel (Firebase Cloud Messaging).
  *
  * Businesses collect push subscribers on their own sites through the hosted
- * subscribe page or the embeddable opt-in prompt, then send web notifications
+ * subscribe page or the embeddable opt in prompt, then send web notifications
  * from ChatMize: one-off sends, broadcasts, BotMaps "Send push" actions,
  * booking reminders, and owner alerts (for example dead channel reconnects).
  *
@@ -187,7 +187,17 @@ export const setPushVapidKey = onCall({ region: REGION }, async (request) => {
   return { ok: true };
 });
 
-/** Customize the opt-in prompt copy. Workspace members only. */
+/** Super Admin only: is a VAPID key configured? Powers the Super Admin push section. */
+export const getPushVapidStatus = onCall({ region: REGION }, async (request) => {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  if (request.auth?.token?.superadmin !== true) {
+    throw new HttpsError("permission-denied", "Only a Super Admin can view push settings.");
+  }
+  const vapidPublicKey = await getVapidKey();
+  return { configured: !!vapidPublicKey };
+});
+
+/** Customize the opt in prompt copy. Workspace members only. */
 export const setPushPromptCopy = onCall({ region: REGION }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");

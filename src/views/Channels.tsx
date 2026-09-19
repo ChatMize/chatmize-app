@@ -183,7 +183,7 @@ export function Channels() {
             <div className="flex items-center gap-2.5">
               <Clock className="w-4 h-4 text-blue-400 flex-shrink-0" />
               <span>
-                <strong>Meta Developer Guidelines:</strong> Understanding how to legitimately respond, request opt-in permissions, and re-engage users outside the 24-hour window.
+                <strong>Meta Developer Guidelines:</strong> Understanding how to legitimately respond, request opt in permissions, and re-engage users outside the 24-hour window.
               </span>
             </div>
             <a 
@@ -235,7 +235,7 @@ export function Channels() {
                       <span className="text-slate-200 font-semibold">{rule.allowedWindow}</span>
                     </div>
                     <div className="flex justify-between text-slate-400">
-                      <span>Opt-In:</span>
+                      <span>Opt In:</span>
                       <span className="text-slate-200 font-semibold">{rule.requiresUserOptIn ? 'Required' : 'Standard'}</span>
                     </div>
                   </div>
@@ -280,7 +280,7 @@ export function Channels() {
                 <span className="text-xs font-mono text-blue-400 truncate block">{selectedRule.graphPermissionRequired}</span>
               </div>
               <div className="p-3.5 rounded-xl bg-slate-950/80 border border-white/5 space-y-1">
-                <span className="text-[10px] font-bold uppercase text-slate-400 block">User Opt-In Requirement</span>
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">User Opt In Requirement</span>
                 <span className="text-xs font-semibold text-emerald-400">
                   {selectedRule.requiresUserOptIn ? 'User must tap explicit button' : 'Implicit (Initiated by transaction)'}
                 </span>
@@ -309,7 +309,7 @@ export function Channels() {
                   <li>Including promo codes, discounts, sales, or checkout links inside Message Tags.</li>
                   <li>Sending unrequested marketing broadcasts past 24h without a Recurring Notification token.</li>
                   <li>Using automated bots under the HUMAN_AGENT tag (must be live agent).</li>
-                  <li>Re-prompting users for Recurring Notification opt-in more than once per week.</li>
+                  <li>Re-prompting users for Recurring Notification opt in more than once per week.</li>
                 </ul>
               </div>
             </div>
@@ -345,7 +345,7 @@ export function Channels() {
                 {
                   permission: 'pages_messaging_subscriptions',
                   feature: 'Meta Recurring Notifications (Marketing Messages)',
-                  description: 'Required to deliver daily, weekly, or monthly promotional messages outside the 24-hour window using user opt-in tokens.',
+                  description: 'Required to deliver daily, weekly, or monthly promotional messages outside the 24-hour window using user opt in tokens.',
                   status: 'Granted (Active)',
                 },
                 {

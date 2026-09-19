@@ -162,7 +162,7 @@ export function TriggerSelectorModal({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Unified multi-channel opt-in triggers. Every inbound subscriber interaction automatically activates the Meta 24-hour standard messaging window.
+                Unified multi-channel opt in triggers. Every inbound subscriber interaction automatically activates the Meta 24-hour standard messaging window.
               </p>
             </div>
           </div>

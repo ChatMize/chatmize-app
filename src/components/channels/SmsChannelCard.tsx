@@ -9,7 +9,7 @@ interface SmsChannelCardProps {
 
 /**
  * Real SMS channel state. Supports Twilio (auto-provisioned), Telnyx, and
- * Bandwidth (connect your own number). Shows live allowance, opt-in audience,
+ * Bandwidth (connect your own number). Shows live allowance, opt in audience,
  * and compliance state.
  */
 export const SmsChannelCard: React.FC<SmsChannelCardProps> = ({ workspaceId }) => {
@@ -210,7 +210,7 @@ export const SmsChannelCard: React.FC<SmsChannelCardProps> = ({ workspaceId }) =
             <p className="text-[11px] text-slate-500 leading-relaxed">{status.complianceNote}</p>
           )}
           <p className="text-[11px] text-slate-500">
-            Collect phone numbers with opt-in in your flows, then blast from the SMS tab. Replies
+            Collect phone numbers with opt in from your flows, then blast from the SMS tab. Replies
             land in Live Conversations. STOP/START/HELP are handled automatically.
           </p>
         </div>

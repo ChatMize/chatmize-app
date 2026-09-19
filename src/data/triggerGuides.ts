@@ -501,7 +501,7 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
 
   guide_fb_qr_code: {
     appId: 'guide_fb_qr_code',
-    appName: 'Messenger QR Code & Offline Opt-Ins',
+    appName: 'Messenger QR Code & Offline Opt Ins',
     category: 'Facebook Messenger Triggers',
     section: 'triggers',
     channel: 'messenger',
@@ -536,15 +536,15 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
 
   guide_fb_checkbox: {
     appId: 'guide_fb_checkbox',
-    appName: 'Website Opt-In Checkbox Plugin',
+    appName: 'Website Opt In Checkbox Plugin',
     category: 'Facebook Messenger Triggers',
     section: 'triggers',
     channel: 'messenger',
     authMethod: 'Messenger Checkbox Plugin',
-    badge: 'Checkout Opt-in',
-    metaPolicyRules: 'Compliant Opt-in: User checks the box and submits your form, authorizing your Page to send updates.',
-    summary: 'Add an official Messenger opt-in checkbox to your checkout, contact, or registration forms to send order updates and receipts.',
-    howItWorks: 'Renders a secure Meta checkbox widget on your website form. When the user submits the form, your website confirms the opt-in and triggers the connected flow.',
+    badge: 'Checkout Opt in',
+    metaPolicyRules: 'Compliant Opt in: User checks the box and submits your form, authorizing your Page to send updates.',
+    summary: 'Add an official Messenger opt in checkbox to your checkout, contact, or registration forms to send order updates and receipts.',
+    howItWorks: 'Renders a secure Meta checkbox widget on your website form. When the user submits the form, your website confirms the opt in and triggers the connected flow.',
     steps: [
       {
         title: 'Step 1: Configure Checkbox Trigger',
@@ -669,14 +669,14 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
 
   guide_wa_phone_form: {
     appId: 'guide_wa_phone_form',
-    appName: 'Phone Number Opt-In Form (WhatsApp)',
+    appName: 'Phone Number Opt In Form (WhatsApp)',
     category: 'WhatsApp Triggers',
     section: 'triggers',
     channel: 'whatsapp',
     authMethod: 'Meta Template Message API',
-    badge: 'Opt-in Capture',
-    metaPolicyRules: 'Outbound Template Requirement: To initiate a conversation with a phone number captured on an external form, you MUST send an approved Meta WhatsApp Template message to initiate the opt-in.',
-    summary: 'Capture phone numbers on your website or checkout and automatically send an approved WhatsApp opt-in message to initiate the flow.',
+    badge: 'Opt in Capture',
+    metaPolicyRules: 'Outbound Template Requirement: To initiate a conversation with a phone number captured on an external form, you MUST send an approved Meta WhatsApp Template message to initiate the opt in.',
+    summary: 'Capture phone numbers on your website or checkout and automatically send an approved WhatsApp opt in message to initiate the flow.',
     howItWorks: 'When a visitor submits their phone number on your website, Chatmize dispatches an approved Meta WhatsApp Template message. Once the user replies, the 24-hour free-form window opens.',
     steps: [
       {
@@ -741,7 +741,7 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
     authMethod: 'Chatmize Web SDK',
     badge: 'Sticky Banner',
     metaPolicyRules: 'User-Initiated: Visitor clicks the banner CTA button to open the messaging window.',
-    summary: 'Sticky top notification bar or bottom corner slide-in with an instant one-click messaging opt-in button.',
+    summary: 'Sticky top notification bar or bottom corner slide-in with an instant one-click messaging opt in button.',
     howItWorks: 'Renders a sleek non-intrusive banner on your website with an action button that immediately launches the conversational flow in Messenger or WhatsApp.',
     steps: [
       {
@@ -764,7 +764,7 @@ export const TRIGGER_KNOWLEDGE_GUIDES: Record<string, TriggerKnowledgeGuide> = {
 
   guide_web_embed_form: {
     appId: 'guide_web_embed_form',
-    appName: 'Embedded Opt-in Button / Widget',
+    appName: 'Embedded Opt in Button / Widget',
     category: 'Growth Tools & Web',
     section: 'triggers',
     channel: 'web',

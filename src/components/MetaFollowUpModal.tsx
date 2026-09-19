@@ -110,7 +110,7 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
 
     try {
       // Cross-channel SMS fallback sends for real through the backend
-      // (Twilio number, opt-in enforcement, credit billing).
+      // (Twilio number, opt in enforcement, credit billing).
       if (selectedMode === 'cross_channel' && fallbackChannel === 'sms') {
         if (!workspaceId) throw new Error('Workspace is not available for SMS sending.');
         if (!contact.phone) throw new Error('This contact has no phone number on file.');
@@ -250,10 +250,10 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                   <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-cyan-400"></span>
                 )}
                 <div className="font-bold flex items-center gap-1.5">
-                  <BellRing className="w-3.5 h-3.5" /> Recurring Opt-In
+                  <BellRing className="w-3.5 h-3.5" /> Recurring Opt In
                 </div>
                 <div className="text-[10px] opacity-75 mt-0.5">
-                  {activeRNTokens.length > 0 ? `${activeRNTokens.length} Active Token` : 'No Token Opt-In'}
+                  {activeRNTokens.length > 0 ? `${activeRNTokens.length} Active Token` : 'No Token Opt In'}
                 </div>
               </button>
 
@@ -341,14 +341,14 @@ export function MetaFollowUpModal({ contact, workspaceId, onClose, onSuccess }: 
                     <AlertCircle className="w-3.5 h-3.5" /> No active Recurring Notification token found for this contact.
                   </div>
                   <p className="text-[11px] opacity-85">
-                    To send promotional broadcasts past 24h, you must first ask the user to tap "Get Updates" via a Recurring Notification Opt-In Card inside an active conversation.
+                    To send promotional broadcasts past 24h, you must first ask the user to tap "Get Updates" via a Recurring Notification Opt In Card inside an active conversation.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <div>
                     <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                      Active User Opt-In Token
+                      Active User Opt In Token
                     </label>
                     <select
                       value={selectedRNTokenId}

@@ -631,7 +631,7 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
                   <div className="w-6 h-6 rounded-full bg-cyan-500 text-slate-950 font-bold flex items-center justify-center flex-shrink-0 text-xs">2</div>
                   <div>
                     <h4 className="font-bold text-white">Add Irresistible Offer</h4>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Voucher codes, email opt-in, VIP call booking, or instant launch announcements.</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Voucher codes, email opt in, VIP call booking, or instant launch announcements.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">

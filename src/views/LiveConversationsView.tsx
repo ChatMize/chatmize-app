@@ -233,7 +233,7 @@ const AUDIENCE_CONTENT_CATALOG: AudienceContentItem[] = [
     type: 'flow',
     title: 'Build-A-Bot Live Workshop Invite',
     category: 'Interactive Bot Map Flow',
-    description: 'Direct interactive registration flow with automated calendar booking & reminder opt-in.',
+    description: 'Direct interactive registration flow with automated calendar booking & reminder opt in.',
     badge: 'Live Bot Flow',
     buttonText: 'Reserve VIP Seat 🎟️',
     previewText: 'Hey {{first_name}}, I saved you a priority seat for our upcoming Build-A-Bot Live Workshop! Click below to confirm.',
@@ -266,10 +266,10 @@ const AUDIENCE_CONTENT_CATALOG: AudienceContentItem[] = [
   {
     id: 'rn-daily-hacks',
     type: 'rn_optin',
-    title: 'Daily Bot Growth Hacks (Recurring Opt-In)',
+    title: 'Daily Bot Growth Hacks (Recurring Opt In)',
     category: 'Meta Marketing Message',
-    description: 'Meta-compliant recurring notification opt-in card granting 180-day daily broadcast permissions.',
-    badge: 'Meta RN Opt-In',
+    description: 'Meta-compliant recurring notification opt in card granting 180-day daily broadcast permissions.',
+    badge: 'Meta RN Opt In',
     buttonText: 'Get Daily Tips 🔔',
     previewText: 'Would you like to receive 1 actionable bot growth hack every weekday right here in Messenger?',
     channelSupport: ['messenger', 'instagram']
@@ -2229,7 +2229,7 @@ export const LiveConversationsView: React.FC<LiveConversationsViewProps> = ({
       </div>
 
       {/* =========================================================================
-          MODAL 1: SEND AUDIENCE CONTENT (Bot Flows, Lead Magnets, Opt-In Cards)
+          MODAL 1: SEND AUDIENCE CONTENT (Bot Flows, Lead Magnets, Opt In Cards)
           ========================================================================= */}
       {showContentModal && activeContact && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">

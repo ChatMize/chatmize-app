@@ -1134,7 +1134,7 @@ interface SetSmsOptInData {
   source?: string;
 }
 
-/** Authenticated callable: record a contact's SMS opt-in/out (phone capture in flows). */
+/** Authenticated callable: record a contact's SMS opt in/out (phone capture in flows). */
 export const setSmsOptIn = onCall({ region: REGION }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
@@ -1203,14 +1203,14 @@ interface SendSmsBroadcastData {
  * Authenticated callable: broadcast to opted-in numbers. Idempotent on a
  * client-generated key and resumable in chunks: progress is persisted after
  * every chunk, so a client retry (or a timeout) resumes where the run left
- * off instead of re-sending. Per-recipient opt-in is re-checked at send
+ * off instead of re-sending. Per-recipient opt in is re-checked at send
  * time; returns a delivery report.
  */
 /**
  * Authenticated callable: broadcast to opted-in numbers. Idempotent on a
  * client-generated key and resumable in chunks: progress is persisted after
  * every chunk, so a client retry (or a timeout) resumes where the run left
- * off instead of re-sending. Per-recipient opt-in is re-checked at send
+ * off instead of re-sending. Per-recipient opt in is re-checked at send
  * time; returns a delivery report.
  */
 export const sendSmsBroadcast = onCall(
@@ -2185,6 +2185,7 @@ export {
   getPushPublicConfig,
   getPushPromptCopy,
   getPushStatus,
+  getPushVapidStatus,
   setPushVapidKey,
   setPushPromptCopy,
   subscribePush,

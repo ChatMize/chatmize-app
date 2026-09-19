@@ -81,7 +81,7 @@ function PlanTabContent({
       <div>
         <h3 className="text-base font-bold text-white mb-1">Your plan</h3>
         <p className="text-xs text-slate-400">
-          Upgrade, downgrade, or switch between DIY and Done-For-You anytime. Changes apply immediately;
+          Upgrade, downgrade, or switch between DIY and Done For You anytime. Changes apply immediately;
           billing proration lands on your next invoice once payments go live.
         </p>
       </div>
@@ -98,7 +98,7 @@ function PlanTabContent({
                       ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                       : 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
                   }`}>
-                    {(workspace.planMode || currentPlan.mode) === 'dfu' ? 'Done-For-You' : 'DIY Self-Service'}
+                    {(workspace.planMode || currentPlan.mode) === 'dfu' ? 'Done For You' : 'DIY Self Service'}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400">
@@ -109,7 +109,7 @@ function PlanTabContent({
             ) : (
               <>
                 <h4 className="text-lg font-black text-white mb-1">No plan selected</h4>
-                <p className="text-xs text-slate-400">Choose DIY or Done-For-You to unlock the right limits and credit pool.</p>
+                <p className="text-xs text-slate-400">Choose DIY or Done For You to unlock the right limits and credit pool.</p>
               </>
             )}
           </div>

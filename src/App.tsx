@@ -929,7 +929,7 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono font-bold">
-                        5 Tools
+                        5
                       </span>
                       <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isCaptureExpanded ? 'rotate-180 text-cyan-400' : ''}`} />
                     </div>
@@ -1208,7 +1208,7 @@ export default function App() {
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Sparkles className="w-4 h-4 text-purple-300 shrink-0" />
                   <p className="text-xs text-slate-200 truncate">
-                    <span className="font-bold text-white">Choose your route:</span> DIY self-service or Done-For-You. You can switch anytime.
+                    <span className="font-bold text-white">Choose your route:</span> DIY self service or Done For You. You can switch anytime.
                   </p>
                 </div>
                 <span className="text-[11px] font-bold text-purple-200 bg-purple-500/20 px-2.5 py-1 rounded-lg shrink-0">Pick a plan</span>

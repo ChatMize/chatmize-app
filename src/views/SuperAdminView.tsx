@@ -23,10 +23,12 @@ import {
   Library,
 
   Rocket,
-  MailPlus
+  MailPlus,
+  BellRing
 } from 'lucide-react';
 import { SuperAdminKanban } from '../components/admin/SuperAdminKanban';
 import { BuildCatalogAdminTab } from '../components/admin/BuildCatalogAdminTab';
+import { SuperAdminPushTab } from '../components/admin/SuperAdminPushTab';
 import { PlanEditorModal } from '../components/admin/PlanEditorModal';
 import { PlanModulesManager } from '../components/admin/PlanModulesManager';
 import { SnapshotAdminTab } from '../components/admin/SnapshotAdminTab';
@@ -36,7 +38,7 @@ import { Plan, PlanMode, PLAN_MODE_LABELS, FEATURE_LABELS, formatPrice, deletePl
 import { usePlans } from '../lib/entitlements';
 
 interface SuperAdminViewProps {
-  initialTab?: 'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist' | 'catalog';
+  initialTab?: 'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist' | 'catalog' | 'push';
 }
 
 interface UserRecord {
@@ -142,7 +144,7 @@ const PlanTierCard: React.FC<PlanTierCardProps> = ({ plan, onEdit }) => (
       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
         plan.mode === 'dfu' ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' : 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
       }`}>
-        {PLAN_MODE_LABELS[plan.mode] || 'DIY Self-Service'}
+        {PLAN_MODE_LABELS[plan.mode] || 'DIY Self Service'}
       </span>
       {plan.tagline && <p className="text-xs text-slate-500 mt-2">{plan.tagline}</p>}
       <div className="flex items-baseline gap-1 my-3">
@@ -214,7 +216,7 @@ const PlanTierCard: React.FC<PlanTierCardProps> = ({ plan, onEdit }) => (
 export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   initialTab = 'kanban'
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist' | 'catalog'>(initialTab);
+  const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist' | 'catalog' | 'push'>(initialTab);
   const [users, setUsers] = useState<UserRecord[]>(INITIAL_USERS);
   const [searchQuery, setSearchQuery] = useState('');
   const { plans, loading: plansLoading } = usePlans();
@@ -359,6 +361,17 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           >
             <DownloadCloud className="w-4 h-4" />
             <span>Platform Migration Bridge</span>
+          </button>
+          <button
+            onClick={() => setActiveSubTab('push')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeSubTab === 'push'
+                ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-md shadow-violet-500/25'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <BellRing className="w-4 h-4" />
+            <span>Push</span>
           </button>
         </div>
       </div>
@@ -538,7 +551,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-bold text-white">DIY Self-Service</h3>
+                    <h3 className="text-sm font-bold text-white">DIY Self Service</h3>
                     <p className="text-xs text-slate-500">The user operates the AI themselves out of their own credit pool.</p>
                   </div>
                   <button
@@ -562,7 +575,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-bold text-white">Done-For-You</h3>
+                    <h3 className="text-sm font-bold text-white">Done For You</h3>
                     <p className="text-xs text-slate-500">White-glove: your team operates the AI on the client's behalf from the plan's credit pool.</p>
                   </div>
                   <button
@@ -615,6 +628,10 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
       {/* TAB: SEGMATE MIGRATION IMPORTER */}
       {activeSubTab === 'migration' && (
         <SegMateMigrationTab />
+      )}
+      {/* TAB: WEB PUSH (VAPID KEY) */}
+      {activeSubTab === 'push' && (
+        <SuperAdminPushTab />
       )}
     </div>
   );

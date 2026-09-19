@@ -83,7 +83,7 @@ export function MetaPolicyModal({ nodes, connections, onClose, onApplyFix }: Met
                 nodeId: targetNode.id,
                 nodeTitle: targetNode.title,
                 severity: 'error',
-                message: `This message node triggers after a delay exceeding 24 hours, but does not have a Meta Message Tag, Recurring Notification opt-in, or WhatsApp Template.`,
+                message: `This message node triggers after a delay exceeding 24 hours, but does not have a Meta Message Tag, Recurring Notification opt in, or WhatsApp Template.`,
                 recommendation: 'Attach an approved Meta Message Tag (e.g. CONFIRMED_EVENT_UPDATE) for non-promo messages, or request Recurring Notification permission before the delay.',
                 suggestedFix: { tag: 'CONFIRMED_EVENT_UPDATE' }
               });
@@ -248,7 +248,7 @@ export function MetaPolicyModal({ nodes, connections, onClose, onApplyFix }: Met
                     <BellRing className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="text-xs text-slate-400">RN Permission Opt-In</div>
+                    <div className="text-xs text-slate-400">RN Permission Opt In</div>
                     <div className="text-sm font-bold text-white">
                       {auditResults.hasRNComponent ? 'Active in Flow' : 'Not Requested Yet'}
                     </div>
@@ -374,7 +374,7 @@ export function MetaPolicyModal({ nodes, connections, onClose, onApplyFix }: Met
                         <span className="font-semibold text-slate-200">{rule.allowedWindow}</span>
                       </div>
                       <div className="flex items-center justify-between text-slate-400">
-                        <span>Requires Opt-In:</span>
+                        <span>Requires Opt In:</span>
                         <span className="font-semibold text-slate-200">{rule.requiresUserOptIn ? 'Yes (Explicit)' : 'No'}</span>
                       </div>
                       <div className="flex items-center justify-between text-slate-400">

@@ -1605,7 +1605,7 @@ export const WorkspacesView: React.FC<WorkspacesViewProps> = ({
               <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 space-y-1">
                 <span className="font-bold block">TCPA &amp; Meta 24-Hour Re-Engagement Policy</span>
                 <p className="text-[11px] text-slate-300">
-                  When a Meta 24-hour window expires on Messenger or Instagram, ChatMize can automatically trigger an SMS opt-in link to restart the live chat or confirm appointments.
+                  When a Meta 24-hour window expires on Messenger or Instagram, ChatMize can automatically trigger an SMS opt in link to restart the live chat or confirm appointments.
                 </p>
               </div>
 

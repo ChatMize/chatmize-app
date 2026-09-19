@@ -51,7 +51,7 @@ export interface BotGroup {
 
 export const DEFAULT_BOT_GROUPS: BotGroup[] = [
   { id: 'grp-meta-ads', name: 'Meta Ads', color: 'blue', description: 'Click-to-Messenger and Instagram keyword auto-responders for ad campaigns', isDefault: true },
-  { id: 'grp-lead-gen', name: 'Lead Generation', color: 'cyan', description: 'Story mentions, freebies, lead magnets and subscriber opt-in funnels', isDefault: true },
+  { id: 'grp-lead-gen', name: 'Lead Generation', color: 'cyan', description: 'Story mentions, freebies, lead magnets and subscriber opt in funnels', isDefault: true },
   { id: 'grp-support', name: 'Customer Support', color: 'emerald', description: '24/7 automated FAQ routing, order lookups, and human live agent escalation', isDefault: true },
   { id: 'grp-ecommerce', name: 'E-Commerce', color: 'purple', description: 'Abandoned checkout recovery, flash sales, promo codes and store surveys', isDefault: true },
   { id: 'grp-webinars', name: 'Webinars & Live', color: 'amber', description: 'Live workshop invites, registration confirmation and broadcast reminders', isDefault: true }
@@ -585,7 +585,7 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onO
             </div>
             <div>
               <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
-                Bot List & Bot Maps
+                Bot List &amp; Bot Maps&nbsp;
                 <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                   {totalBots} Total
                 </span>
@@ -1043,7 +1043,7 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onO
                     <strong className="text-white font-semibold">{bot.totalRuns.toLocaleString()}</strong>
                   </div>
                   <div className="flex items-center justify-end gap-1.5">
-                    <span className="text-[10px] font-sans text-slate-500 uppercase tracking-wider font-semibold">Opt-In:</span>
+                    <span className="text-[10px] font-sans text-slate-500 uppercase tracking-wider font-semibold">Opt In:</span>
                     <strong className="text-cyan-400 font-semibold">{bot.optInRate}</strong>
                   </div>
                 </div>
@@ -1256,7 +1256,7 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onO
                     <th className="py-3.5 px-4">Triggers</th>
                     <th className="py-3.5 px-4">Steps</th>
                     <th className="py-3.5 px-4">Executions</th>
-                    <th className="py-3.5 px-4">Opt-In</th>
+                    <th className="py-3.5 px-4">Opt In</th>
                     <th className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1475,7 +1475,7 @@ export function BotListView({ onOpenBotMap, onNewBotMap, triggerCreateModal, onO
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { id: 'blank', title: 'Blank Canvas', desc: 'Start with an empty starting trigger step' },
-                    { id: 'lead_gen', title: 'Story Lead Magnet', desc: 'Story mention + DM email opt-in' },
+                    { id: 'lead_gen', title: 'Story Lead Magnet', desc: 'Story mention + DM email opt in' },
                     { id: 'support', title: '24/7 Support Bot', desc: 'FAQ menu + live agent handoff' },
                     { id: 'ecommerce', title: 'Cart Recovery', desc: 'Abandoned cart coupon sequence' }
                   ].map(tmpl => (

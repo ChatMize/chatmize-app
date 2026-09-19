@@ -114,7 +114,7 @@ export function CampaignBuilderModal({
       stepNumber: 3,
       delayValue: 5,
       delayUnit: 'days',
-      title: 'Step 3: Meta Token Re-Opt-In & VIP Upgrade',
+      title: 'Step 3: Meta Token Opt In Renewal & VIP Upgrade',
       messageText: 'Hey {{first_name}}! Your VIP Weekly updates ensure you never miss our secret promo codes. Tap below to refresh your updates token!',
       buttonText: 'Renew VIP Updates 🔔',
       buttonUrl: 'https://chatmize.io/renew-token',
@@ -488,7 +488,7 @@ export function CampaignBuilderModal({
                   </div>
                   <h4 className="text-sm font-black text-white mb-1">Automated Drip Sequence</h4>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Progressive multi-step sequence with customizable delays (Day 0, Day 2, Day 5) and automatic Token Re-Opt-In renewal.
+                    Progressive multi-step sequence with customizable delays (Day 0, Day 2, Day 5) and automatic Token Opt In renewal.
                   </p>
                 </div>
                 <div className="mt-3 pt-2 border-t border-white/10 flex items-center gap-1 text-[11px] font-bold text-amber-300">
@@ -573,7 +573,7 @@ export function CampaignBuilderModal({
                     placeholder="Weekly Automation Playbook & Promos"
                     className="w-full bg-slate-900 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-cyan-500 font-mono"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">Must strictly match the topic approved by users during opt-in.</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Must strictly match the topic approved by users during opt in.</p>
                 </div>
 
                 <div>
@@ -719,7 +719,7 @@ export function CampaignBuilderModal({
                 </div>
                 <div className="flex items-center justify-between pt-4">
                   <div className="space-y-0.5">
-                    <span className="font-bold text-white block">Auto-Enroll on RN Opt-In</span>
+                    <span className="font-bold text-white block">Auto-Enroll on RN Opt In</span>
                     <span className="text-[10px] text-slate-400">Trigger step 1 as soon as Meta token is granted</span>
                   </div>
                   <input 
@@ -844,12 +844,12 @@ export function CampaignBuilderModal({
                       </div>
                     </div>
 
-                    {/* Meta RN Re-Opt-In Token Renewal Flag */}
+                    {/* Meta RN Opt In Renewal Token Renewal Flag */}
                     {idx === dripSteps.length - 1 && (
                       <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-between text-[11px] text-cyan-300">
                         <div className="flex items-center gap-1.5">
                           <BellRing className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Automatically attach <strong>Recurring Notification Re-Opt-In renewal card</strong> to this step</span>
+                          <span>Automatically attach <strong>Recurring Notification Opt In renewal card</strong> to this step</span>
                         </div>
                         <input 
                           type="checkbox"

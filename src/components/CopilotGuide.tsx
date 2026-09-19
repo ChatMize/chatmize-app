@@ -74,7 +74,7 @@ export const CopilotGuide: React.FC<CopilotGuideProps> = ({
     {
       id: 'plan',
       title: 'Choose your route',
-      description: 'DIY self-service or Done-For-You.',
+      description: 'DIY self service or Done For You.',
       done: Boolean(workspace.planId),
       actionLabel: 'Pick a plan',
       onAction: onGoToPlan,

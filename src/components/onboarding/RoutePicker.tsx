@@ -21,7 +21,7 @@ interface RoutePickerProps {
 
 const TRACK_COPY: Record<PlanMode, { title: string; subtitle: string; best: string; bullets: string[] }> = {
   diy: {
-    title: 'DIY Self-Service',
+    title: 'DIY Self Service',
     subtitle: 'You build it all yourself',
     best: 'Pick DIY if you want the lowest cost and full control, and you will set up every map and connection yourself.',
     bullets: [
@@ -29,13 +29,13 @@ const TRACK_COPY: Record<PlanMode, { title: string; subtitle: string; best: stri
       'No AI assistance included: you build everything out yourself',
       'Your time instead of your money: the lowest price to get started',
       'Upgrade to an AI-assisted tier when you want Copilot to help',
-      'Upgrade, downgrade, or switch to Done-For-You anytime',
+      'Upgrade, downgrade, or switch to Done For You anytime',
     ],
   },
   dfu: {
-    title: 'Done-For-You',
+    title: 'Done For You',
     subtitle: 'We run it for you',
-    best: 'Pick Done-For-You if you want it live fast without touching the tech. Our team builds, launches, and manages everything.',
+    best: 'Pick Done For You if you want it live fast without touching the tech. Our team builds, launches, and manages everything.',
     bullets: [
       'Our team sets up your maps, connections, and flows',
       'AI operated on your behalf by our team, from a larger credit pool',
@@ -47,7 +47,7 @@ const TRACK_COPY: Record<PlanMode, { title: string; subtitle: string; best: stri
 };
 
 /**
- * Guided DIY vs Done-For-You fork with tier selection.
+ * Guided DIY vs Done For You fork with tier selection.
  * Used by the onboarding wizard and the Settings plan tab (change plan).
  */
 export const RoutePicker: React.FC<RoutePickerProps> = ({
@@ -130,11 +130,11 @@ export const RoutePicker: React.FC<RoutePickerProps> = ({
       {mode && (
         <div className="space-y-3">
           <h4 className="text-sm font-bold text-white">
-            {mode === 'dfu' ? 'Choose your Done-For-You tier' : 'Choose your DIY tier'}
+            {mode === 'dfu' ? 'Choose your Done For You tier' : 'Choose your DIY tier'}
           </h4>
           {visiblePlans.length === 0 ? (
             <p className="text-xs text-slate-500 py-4 text-center">
-              No {mode === 'dfu' ? 'Done-For-You' : 'DIY'} tiers are published yet. You can still continue and pick one later.
+              No {mode === 'dfu' ? 'Done For You' : 'DIY'} tiers are published yet. You can still continue and pick one later.
             </p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

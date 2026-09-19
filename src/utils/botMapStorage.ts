@@ -69,7 +69,7 @@ export const DEMO_INVITE_NODES: FlowNode[] = [
     policyWindowHours: 24,
     allowedChannels: ['messenger', 'instagram', 'whatsapp'],
     autoRenewOnReply: true,
-    content: 'Multi-channel entry points for new leads and opt-in subscribers', 
+    content: 'Multi-channel entry points for new leads and opt in subscribers', 
     x: 40, 
     y: 120, 
     iconType: 'workflow' 
@@ -313,8 +313,8 @@ export function getFreshStarterBotMap(
         id: 'action-1',
         type: 'action',
         title: 'Tag Contact & Sync CRM',
-        actionTags: ['AddTag: VIP Lead Magnet', 'AddTag: Opt-in Confirmed'],
-        content: 'AddTag: VIP Lead Magnet\nAddTag: Opt-in Confirmed',
+        actionTags: ['AddTag: VIP Lead Magnet', 'AddTag: Opt in Confirmed'],
+        content: 'AddTag: VIP Lead Magnet\nAddTag: Opt in Confirmed',
         x: 880,
         y: 180,
         iconType: 'tag'

@@ -273,7 +273,7 @@ export const MetaConnectCard: React.FC<MetaConnectCardProps> = ({ workspaceId, o
                     <Instagram className="w-4 h-4 text-pink-400 ml-1" />
                   )}
                   <span className="text-[11px] font-medium text-emerald-200">
-                    @{status.instagram.username}
+                    @{(status.instagram.username ?? '').replace(/^@/, '')}
                   </span>
                 </span>
               ) : (

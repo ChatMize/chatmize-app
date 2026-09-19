@@ -64,7 +64,7 @@ export interface FlowTrigger {
   enabled: boolean;
   description?: string;
   
-  // Keyword & Trigger Phrase matching engine (Applies to ALL opt-in tools)
+  // Keyword & Trigger Phrase matching engine (Applies to ALL opt in tools)
   keywords?: string[];
   matchRule?: 'contains' | 'exact' | 'starts_with';
   keywordMode?: 'keywords' | 'any';
@@ -164,7 +164,7 @@ export const TRIGGER_CATALOG: TriggerTemplate[] = [
     channel: 'instagram',
     category: 'instagram',
     title: 'Instagram Story Reply',
-    description: 'Trigger opt-in flow when a follower replies to your active Instagram Story.',
+    description: 'Trigger opt in flow when a follower replies to your active Instagram Story.',
     badge: 'Engagement',
     icon: 'Play',
     defaultConfig: {
@@ -391,19 +391,19 @@ export const TRIGGER_CATALOG: TriggerTemplate[] = [
     type: 'wa_phone_form',
     channel: 'whatsapp',
     category: 'whatsapp',
-    title: 'Phone Number Opt-In Form',
-    description: 'Opt-in lead capture when a phone number is entered on website or checkout.',
-    badge: 'Opt-In',
+    title: 'Phone Number Opt In Form',
+    description: 'Opt in lead capture when a phone number is entered on website or checkout.',
+    badge: 'Opt In',
     icon: 'UserCheck',
     defaultConfig: {
-      title: 'WhatsApp Phone Number Opt-In',
+      title: 'WhatsApp Phone Number Opt In',
       keywords: ['CONFIRM', 'OPTIN', 'YES'],
       matchRule: 'contains',
       keywordMode: 'keywords'
     }
   },
 
-  // Web Growth Tools (Opt-in & Lead Capture)
+  // Web Growth Tools (Opt in & Lead Capture)
   {
     type: 'web_modal',
     channel: 'web',
@@ -429,7 +429,7 @@ export const TRIGGER_CATALOG: TriggerTemplate[] = [
     channel: 'web',
     category: 'growth_tools',
     title: 'Website Notification Bar / Slide-in',
-    description: 'Sticky header banner or subtle bottom corner slide-in with instant opt-in CTA.',
+    description: 'Sticky header banner or subtle bottom corner slide-in with instant opt in CTA.',
     badge: 'Sticky Bar',
     icon: 'Layers',
     defaultConfig: {
@@ -446,7 +446,7 @@ export const TRIGGER_CATALOG: TriggerTemplate[] = [
     type: 'web_embed_form',
     channel: 'web',
     category: 'growth_tools',
-    title: 'Embedded Opt-in Button / Widget',
+    title: 'Embedded Opt in Button / Widget',
     description: 'Embeddable HTML/React widget for blog articles, checkout pages, and docs.',
     badge: 'Embed',
     icon: 'ExternalLink',
@@ -464,11 +464,11 @@ export const TRIGGER_CATALOG: TriggerTemplate[] = [
     channel: 'web',
     category: 'growth_tools',
     title: 'Hosted Lead Magnet Landing Page',
-    description: 'Fast standalone mobile-optimized page with hero image, bullets, and 1-click opt-in.',
+    description: 'Fast standalone mobile-optimized page with hero image, bullets, and 1-click opt in.',
     badge: 'Hosted Page',
     icon: 'Globe',
     defaultConfig: {
-      title: 'Hosted Opt-in Landing Page',
+      title: 'Hosted Opt in Landing Page',
       widgetHeadline: 'Build Your First AI Bot in Under 30 Minutes',
       widgetButtonText: 'Get Started in Messenger',
       keywords: ['LANDING_PAGE', 'START', 'REGISTER'],
@@ -825,7 +825,7 @@ export const META_MESSAGING_RULES: MetaPermissionRule[] = [
     name: 'Recurring Notifications (Marketing Messages API)',
     apiName: 'notification_messages',
     type: 'recurring_notification',
-    description: "Meta's flagship API to send scheduled PROMOTIONAL and marketing updates outside the 24-hour window. Requires explicit user opt-in during active conversation.",
+    description: "Meta's flagship API to send scheduled PROMOTIONAL and marketing updates outside the 24-hour window. Requires explicit user opt in during active conversation.",
     allowedWindow: 'Daily (6 months), Weekly (9 months), Monthly (12 months)',
     promotionalAllowed: true,
     requiresUserOptIn: true,
@@ -848,7 +848,7 @@ export const META_MESSAGING_RULES: MetaPermissionRule[] = [
     apiName: 'messages (Template Object)',
     type: 'whatsapp_template',
     description: 'To initiate conversations or follow up past 24 hours on WhatsApp, businesses must use Meta-reviewed and approved templates (Marketing, Utility, Authentication).',
-    allowedWindow: 'Anytime (Subject to Meta template category rates & opt-in)',
+    allowedWindow: 'Anytime (Subject to Meta template category rates & opt in)',
     promotionalAllowed: true, // Only in MARKETING category
     requiresUserOptIn: true,
     graphPermissionRequired: 'whatsapp_business_messaging',

@@ -14,7 +14,7 @@ const DEFAULTS = {
 };
 
 /**
- * Growth tool: the web push opt-in prompt. Businesses customize the soft-ask
+ * Growth tool: the web push opt in prompt. Businesses customize the soft-ask
  * prompt, then place it on their site with the embed snippet or send visitors
  * to the hosted signup page. The prompt always soft-asks first so the hard
  * browser permission prompt only appears after a tap.
@@ -26,6 +26,10 @@ export const PushOptinBuilder: React.FC<PushOptinBuilderProps> = ({ workspaceId 
   const [error, setError] = useState<string | null>(null);
   const [embedMode, setEmbedMode] = useState<'iframe' | 'script' | 'link'>('iframe');
   const [copied, setCopied] = useState(false);
+  // Preview simulation: the preview buttons are a visual demo, never wired to
+  // anything real. data-no-personalization keeps the global variable picker
+  // buddy away from them.
+  const [previewAllowed, setPreviewAllowed] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -44,7 +48,7 @@ export const PushOptinBuilder: React.FC<PushOptinBuilderProps> = ({ workspaceId 
   const embedCode = embedMode === 'iframe'
     ? `<iframe src="${pageUrl}&embed=1" width="380" height="300" style="border:0;border-radius:16px;overflow:hidden" title="Push signup"></iframe>`
     : embedMode === 'script'
-      ? `<script>\n  // ChatMize push opt-in: opens the signup prompt as a popup\n  function chatmizePushPrompt() {\n    window.open("${pageUrl}", "chatmize-push", "width=420,height=560");\n  }\n</script>\n<button onclick="chatmizePushPrompt()">${copy.allowLabel}</button>`
+      ? `<script>\n  // ChatMize push opt in: opens the signup prompt as a popup\n  function chatmizePushPrompt() {\n    window.open("${pageUrl}", "chatmize-push", "width=420,height=560");\n  }\n</script>\n<button onclick="chatmizePushPrompt()">${copy.allowLabel}</button>`
       : pageUrl;
 
   const handleSave = async () => {
@@ -133,26 +137,53 @@ export const PushOptinBuilder: React.FC<PushOptinBuilderProps> = ({ workspaceId 
           </p>
         </div>
 
-        {/* Live preview */}
-        <div>
+        {/* Live preview (demo only: buttons simulate the opt in, inert otherwise) */}
+        <div data-no-personalization>
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
             <Eye className="w-3 h-3" /> Live preview
           </div>
           <div className="rounded-2xl bg-gradient-to-br from-violet-950/60 to-slate-950 border border-violet-500/20 p-8 flex items-center justify-center">
             <div className="w-full max-w-[320px] bg-slate-900 border border-white/10 rounded-2xl p-5 shadow-2xl">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="p-2.5 bg-violet-500/20 rounded-xl">
-                  <BellRing className="w-5 h-5 text-violet-300" />
+              {previewAllowed ? (
+                <div className="py-6 text-center">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+                  <div className="font-bold text-white text-sm mb-1">You are subscribed</div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    This is what visitors see after tapping allow. Nothing was sent, it is only a preview.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewAllowed(false)}
+                    className="mt-4 py-2 px-4 text-slate-400 hover:text-slate-200 text-xs font-semibold cursor-pointer"
+                  >
+                    Reset preview
+                  </button>
                 </div>
-                <div className="font-bold text-white text-sm leading-tight">{copy.headline || DEFAULTS.headline}</div>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed mb-4">{copy.subtext || DEFAULTS.subtext}</p>
-              <button className="w-full py-2.5 bg-violet-600 text-white rounded-xl text-xs font-bold mb-2">
-                {copy.allowLabel || DEFAULTS.allowLabel}
-              </button>
-              <button className="w-full py-2 text-slate-500 text-xs font-semibold">
-                {copy.dismissLabel || DEFAULTS.dismissLabel}
-              </button>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2.5 bg-violet-500/20 rounded-xl">
+                      <BellRing className="w-5 h-5 text-violet-300" />
+                    </div>
+                    <div className="font-bold text-white text-sm leading-tight">{copy.headline || DEFAULTS.headline}</div>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed mb-4">{copy.subtext || DEFAULTS.subtext}</p>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewAllowed(true)}
+                    className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold mb-2 cursor-pointer transition-colors"
+                  >
+                    {copy.allowLabel || DEFAULTS.allowLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewAllowed(false)}
+                    className="w-full py-2 text-slate-500 hover:text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    {copy.dismissLabel || DEFAULTS.dismissLabel}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
