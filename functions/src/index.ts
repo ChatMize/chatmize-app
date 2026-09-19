@@ -40,6 +40,13 @@ import {
 } from "./secrets";
 import { verifyMetaSignature, verifyHandshake } from "./verify";
 import {
+  requireWorkspaceAccess,
+  createWorkspaceCore,
+  claimLocalWorkspaceCore,
+  inviteWorkspaceMemberCore,
+  acceptWorkspaceInviteCore,
+} from "./workspaceAuth";
+import {
   buildLoginUrl,
   consumeOAuthState,
   exchangeCodeForPages,
@@ -301,39 +308,67 @@ function whatsAppPhoneNumberId(entry: Record<string, unknown>): string | null {
 }
 
 /**
- * Throw unless the caller may act on the workspace (member or Super Admin).
- *
- * First-use provisioning: the app's workspaces live in the client's
- * localStorage until the backend first sees them, so the workspace doc itself
- * may not exist yet. The first signed-in caller to touch a workspace id
- * provisions it (creates the workspace doc and grants themselves owner).
- * A caller touching an existing workspace that already has members is added
- * as a member (the very first member becomes owner).
+ * Workspace membership guard — shared hardened implementation in
+ * ./workspaceAuth.ts. Member doc or Super Admin claim required; a missing
+ * workspace doc or a non-member caller is a hard permission-denied. Zero
+ * writes: provisioning happens only via createWorkspace / claimLocalWorkspace.
  */
-async function requireWorkspaceAccess(
-  uid: string,
-  workspaceId: string,
-  token: Record<string, unknown> | undefined,
-): Promise<void> {
-  if (token?.superadmin === true) return;
-  const wsRef = db().collection("workspaces").doc(workspaceId);
-  const membersCol = wsRef.collection("members");
-  const member = await membersCol.doc(uid).get();
-  if (member.exists) return;
-  const ws = await wsRef.get();
-  const now = new Date().toISOString();
-  if (!ws.exists) {
-    await wsRef.set({ provisioned: true, createdBy: uid, createdAt: now });
-    await membersCol.doc(uid).set({ uid, role: "owner", createdAt: now });
-    return;
-  }
-  const first = await membersCol.limit(1).get();
-  await membersCol.doc(uid).set({
-    uid,
-    role: first.empty ? "owner" : "member",
-    createdAt: now,
+
+// ---- Workspace membership callables (card-bug-workspace-list-localstorage) ----
+// The only server-side paths that create workspaces, grant membership, or
+// write the users/{uid}/workspaceAccess reverse index.
+
+/** Create a real workspace with an unguessable ID; caller becomes owner. */
+export const createWorkspace = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { name, businessType, demo } = (request.data ?? {}) as {
+    name?: string;
+    businessType?: string;
+    demo?: boolean;
+  };
+  const workspaceId = await createWorkspaceCore(uid, {
+    name: String(name ?? ""),
+    businessType,
+    demo: demo === true,
   });
-}
+  return { workspaceId };
+});
+
+/**
+ * One-time migration: claim a localStorage-only workspace into the real
+ * membership system. Idempotent per (uid, localId).
+ */
+export const claimLocalWorkspace = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { localId, name } = (request.data ?? {}) as { localId?: string; name?: string };
+  return claimLocalWorkspaceCore(uid, {
+    localId: String(localId ?? ""),
+    name: String(name ?? ""),
+  });
+});
+
+/** Invite a team member (owner/admin only). Returns the invite id. */
+export const inviteWorkspaceMember = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, email, role } = (request.data ?? {}) as {
+    workspaceId?: string;
+    email?: string;
+    role?: "admin" | "member";
+  };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  return inviteWorkspaceMemberCore(uid, { workspaceId, email: String(email ?? ""), role });
+});
+
+/** Accept a workspace invite with its claim token. */
+export const acceptWorkspaceInvite = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId, token } = (request.data ?? {}) as { workspaceId?: string; token?: string };
+  return acceptWorkspaceInviteCore(uid, String(workspaceId ?? ""), String(token ?? ""));
+});
 
 /**
  * Meta webhook receiver: handles the verification handshake (GET) and

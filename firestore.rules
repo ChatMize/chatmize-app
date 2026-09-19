@@ -24,6 +24,15 @@ service cloud.firestore {
       allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
       allow create: if isSignedIn() && request.auth.uid == uid;
       allow update, delete: if isSuperAdmin();
+      // Workspace membership reverse index: "which workspaces do I belong
+      // to". Written by the backend only (createWorkspace /
+      // claimLocalWorkspace / invite accept via Admin SDK). Clients read
+      // their own list to render the workspace selector; they can never
+      // write it.
+      match /workspaceAccess/{wsId} {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow write: if false;
+      }
     }
 
     // Workspaces and everything nested under them (Phase 3 tenancy model)
@@ -48,14 +57,29 @@ service cloud.firestore {
       }
       // All other nested collections: workspace members (or Super Admin).
       // The server-only booking collections are excluded by name so a
-      // broad member grant can never open them.
+      // broad member grant can never open them. The members and invites
+      // subcollections are excluded too: membership changes are backend-only
+      // (Admin SDK), and they have their own explicit rules below.
       match /{collectionId}/{docId} {
         allow read, write: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
-          && !(collectionId in ['bookings', 'bookingSettings', 'bookingLocks', 'bookingEvents']);
+          && !(collectionId in ['bookings', 'bookingSettings', 'bookingLocks', 'bookingEvents', 'members', 'invites']);
       }
       match /{collectionId}/{docId}/{rest=**} {
         allow read, write: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
-          && !(collectionId in ['bookings', 'bookingSettings', 'bookingLocks', 'bookingEvents']);
+          && !(collectionId in ['bookings', 'bookingSettings', 'bookingLocks', 'bookingEvents', 'members', 'invites']);
+      }
+      // Workspace membership roster: readable by members and Super Admin,
+      // never writable from clients. The backend writes these via the
+      // membership callables (Admin SDK bypasses rules).
+      match /members/{memberId} {
+        allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+        allow write: if false;
+      }
+      // Team invites: readable by members and Super Admin (so invitees can
+      // see pending invites via a callable), never writable from clients.
+      match /invites/{inviteId} {
+        allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
+        allow write: if false;
       }
     }
 
