@@ -30,7 +30,10 @@ import {
   GoogleAuthProvider,
   User as FirebaseUser
 } from 'firebase/auth';
-import { getStorage } from 'firebase/storage';
+// firebase/storage is heavy and only needed for media uploads, which happen
+// exclusively inside lazily loaded views. It is dynamically imported on
+// first use so the main bundle skips it.
+import type { FirebaseStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Firebase web config: environment variables take precedence so each deploy
@@ -84,7 +87,15 @@ export const auth = getAuth(app);
 // VITE_CHATIMIZE_UPLOADS_BUCKET if the bucket ever changes.
 const uploadsBucket =
   envVars.VITE_CHATIMIZE_UPLOADS_BUCKET || 'chatmize-uploads-246164058141';
-export const storage = getStorage(app, `gs://${uploadsBucket}`);
+let storageInstance: FirebaseStorage | null = null;
+/** Lazily creates the Storage instance (dynamically imports firebase/storage). */
+export async function getStorageInstance(): Promise<FirebaseStorage> {
+  if (!storageInstance) {
+    const { getStorage } = await import('firebase/storage');
+    storageInstance = getStorage(app, `gs://${uploadsBucket}`);
+  }
+  return storageInstance;
+}
 export const uploadsBucketName = uploadsBucket;
 
 export interface AppUser {
@@ -718,7 +729,9 @@ export async function seedInitialMetaContacts(): Promise<void> {
   }
   try {
     const contactsRef = collection(db, 'contacts');
-    const snap = await getDocs(contactsRef);
+    // Emptiness probe: limit(1) so we never scan the whole collection
+    // just to decide whether demo seeding is needed.
+    const snap = await getDocs(query(contactsRef, limit(1)));
     if (!snap.empty) {
       return; // Already populated
     }
@@ -1041,6 +1054,9 @@ export async function seedInitialCampaigns(): Promise<void> {
     return;
   }
   try {
+    // Emptiness probe: limit(1) so we never rewrite demo campaigns on every visit.
+    const existing = await getDocs(query(collection(db, 'campaigns'), limit(1)));
+    if (!existing.empty) return;
     const demoCampaigns: CampaignRecord[] = [
       {
         id: 'camp_rn_weekly_vip',

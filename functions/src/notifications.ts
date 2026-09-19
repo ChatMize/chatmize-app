@@ -31,7 +31,15 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
 import { onDocumentWritten, onDocumentCreated } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions";
-import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import type { SESv2Client } from "@aws-sdk/client-sesv2";
+// The SES SDK is heavy and only needed by the two notification triggers.
+// It is dynamically imported on first use so every other function's cold
+// start skips it. Node caches the module, so repeat imports are free.
+let sesSdk: typeof import("@aws-sdk/client-sesv2") | null = null;
+async function ses(): Promise<typeof import("@aws-sdk/client-sesv2")> {
+  if (!sesSdk) sesSdk = await import("@aws-sdk/client-sesv2");
+  return sesSdk;
+}
 import { createHash } from "crypto";
 
 const PROJECT_ID = "gen-lang-client-0433776094";
@@ -75,6 +83,7 @@ let sesClient: SESv2Client | null = null;
 
 async function getSesClient(): Promise<SESv2Client | null> {
   if (sesClient) return sesClient;
+  const { SESv2Client } = await ses();
   const payload = await readSecretPayload(SES_SECRET_NAME);
   if (!payload) {
     logger.error("SES credentials secret unreadable; skipping email send");
@@ -241,6 +250,7 @@ export async function sendNotificationEmail(
   }
 
   try {
+    const { SendEmailCommand } = await ses();
     const res = await client.send(
       new SendEmailCommand({
         FromEmailAddress: FROM_ADDRESS,
@@ -545,6 +555,7 @@ export async function sendWaitlistConfirmationEmail(
   }
   const copy = waitlistConfirmCopy(name, confirmUrl);
   try {
+    const { SendEmailCommand } = await ses();
     const res = await client.send(
       new SendEmailCommand({
         FromEmailAddress: FROM_ADDRESS,
