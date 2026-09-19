@@ -259,6 +259,9 @@ export const ContestEntryPage: React.FC<ContestEntryPageProps> = ({ contestId })
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Jane Smith"
+                  type="text"
+                  name="name"
+                  autoComplete="name"
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900"
                 />
               </div>
@@ -270,7 +273,9 @@ export const ContestEntryPage: React.FC<ContestEntryPageProps> = ({ contestId })
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@email.com"
                     type="email"
+                    name="email"
                     autoComplete="email"
+                    inputMode="email"
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900"
                   />
                 </div>
@@ -281,7 +286,9 @@ export const ContestEntryPage: React.FC<ContestEntryPageProps> = ({ contestId })
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="(555) 123-4567"
                     type="tel"
+                    name="phone"
                     autoComplete="tel"
+                    inputMode="tel"
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900"
                   />
                 </div>
