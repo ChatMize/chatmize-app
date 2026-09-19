@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getApp } from 'firebase/app';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
@@ -217,6 +217,13 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   initialTab = 'kanban'
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist' | 'catalog' | 'push'>(initialTab);
+  // Follow the route: switching between the Super Admin entry points
+  // ('super-admin' -> users, 'kanban' -> kanban) must land on the intended
+  // sub-tab. Without this the component never remounts across those routes,
+  // so the alternate route showed whatever sub-tab was left open before.
+  useEffect(() => {
+    setActiveSubTab(initialTab);
+  }, [initialTab]);
   const [users, setUsers] = useState<UserRecord[]>(INITIAL_USERS);
   const [searchQuery, setSearchQuery] = useState('');
   const { plans, loading: plansLoading } = usePlans();

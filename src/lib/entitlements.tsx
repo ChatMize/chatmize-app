@@ -22,19 +22,36 @@ export function usePlans(): { plans: Plan[]; loading: boolean } {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let unsub: (() => void) | undefined;
-    ensureDefaultPlans()
-      .catch((e) => console.warn("Could not ensure default plans:", e))
-      .finally(() => {
-        unsub = subscribeToPlans(
-          (data) => {
-            setPlans(data.length > 0 ? data : DEFAULT_PLANS);
-            setLoading(false);
-          },
-          () => setLoading(false),
-        );
-      });
-    return () => unsub?.();
+    let cancelled = false;
+    // Subscribe to the live plans immediately. The one-time seed used to gate
+    // the subscription, so a slow/stalled seed round-trip left the Plans tab
+    // stuck on "Loading plans..." with no tier cards (the header renders
+    // regardless). The seed now runs in the background and can never block
+    // the tier cards.
+    const unsub = subscribeToPlans(
+      (data) => {
+        if (cancelled) return;
+        setPlans(data.length > 0 ? data : DEFAULT_PLANS);
+        setLoading(false);
+      },
+      () => {
+        if (!cancelled) setLoading(false);
+      },
+    );
+    ensureDefaultPlans().catch((e) =>
+      console.warn("Could not ensure default plans:", e),
+    );
+    // Safety net: never leave the UI stuck in the loading state. If Firestore
+    // never answers, fall back to the bundled default tiers so the cards
+    // always render.
+    const timer = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 15000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      unsub();
+    };
   }, []);
 
   return { plans, loading };
