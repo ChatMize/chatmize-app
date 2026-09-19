@@ -61,7 +61,8 @@ import {
   Sliders,
   Search,
   BookOpen,
-  Hash
+  Hash,
+  HelpCircle
 } from 'lucide-react';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { EmojiPickerButton, useEmojiTarget, useEmojiTargetMap } from '../components/emoji';
@@ -73,7 +74,8 @@ import {
 } from '../data/integrations';
 import { saveContact, setContactVariable, saveRecurringNotificationToken, saveOtnToken } from '../lib/firebase';
 import { validateCaptureInput, CaptureField, CaptureMode } from '../lib/contactCapture';
-import { PersonalizationPickerButton, usePersonalizationTarget, usePersonalizationTargetMap } from '../components/personalization';
+import { validateVariableInput, sanitizeVariableName, validateVariableName, RESERVED_VARIABLE_NAMES, VARIABLE_TYPES } from '../lib/flowVariables';
+import { PersonalizationPickerButton, usePersonalizationTarget, usePersonalizationTargetMap, VariablePickerButton, FlowVariable } from '../components/personalization';
 import { 
   MetaMessageTag, 
   validateMessageTagCompliance, 
@@ -98,6 +100,7 @@ export type MessageComponentType =
   | 'video'
   | 'audio'
   | 'contact_capture'
+  | 'question'
   | 'card' 
   | 'gallery' 
   | 'typing'
@@ -129,6 +132,12 @@ export interface MessageComponent {
   captureFields?: Array<'phone' | 'email'>;
   captureMode?: 'quick_reply' | 'free_text' | 'both';
   capturePrompt?: string;
+  // Question block: ask something and save the typed answer to a named
+  // variable on the contact. Phone/email use the contact capture block;
+  // this covers text, number, and date answers.
+  questionPrompt?: string;
+  questionVariable?: string;
+  questionType?: 'text' | 'number' | 'date';
   cardTitle?: string;
   cardSubtitle?: string;
   cardImageUrl?: string;
@@ -190,6 +199,10 @@ export interface FlowNode {
   // SMS action (sent via the workspace's provisioned Twilio number; requires opt-in)
   smsMessage?: string;
   smsCollectOptIn?: boolean;
+  // Webhook action: POST the contact's collected variables to a third
+  // party URL as JSON. Configured per node, stored on the flow document.
+  // variableNames limits the push; empty means all variables.
+  webhookAction?: { url: string; variableNames?: string[] };
   delayText?: string;
   delayHours?: number;
   conditionText?: string;
@@ -628,6 +641,7 @@ export function FlowBuilder({
           if (c.type === 'image' || c.type === 'video' || c.type === 'card' || c.type === 'gallery') estimatedY += 160;
           if (c.type === 'audio') estimatedY += 120;
           if (c.type === 'contact_capture') estimatedY += 140;
+          if (c.type === 'question') estimatedY += 140;
           else if (c.type === 'typing') estimatedY += 44;
           else if (c.type === 'text') estimatedY += 48;
           else if (c.type === 'recurring_notification_optin' || c.type === 'one_time_notification_optin') estimatedY += 120;
@@ -2774,6 +2788,12 @@ const NodeCard = React.memo(function NodeCard({
             Collects SMS opt-in
           </div>
         )}
+        {isAction && node.webhookAction?.url && (
+          <div className="text-xs bg-amber-500/10 text-amber-100 px-2.5 py-1.5 rounded-lg border border-amber-500/20 flex items-start gap-2 mt-1.5">
+            <Webhook className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <span className="truncate font-mono">Webhook: {node.webhookAction.url}</span>
+          </div>
+        )}
 
         {isDelay && (
           <div className="text-xs text-purple-200 bg-purple-500/10 border border-purple-500/20 p-2.5 rounded-xl flex items-center gap-2">
@@ -2934,6 +2954,36 @@ const NodeCard = React.memo(function NodeCard({
                           or type it
                         </span>
                       )}
+                    </div>
+                  </div>
+                );
+              }
+
+              if (comp.type === 'question') {
+                const varName = sanitizeVariableName(comp.questionVariable || '') || 'variable';
+                return (
+                  <div key={comp.id || cIdx} className="rounded-xl overflow-hidden border border-violet-500/30 bg-slate-950/60 relative p-2.5">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <div className="p-1.5 rounded-lg bg-violet-500/15 border border-violet-500/30">
+                        <HelpCircle className="w-4 h-4 text-violet-400" />
+                      </div>
+                      <span className="text-[11px] font-semibold text-violet-200">
+                        Ask and save
+                      </span>
+                      <span className="ml-auto text-[10px] font-mono text-violet-300/80 bg-violet-500/10 border border-violet-500/20 px-1.5 py-0.5 rounded">
+                        {`{{${varName}}}`}
+                      </span>
+                    </div>
+                    {comp.questionPrompt && (
+                      <div className="text-[11px] text-slate-300 truncate mb-1.5">
+                        {comp.questionPrompt}
+                      </div>
+                    )}
+                    <div className="flex gap-1.5 items-center">
+                      <span className="text-[10px] font-bold bg-violet-500/15 border border-violet-500/30 text-violet-300 px-2 py-1 rounded-lg capitalize">
+                        {comp.questionType || 'text'}
+                      </span>
+                      <span className="text-[10px] text-slate-500">answer saved to {varName}</span>
                     </div>
                   </div>
                 );
@@ -3313,6 +3363,26 @@ function NodeEditor({
   const msgPz = usePersonalizationTarget<HTMLTextAreaElement>();
   const compPz = usePersonalizationTargetMap<HTMLTextAreaElement>();
 
+  // Variables defined by question blocks anywhere in this flow, for the
+  // variable picker in the message composers.
+  const flowVariables: FlowVariable[] = useMemo(() => {
+    const seen = new Map<string, FlowVariable>();
+    for (const n of nodes || []) {
+      for (const c of n.components || []) {
+        if (c.type !== 'question') continue;
+        const name = sanitizeVariableName(c.questionVariable || '');
+        if (!name || seen.has(name)) continue;
+        if (RESERVED_VARIABLE_NAMES.has(name)) continue;
+        seen.set(name, {
+          name,
+          type: c.questionType || 'text',
+          prompt: c.questionPrompt || '',
+        });
+      }
+    }
+    return [...seen.values()];
+  }, [nodes]);
+
   const handleUpdateTrigger = (triggerId: string, updates: Partial<FlowTrigger>) => {
     const currentTriggers = node.triggers || [];
     const updated = currentTriggers.map(t => t.id === triggerId ? { ...t, ...updates } : t);
@@ -3552,6 +3622,14 @@ function NodeEditor({
         captureFields: ['phone', 'email'],
         captureMode: 'both',
         capturePrompt: 'How can we reach you? Tap below or type it in.',
+      };
+    } else if (type === 'question') {
+      newComp = {
+        id: `comp-${Date.now()}`,
+        type: 'question',
+        questionPrompt: 'What is your appointment date?',
+        questionVariable: 'appointment_date',
+        questionType: 'date',
       };
     } else if (type === 'card') {
       newComp = {
@@ -4986,6 +5064,12 @@ function NodeEditor({
                   placement="down"
                   title="Insert personalization"
                 />
+                <VariablePickerButton
+                  variables={flowVariables}
+                  onPick={(t) => msgPz.insert(t, node.content || '', (v) => onAutoUpdate({ content: v }))}
+                  placement="down"
+                  title="Insert flow variable"
+                />
                 <button
                   onClick={() => onAutoUpdate({ content: (node.content || '') + ' {{first_name}}' })}
                   className="text-[11px] font-bold text-blue-400 hover:text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20"
@@ -5207,6 +5291,12 @@ function NodeEditor({
                                 placement="down"
                                 title="Insert personalization"
                               />
+                              <VariablePickerButton
+                                variables={flowVariables}
+                                onPick={(t) => compPz.insert(`bubble:${comp.id}`, t, comp.text || '', (v) => handleUpdateComponent(comp.id, { text: v }))}
+                                placement="down"
+                                title="Insert flow variable"
+                              />
                               <button
                                 type="button"
                                 onClick={() => handleUpdateComponent(comp.id, { text: (comp.text || '') + ' {{first_name}}' })}
@@ -5401,6 +5491,68 @@ function NodeEditor({
                             </div>
                             <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
                               One tap serves their own number or email as a button on Messenger and Instagram. Typing works everywhere and is validated automatically.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {comp.type === 'question' && (
+                        <div className="space-y-3 pt-1">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Question</label>
+                            <input
+                              type="text"
+                              value={comp.questionPrompt || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { questionPrompt: e.target.value })}
+                              placeholder="What is your appointment date?"
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white outline-none focus:border-violet-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Save answer as</label>
+                            <input
+                              type="text"
+                              value={comp.questionVariable || ''}
+                              onChange={(e) => handleUpdateComponent(comp.id, { questionVariable: sanitizeVariableName(e.target.value) })}
+                              placeholder="appointment_date"
+                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono outline-none focus:border-violet-500"
+                            />
+                            {(() => {
+                              const nameCheck = validateVariableName(comp.questionVariable || '');
+                              if (nameCheck.ok) return null;
+                              return (
+                                <p className="text-[10px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-1.5 mt-1.5 leading-snug">
+                                  {nameCheck.error}
+                                </p>
+                              );
+                            })()}
+                            <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
+                              Use it later as {`{{${sanitizeVariableName(comp.questionVariable || '') || 'variable'}}}`} in any message, or push it to a third party with the webhook action.
+                            </p>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Answer type</label>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {VARIABLE_TYPES.map((t) => (
+                                <button
+                                  key={t.v}
+                                  type="button"
+                                  title={t.hint}
+                                  onClick={() => handleUpdateComponent(comp.id, { questionType: t.v })}
+                                  className={`px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                                    (comp.questionType || 'text') === t.v
+                                      ? 'bg-violet-500 text-white'
+                                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                  }`}
+                                >
+                                  {t.label}
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">
+                              Dates accept natural typing like Jan 5 2027 and are saved as YYYY-MM-DD.
                             </p>
                           </div>
                         </div>
@@ -5951,6 +6103,31 @@ function NodeEditor({
               </p>
             </div>
 
+            {/* Webhook action: POST collected variables to a third party */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Webhook className="w-3 h-3 text-amber-400" />
+                <span>Send variables to webhook</span>
+              </label>
+              <input
+                type="url"
+                value={node.webhookAction?.url || ''}
+                onChange={(e) => onAutoUpdate({ webhookAction: { ...(node.webhookAction || { variableNames: [] }), url: e.target.value } })}
+                placeholder="https://your-crm.com/hook"
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 outline-none focus:border-amber-500 transition-colors"
+              />
+              <input
+                type="text"
+                value={(node.webhookAction?.variableNames || []).join(', ')}
+                onChange={(e) => onAutoUpdate({ webhookAction: { url: node.webhookAction?.url || '', variableNames: e.target.value.split(',').map((s) => sanitizeVariableName(s)).filter(Boolean) } })}
+                placeholder="Variable names, comma separated (empty sends all)"
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 outline-none focus:border-amber-500 transition-colors"
+              />
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Fires from the API with the contact id and variables as JSON. HTTPS only. Fires once per call, never retried.
+              </p>
+            </div>
+
             {/* Active Integrations Cascading Configuration: Connection -> List -> Tags */}
             <div className="pt-3 border-t border-white/10 space-y-2.5">
               <div className="flex items-center justify-between">
@@ -6318,6 +6495,15 @@ function NodeEditor({
               <UserCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-400 group-hover:scale-110 transition-transform mb-0.5" />
               <span className="text-[9px] sm:text-[10px] font-bold text-sky-300">Capture</span>
             </button>
+            <button 
+              type="button"
+              onClick={() => handleAddComponent('question')}
+              className="flex flex-col items-center justify-center p-1.5 sm:p-2 bg-slate-900 border border-violet-500/40 hover:border-violet-400 hover:bg-violet-500/15 rounded-xl transition-all group cursor-pointer active:scale-95 shadow-sm shadow-violet-500/10"
+              title="Add question block (save the answer as a variable)"
+            >
+              <HelpCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-violet-400 group-hover:scale-110 transition-transform mb-0.5" />
+              <span className="text-[9px] sm:text-[10px] font-bold text-violet-300">Ask</span>
+            </button>
           </div>
 
           {/* Meta Post-24h Compliance Opt-in Components */}
@@ -6373,7 +6559,8 @@ type SimulatorItem =
   | { id: string; sender: 'bot'; type: 'rn_optin'; topic: string; frequency: string; title: string; buttonText: string; tokenGranted?: boolean }
   | { id: string; sender: 'bot'; type: 'otn_optin'; topic: string; buttonText: string; tokenGranted?: boolean }
   | { id: string; sender: 'bot'; type: 'wa_template'; templateName: string; category: string; header?: string; body: string }
-  | { id: string; sender: 'bot'; type: 'contact_capture'; prompt: string; fields: Array<'phone' | 'email'>; mode: 'quick_reply' | 'free_text' | 'both' };
+  | { id: string; sender: 'bot'; type: 'contact_capture'; prompt: string; fields: Array<'phone' | 'email'>; mode: 'quick_reply' | 'free_text' | 'both' }
+  | { id: string; sender: 'bot'; type: 'question'; prompt: string; variable: string; varType: 'text' | 'number' | 'date' };
 
 function PhoneSimulator({ 
   nodes, 
@@ -6397,18 +6584,39 @@ function PhoneSimulator({
   const [activeCapture, setActiveCapture] = useState<{ compId: string; fields: Array<'phone' | 'email'>; mode: 'quick_reply' | 'free_text' | 'both' } | null>(null);
   const [captureInput, setCaptureInput] = useState('');
   const [captureError, setCaptureError] = useState<string | null>(null);
+  // Question block: armed while an Ask block waits for the user's answer.
+  const [activeQuestion, setActiveQuestion] = useState<{ compId: string; variable: string; varType: 'text' | 'number' | 'date' } | null>(null);
+  const [questionInput, setQuestionInput] = useState('');
+  const [questionError, setQuestionError] = useState<string | null>(null);
+  // The simulated contact: collected phone/email plus saved variables.
+  const [simContact, setSimContact] = useState<{
+    firstName: string;
+    email: string;
+    phone: string;
+    variables: Record<string, string>;
+  }>({
+    firstName: 'Alex',
+    email: 'alex.webinar@gmail.com',
+    phone: '+1 (555) 019-2834',
+    variables: {},
+  });
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const galleryScrollRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const stepQueueRef = useRef<Array<() => void>>([]);
 
-  // Replace personalization variables
+  // Replace personalization variables, plus any variable saved by an Ask
+  // block earlier in the flow (resolved against the simulated contact).
   const replaceVars = (text: string) => {
-    return text
-      .replace(/{{first_name}}/g, 'Alex')
-      .replace(/{{email}}/g, 'alex.webinar@gmail.com')
-      .replace(/{{phone}}/g, '+1 (555) 019-2834');
+    const withFlowVars = text.replace(/{{([a-z_][a-z0-9_]*)}}/g, (match, name) => {
+      if (name === 'first_name') return simContact.firstName;
+      if (name === 'email') return simContact.email;
+      if (name === 'phone') return simContact.phone;
+      const val = simContact.variables[name];
+      return val !== undefined ? String(val) : match;
+    });
+    return withFlowVars;
   };
 
   // Scroll to bottom on updates
@@ -6507,6 +6715,25 @@ function PhoneSimulator({
       } catch (e) {}
 
       // Find outbound connection from this action node
+      // Webhook action: simulate the push (no real POST from the browser).
+      // Production pushes fire from the API via the send_webhook tool.
+      if (node.webhookAction?.url) {
+        const pushedNames = node.webhookAction.variableNames && node.webhookAction.variableNames.length > 0
+          ? node.webhookAction.variableNames
+          : Object.keys(simContact.variables);
+        const pushedPairs = pushedNames
+          .map((name) => `${name}=${simContact.variables[name] ?? '(empty)'}`)
+          .join(', ');
+        setChatItems((prev) => [
+          ...prev,
+          {
+            id: `webhook-${Date.now()}`,
+            sender: 'bot',
+            type: 'text',
+            text: `Webhook simulated → ${node.webhookAction!.url}${pushedPairs ? ` (${pushedPairs})` : ''}`,
+          },
+        ]);
+      }
       const nextConn = connections.find(c => c.sourceNodeId === node.id);
       if (nextConn) {
         setTimeout(() => {
@@ -6716,6 +6943,50 @@ function PhoneSimulator({
               next?.();
             }
           });
+        } else if (comp.type === 'question') {
+          queue.push(() => {
+            const nameCheck = validateVariableName(comp.questionVariable || '');
+            if (!nameCheck.ok) {
+              // Reserved or empty name: say so in the simulator and move on
+              // instead of arming a question that could never save correctly.
+              setChatItems(prev => [
+                ...prev,
+                {
+                  id: `comp-${comp.id}-blocked`,
+                  sender: 'bot',
+                  type: 'text',
+                  text: `Question skipped: ${nameCheck.error}`,
+                }
+              ]);
+              if (stepQueueRef.current.length > 0) {
+                const next = stepQueueRef.current.shift();
+                next?.();
+              }
+              return;
+            }
+            const variable = nameCheck.name;
+            const varType = comp.questionType === 'number' || comp.questionType === 'date' ? comp.questionType : 'text';
+            setChatItems(prev => [
+              ...prev,
+              {
+                id: `comp-${comp.id}`,
+                sender: 'bot',
+                type: 'question',
+                prompt: replaceVars(comp.questionPrompt || 'What is your answer?'),
+                variable,
+                varType,
+              }
+            ]);
+            // Arm the question: the flow waits here until the user types an
+            // answer (validated and normalized like the server).
+            setActiveQuestion({ compId: comp.id, variable, varType });
+            setQuestionInput('');
+            setQuestionError(null);
+            if (stepQueueRef.current.length > 0) {
+              const next = stepQueueRef.current.shift();
+              next?.();
+            }
+          });
         }
     };
 
@@ -6885,6 +7156,29 @@ function PhoneSimulator({
     advanceFromNode(capturedNodeRef.current, compId);
   };
 
+  // --- Question block: validate the typed answer, save it to the variable,
+  // then continue the flow from the asking node ---
+  const handleQuestionSubmit = () => {
+    if (!activeQuestion) return;
+    const result = validateVariableInput(questionInput, activeQuestion.varType);
+    if (!result.ok) {
+      setQuestionError(result.error);
+      return;
+    }
+    const variable = activeQuestion.variable;
+    setSimContact((prev) => ({
+      ...prev,
+      variables: { ...prev.variables, [variable]: result.value },
+    }));
+    setContactVariable('sim_contact_alex_vance', variable, result.value).catch(() => {});
+    setChatItems((prev) => [...prev, { id: `user-question-${Date.now()}`, sender: 'user', type: 'text', text: result.value }]);
+    const compId = activeQuestion.compId;
+    setActiveQuestion(null);
+    setQuestionInput('');
+    setQuestionError(null);
+    advanceFromNode(capturedNodeRef.current, compId);
+  };
+
   const handleReset = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     stepQueueRef.current = [];
@@ -6894,8 +7188,12 @@ function PhoneSimulator({
     setActiveCapture(null);
     setCaptureInput('');
     setCaptureError(null);
+    setActiveQuestion(null);
+    setQuestionInput('');
+    setQuestionError(null);
     setActiveQuickReplies([]);
     setAppliedTag(null);
+    setSimContact({ firstName: 'Alex', email: 'alex.webinar@gmail.com', phone: '+1 (555) 019-2834', variables: {} });
 
     const startNode = nodes.find(n => n.type === 'trigger') || nodes.find(n => n.id === 'step-1') || nodes[0];
     if (startNode) {
@@ -7386,6 +7684,60 @@ function PhoneSimulator({
                             {captureError}
                           </div>
                         )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // Question block: ask the prompt, take a typed answer, save it to
+            // the named variable (later {{variable}} tags resolve to it).
+            if (item.type === 'question') {
+              const showControls = activeQuestion?.compId === item.id.replace('comp-', '');
+              const savedValue = !showControls ? simContact.variables[item.variable] : undefined;
+              return (
+                <div key={item.id} className="flex flex-col items-start animate-in fade-in slide-in-from-bottom-2 duration-200 w-full max-w-[90%]">
+                  <div className="bg-violet-950/50 border border-violet-500/40 rounded-2xl rounded-bl-none overflow-hidden shadow-lg w-full p-3.5 space-y-2">
+                    <div className="flex items-center gap-1.5 text-violet-300 font-bold text-xs">
+                      <HelpCircle className="w-3.5 h-3.5 text-violet-400" />
+                      <span>Question</span>
+                      <span className="ml-auto text-[9px] font-mono font-normal text-violet-400/80 bg-violet-500/10 border border-violet-500/20 px-1.5 py-0.5 rounded">
+                        {`{{${item.variable}}}`}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+                      {item.prompt}
+                    </div>
+                    {showControls && (
+                      <div className="space-y-2 pt-1">
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={questionInput}
+                            onChange={(e) => { setQuestionInput(e.target.value); setQuestionError(null); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleQuestionSubmit(); }}
+                            placeholder={item.varType === 'date' ? 'e.g. Jan 5 2027' : item.varType === 'number' ? 'e.g. 42' : 'Type your answer'}
+                            className="flex-1 min-w-0 bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-violet-500 placeholder:text-slate-600"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleQuestionSubmit}
+                            className="bg-violet-500 hover:bg-violet-400 text-white text-xs font-bold px-3 rounded-lg transition-colors"
+                          >
+                            Send
+                          </button>
+                        </div>
+                        {questionError && (
+                          <div className="text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-1.5">
+                            {questionError}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {savedValue !== undefined && (
+                      <div className="text-[10px] text-violet-300/70 font-mono pt-0.5">
+                        Saved: {savedValue}
                       </div>
                     )}
                   </div>

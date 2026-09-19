@@ -412,6 +412,8 @@ interface SendMessageData {
     /** Contact capture (BotMaps block): one-tap phone/email quick replies. */
     contactCaptureFields?: Array<"phone" | "email">;
     contactCaptureMode?: "quick_reply" | "free_text" | "both";
+    /** Variable capture (BotMaps question block): ask and save the answer. */
+    variableCapture?: { variable: string; varType: "text" | "number" | "date" };
     /** Frontend's optimistic message id, echoed back as clientId on the
      * persisted doc so the UI can reconcile instead of duplicating. */
     clientMessageId?: string;
@@ -428,13 +430,14 @@ export const sendChannelMessage = onCall(
     if (!uid) {
       throw new HttpsError("unauthenticated", "Sign in required.");
     }
-    const { workspaceId, channel, recipientId, text, mediaUrl, mediaType, quickReplies, contactCaptureFields, contactCaptureMode, clientMessageId } = (request.data ?? {}) as SendMessageData;
+    const { workspaceId, channel, recipientId, text, mediaUrl, mediaType, quickReplies, contactCaptureFields, contactCaptureMode, variableCapture, clientMessageId } = (request.data ?? {}) as SendMessageData;
     if (!workspaceId || !channel || !recipientId) {
       throw new HttpsError("invalid-argument", "workspaceId, channel, and recipientId are required.");
     }
     const hasCapture = !!contactCaptureFields?.length;
-    if (!text && !mediaUrl && !hasCapture && !(quickReplies?.length)) {
-      throw new HttpsError("invalid-argument", "Provide message text, a media attachment, quick replies, or a contact capture.");
+    const hasVariableCapture = !!variableCapture?.variable;
+    if (!text && !mediaUrl && !hasCapture && !hasVariableCapture && !(quickReplies?.length)) {
+      throw new HttpsError("invalid-argument", "Provide message text, a media attachment, quick replies, a contact capture, or a variable capture.");
     }
     if (mediaUrl && !["video", "audio", "image"].includes(mediaType ?? "")) {
       throw new HttpsError("invalid-argument", "mediaType must be video, audio, or image.");
@@ -459,6 +462,9 @@ export const sendChannelMessage = onCall(
           quickReplies: quickReplies ?? null,
           contactCapture: contactCaptureFields?.length
             ? { fields: contactCaptureFields, mode: contactCaptureMode ?? "both" }
+            : null,
+          variableCapture: hasVariableCapture
+            ? { variable: variableCapture!.variable, varType: variableCapture!.varType ?? "text" }
             : null,
         },
       );

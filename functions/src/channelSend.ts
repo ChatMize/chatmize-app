@@ -46,6 +46,11 @@ import {
   resolvePersonalizationTags,
   getContactForRecipient,
 } from "./personalization";
+import {
+  sanitizeVariableName,
+  assertVariableNameAllowed,
+  VariableType,
+} from "./flowVariables";
 import { recordOutboundMessage, Channel } from "./store";
 
 export type { ContactCaptureField };
@@ -113,6 +118,20 @@ export interface ContactCapture {
 export const DEFAULT_CAPTURE_PROMPT =
   "How can we reach you? Tap below or type it in.";
 
+/**
+ * Variable capture for a send (BotMaps question block).
+ * The question goes out as TEXT, then pendingVariables is armed on the
+ * conversation so the next inbound message is validated by type and saved
+ * to the contact's variables. Phone/email use the contact capture block;
+ * this covers text, number, and date questions.
+ */
+export interface VariableCapture {
+  variable: string;
+  varType: "text" | "number" | "date";
+  /** Re-prompt attempts so far (used internally by the capture handler). */
+  attempts?: number;
+}
+
 /** Optional extras for a send: plain quick replies and/or contact capture. */
 export interface SendExtras {
   /** Plain-text quick reply buttons. Meta text-first rule: always sent
@@ -121,6 +140,9 @@ export interface SendExtras {
   /** Contact capture (BotMaps block): one-tap phone/email quick replies
    * on the text prompt, then arms pendingCapture on the conversation. */
   contactCapture?: ContactCapture | null;
+  /** Variable capture (BotMaps question block): asks the question as text,
+   * then arms pendingVariables on the conversation. */
+  variableCapture?: VariableCapture | null;
 }
 
 /**
@@ -133,7 +155,9 @@ export interface SendExtras {
  * Quick replies always ride the text unit, never the media (Meta rule).
  * A contact capture sends the prompt as text with one-tap phone/email
  * quick replies attached, then arms pendingCapture on the conversation
- * so the next inbound message is saved as the answer.
+ * so the next inbound message is saved as the answer. A variable capture
+ * (question block) sends the question as text, then arms pendingVariables
+ * so the next inbound message is validated and saved to the named variable.
  */
 export async function sendChannelMessageInternal(
   workspaceId: string,
@@ -146,6 +170,7 @@ export async function sendChannelMessageInternal(
 ): Promise<ChannelSendResult> {
   const quickReplies = extras?.quickReplies ?? null;
   const contactCapture = extras?.contactCapture ?? null;
+  const variableCapture = extras?.variableCapture ?? null;
   if (!workspaceId || !channel || !recipientId) {
     throw new ChannelSendError(
       "invalid-argument",
@@ -192,10 +217,52 @@ export async function sendChannelMessageInternal(
       );
     }
   }
-  if (!text && !media?.url && !contactCapture && !(quickReplies?.length)) {
+  if (contactCapture && variableCapture) {
     throw new ChannelSendError(
       "invalid-argument",
-      "Provide message text, a media attachment, quick replies, or a contact capture.",
+      "Contact capture and variable capture cannot be combined. Send them as separate messages.",
+    );
+  }
+  if (variableCapture) {
+    let cleanName: string;
+    try {
+      cleanName = assertVariableNameAllowed(variableCapture.variable);
+    } catch (err) {
+      throw new ChannelSendError(
+        "invalid-argument",
+        err instanceof Error ? err.message : "Variable name is not allowed.",
+      );
+    }
+    if (!["text", "number", "date"].includes(variableCapture.varType)) {
+      throw new ChannelSendError(
+        "invalid-argument",
+        "Variable type must be text, number, or date.",
+      );
+    }
+    if (media?.url) {
+      throw new ChannelSendError(
+        "invalid-argument",
+        "Variable capture cannot be combined with a media attachment. Send them as separate messages.",
+      );
+    }
+    if (quickReplies?.length) {
+      throw new ChannelSendError(
+        "invalid-argument",
+        "Variable capture cannot be combined with custom quick replies. Send them as separate messages.",
+      );
+    }
+    if (!text || !text.trim()) {
+      throw new ChannelSendError(
+        "invalid-argument",
+        "Variable capture needs a question. Provide message text.",
+      );
+    }
+    variableCapture.variable = cleanName;
+  }
+  if (!text && !media?.url && !contactCapture && !variableCapture && !(quickReplies?.length)) {
+    throw new ChannelSendError(
+      "invalid-argument",
+      "Provide message text, a media attachment, quick replies, a contact capture, or a variable capture.",
     );
   }
   if (media?.url && !["video", "audio", "image"].includes(media.type)) {
@@ -237,6 +304,8 @@ export async function sendChannelMessageInternal(
       text: text && text.trim() ? resolvedText : DEFAULT_CAPTURE_PROMPT,
     });
   } else if (text && text.trim()) {
+    // A variable capture (question block) sends the question as plain text;
+    // pendingVariables is armed after the send so the reply is captured.
     units.push({ text: resolvedText, quickReplies: qr.length > 0 ? qr : undefined });
   } else if (qr.length > 0) {
     units.push({ text: "Choose an option", quickReplies: qr });
@@ -453,6 +522,26 @@ export async function sendChannelMessageInternal(
             remaining: contactCapture.fields,
             mode: contactCapture.mode,
             attempts: contactCapture.attempts ?? 0,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+        },
+        { merge: true },
+      );
+  }
+  if (variableCapture) {
+    // Arm the question: the next inbound message on this conversation is
+    // validated by type and saved to the named variable on the contact.
+    await db()
+      .collection("workspaces")
+      .doc(workspaceId)
+      .collection("conversations")
+      .doc(`${channel}_${recipientId}`)
+      .set(
+        {
+          pendingVariables: {
+            variable: variableCapture.variable,
+            varType: variableCapture.varType,
+            attempts: variableCapture.attempts ?? 0,
             updatedAt: FieldValue.serverTimestamp(),
           },
         },

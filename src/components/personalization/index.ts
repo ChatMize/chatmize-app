@@ -107,3 +107,5 @@ export function usePersonalizationTargetMap<T extends TextField>() {
 }
 
 export { default as PersonalizationPickerButton } from './PersonalizationPickerButton';
+export { default as VariablePickerButton } from './VariablePickerButton';
+export type { FlowVariable } from './VariablePickerPanel';

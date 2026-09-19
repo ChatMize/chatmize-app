@@ -14,6 +14,8 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { sendChannelMessageInternal, ChannelSendError } from "../channelSend";
 import { sendSmsInternal, SmsSendError } from "../smsSend";
 import { runSmsBroadcastInternal, SmsBroadcastError } from "../smsBroadcast";
+import { executeWebhookAction } from "../flowWebhook";
+import { sanitizeVariableName, assertVariableNameAllowed } from "../flowVariables";
 import type { VerifiedKey } from "./auth";
 
 const db = () => getFirestore("chatmize-prod");
@@ -150,10 +152,11 @@ async function resolveSendTarget(
  */
 export async function sendMessage(
   ctx: ToolContext,
-  args: { channel: string; recipientId?: string; conversationId?: string; text?: string; mediaUrl?: string; mediaType?: "video" | "audio" | "image"; quickReplies?: string[]; contactCaptureFields?: Array<"phone" | "email">; contactCaptureMode?: "quick_reply" | "free_text" | "both" },
+  args: { channel: string; recipientId?: string; conversationId?: string; text?: string; mediaUrl?: string; mediaType?: "video" | "audio" | "image"; quickReplies?: string[]; contactCaptureFields?: Array<"phone" | "email">; contactCaptureMode?: "quick_reply" | "free_text" | "both"; variableCapture?: { variable: string; varType?: "text" | "number" | "date" } },
 ): Promise<{ ok: boolean; messageId: string | null; channel: string; recipientId: string }> {
   const hasCapture = !!args.contactCaptureFields?.length;
-  if ((!args.text || !args.text.trim()) && !args.mediaUrl && !hasCapture && !(args.quickReplies?.length)) throw new Error("Provide text, a media attachment, quick replies, or a contact capture.");
+  const hasVariableCapture = !!args.variableCapture?.variable;
+  if ((!args.text || !args.text.trim()) && !args.mediaUrl && !hasCapture && !hasVariableCapture && !(args.quickReplies?.length)) throw new Error("Provide text, a media attachment, quick replies, a contact capture, or a variable capture.");
   if (args.text && args.text.length > 1600) throw new Error("text is too long (max 1600 characters).");
   if (args.mediaUrl && !["video", "audio", "image"].includes(args.mediaType ?? "")) {
     throw new Error("mediaType must be video, audio, or image.");
@@ -179,6 +182,9 @@ export async function sendMessage(
         quickReplies: args.quickReplies ?? null,
         contactCapture: hasCapture
           ? { fields: args.contactCaptureFields!, mode: args.contactCaptureMode ?? "both" }
+          : null,
+        variableCapture: hasVariableCapture
+          ? { variable: args.variableCapture!.variable, varType: args.variableCapture!.varType ?? "text" }
           : null,
       },
     );
@@ -294,19 +300,29 @@ export async function searchContacts(
 export async function getContact(
   ctx: ToolContext,
   args: { contactId: string },
-): Promise<ContactView & { notes: string | null; customFields: Record<string, unknown> }> {
+): Promise<ContactView & { notes: string | null; customFields: Record<string, unknown>; variables: Record<string, unknown> }> {
   if (!args.contactId) throw new Error("contactId is required.");
   await assertContactInWorkspace(ctx, args.contactId);
   const snap = await db().collection("contacts").doc(args.contactId).get();
   if (!snap.exists) throw new Error("Contact not found.");
   const data = snap.data() as Record<string, unknown>;
+  const customFields =
+    typeof data.customFields === "object" && data.customFields !== null
+      ? (data.customFields as Record<string, unknown>)
+      : {};
+  // variables and customFields are written together; merge so API users
+  // see every named variable whatever map it landed in.
+  const variables = {
+    ...(typeof data.variables === "object" && data.variables !== null
+      ? (data.variables as Record<string, unknown>)
+      : {}),
+    ...customFields,
+  };
   return {
     ...toContactView(snap.id, data),
     notes: typeof data.notes === "string" ? data.notes : null,
-    customFields:
-      typeof data.customFields === "object" && data.customFields !== null
-        ? (data.customFields as Record<string, unknown>)
-        : {},
+    customFields,
+    variables,
   };
 }
 
@@ -318,7 +334,7 @@ const UPDATABLE_CONTACT_FIELDS = new Set([
 /** update_contact: patch allowlisted fields on a workspace contact. */
 export async function updateContact(
   ctx: ToolContext,
-  args: { contactId: string; fields: Record<string, unknown> },
+  args: { contactId: string; fields: Record<string, unknown>; variables?: Record<string, string | number | boolean> },
 ): Promise<ContactView> {
   if (!args.contactId) throw new Error("contactId is required.");
   if (!args.fields || typeof args.fields !== "object") throw new Error("fields is required.");
@@ -333,10 +349,42 @@ export async function updateContact(
   if (patch.tags !== undefined && !Array.isArray(patch.tags)) {
     throw new Error("tags must be an array of strings.");
   }
+  // Named variables (BotMaps question-block answers): written to both the
+  // variables and customFields maps, mirroring the app's setContactVariable
+  // helper, so {{variable}} tags resolve in later messages.
+  if (args.variables && typeof args.variables === "object") {
+    for (const [rawKey, v] of Object.entries(args.variables)) {
+      // Reserved contact field names (phone, email, ...) are rejected here:
+      // {{phone}} always resolves to the contact's real phone number.
+      const key = assertVariableNameAllowed(rawKey);
+      if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") {
+        throw new Error(`Variable "${key}" must be a string, number, or boolean.`);
+      }
+      patch[`variables.${key}`] = v;
+      patch[`customFields.${key}`] = v;
+    }
+  }
   const ref = db().collection("contacts").doc(args.contactId);
   await ref.set(patch, { merge: true });
   const snap = await ref.get();
   return toContactView(snap.id, snap.data() as Record<string, unknown>);
+}
+
+/**
+ * send_webhook: POST a contact's collected variables to a third party URL.
+ * The BotMaps webhook action block stores its URL on the flow; this tool
+ * fires the same push on demand. HTTPS only, private hosts refused,
+ * 10s timeout, no retries.
+ */
+export async function sendWebhook(
+  ctx: ToolContext,
+  args: { contactId: string; url: string; variableNames?: string[] },
+): Promise<{ ok: boolean; status: number | null; error?: string }> {
+  if (!args.contactId) throw new Error("contactId is required.");
+  if (!args.url) throw new Error("url is required.");
+  await assertContactInWorkspace(ctx, args.contactId);
+  const names = args.variableNames?.map(sanitizeVariableName).filter(Boolean);
+  return executeWebhookAction(ctx.workspaceId, args.contactId, args.url, names?.length ? names : null);
 }
 
 /**
