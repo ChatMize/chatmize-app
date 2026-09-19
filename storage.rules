@@ -12,6 +12,21 @@ rules_version = '2';
 // ownership model lands.
 service firebase.storage {
   match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.superadmin == true;
+    }
+
+    // Workspace membership is stored in Firestore (chatmize-prod):
+    // workspaces/{workspaceId}/members/{uid}
+    function isWorkspaceMember(workspaceId) {
+      return isSignedIn() &&
+        firestore.exists(/databases/chatmize-prod/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+    }
+
     match /workspaces/{workspaceId}/images/{fileName} {
       allow read: if request.auth != null;
 
@@ -22,18 +37,18 @@ service firebase.storage {
       allow delete: if request.auth != null;
     }
 
-    // Knowledge Base step and cover images. Same posture as workspace
-    // images: signed in users only, size and type capped. Stored under
-    // workspaces/{workspaceId}/kb_media/{articleId}/{fileName} so each
-    // article's media stays together and can age out with lifecycle rules.
+    // Knowledge Base step and cover images. Restricted to workspace members
+    // (tightened 2026-09-19 per Karl — was signed-in-user only).
+    // Stored under workspaces/{workspaceId}/kb_media/{articleId}/{fileName}
+    // so each article's media stays together and can age out with lifecycle rules.
     match /workspaces/{workspaceId}/kb_media/{articleId}/{fileName} {
-      allow read: if request.auth != null;
+      allow read: if isWorkspaceMember(workspaceId) || isSuperAdmin();
 
-      allow create, update: if request.auth != null
+      allow create, update: if (isWorkspaceMember(workspaceId) || isSuperAdmin())
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|gif|webp)');
 
-      allow delete: if request.auth != null;
+      allow delete: if isWorkspaceMember(workspaceId) || isSuperAdmin();
     }
 
     // Deny everything outside the workspace image folders.
