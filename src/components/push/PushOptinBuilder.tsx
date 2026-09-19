@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BellRing, Loader2, CheckCircle2, AlertTriangle, Copy, Code2, Link2, Eye } from 'lucide-react';
-import { getPushPublicConfig, setPushPromptCopy } from '../../lib/push';
+import { getPushPromptCopy, setPushPromptCopy } from '../../lib/push';
 
 interface PushOptinBuilderProps {
   workspaceId: string;
@@ -30,8 +30,11 @@ export const PushOptinBuilder: React.FC<PushOptinBuilderProps> = ({ workspaceId 
   useEffect(() => {
     (async () => {
       try {
-        const cfg = await getPushPublicConfig(workspaceId);
-        if (cfg.configured && cfg.prompt) setCopy({ ...DEFAULTS, ...cfg.prompt });
+        // Member-guarded read: returns the saved prompt even before a VAPID
+        // key exists. The public config deliberately omits the prompt when
+        // unconfigured, which made saves look like they silently reverted.
+        const prompt = await getPushPromptCopy(workspaceId);
+        setCopy({ ...DEFAULTS, ...prompt });
       } catch { /* leave defaults */ }
     })();
   }, [workspaceId]);

@@ -40,6 +40,16 @@ export async function setPushPromptCopy(
   return (await fn({ workspaceId, ...copy })).data as { ok: boolean };
 }
 
+export interface PushPromptCopy {
+  headline: string; subtext: string; allowLabel: string; dismissLabel: string;
+}
+
+/** Member-guarded prompt copy for the in-app editor; works before VAPID setup. */
+export async function getPushPromptCopy(workspaceId: string): Promise<PushPromptCopy> {
+  const fn = httpsCallable<{ workspaceId: string }, PushPromptCopy>(functions, "getPushPromptCopy");
+  return (await fn({ workspaceId })).data;
+}
+
 export async function subscribePushToken(args: {
   workspaceId: string; token: string; userAgent?: string; tags?: string[];
   contactId?: string; ownerUid?: string; channelSenderIds?: string[];

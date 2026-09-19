@@ -206,6 +206,18 @@ export const setPushPromptCopy = onCall({ region: REGION }, async (request) => {
   return { ok: true };
 });
 
+/** Prompt copy for the in-app editor. Workspace members only. Unlike the public
+ *  config, this returns the saved prompt even before a VAPID key is configured,
+ *  so the editor always shows what was actually saved. */
+export const getPushPromptCopy = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+  const { workspaceId } = (request.data ?? {}) as { workspaceId?: string };
+  if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+  await requirePushWorkspaceAccess(uid, workspaceId, request.auth?.token);
+  return getPromptCopy(workspaceId);
+});
+
 /** Simple throttle so the public subscribe endpoint cannot be hammered. */
 async function checkSubscribeThrottle(workspaceId: string): Promise<void> {
   const ref = db().collection("push_subscribe_throttle").doc(workspaceId);
