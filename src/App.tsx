@@ -35,6 +35,8 @@ import {
   Smartphone,
   Instagram,
   Trophy,
+
+  Rocket,
   X
 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
@@ -78,6 +80,7 @@ import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { SnapshotImportView } from './views/SnapshotImportView';
 import { SnapshotLibraryView } from './views/SnapshotLibraryView';
 import { SmsBroadcastView } from './views/SmsBroadcastView';
+import { BuildCatalogView } from './views/BuildCatalogView';
 import { WorkspaceSilo } from './types/workspace';
 import { DEFAULT_WORKSPACES } from './data/workspaceDefaults';
 
@@ -543,6 +546,8 @@ export default function App() {
             onUpdateWorkspace={handleUpdateWorkspace}
           />
         );
+      case 'whats-new':
+        return <BuildCatalogView onBack={() => setActiveTab('dashboard')} />;
       default:
         return (
           <FlowBuilder 
@@ -1090,6 +1095,14 @@ export default function App() {
               label="Settings" 
               active={activeTab === 'settings' || activeTab === 'channels'} 
               onClick={() => { setSettingsInitialTab('general'); setActiveTab('settings'); }}               collapsed={isSidebarCollapsed} 
+            />
+
+            <NavItem 
+              icon={<Rocket className="w-4 h-4" />} 
+              label="Build Catalog" 
+              active={activeTab === 'whats-new'} 
+              onClick={() => setActiveTab('whats-new')} 
+              collapsed={isSidebarCollapsed} 
             />
           </div>
 

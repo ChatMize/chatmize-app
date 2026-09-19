@@ -153,6 +153,8 @@ import {
   clientSafeSettings,
 } from "./bookings.js";
 import { handleMigrationAction } from "./migration";
+
+import { handleBuildCatalogAction } from "./buildCatalog";
 import {
   resolvePersonalizationTags,
   getContactForRecipient,
@@ -1573,6 +1575,14 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
   // workspaceId requirement. Logic lives in ./migration so it can split out.
   if (typeof action === "string" && action.startsWith("migration")) {
     return handleMigrationAction(action, (request.data ?? {}) as Record<string, unknown>, uid, request.auth?.token);
+  }
+
+  // Build catalog (release notes feed) admin actions (folded in: proxy
+  // blocks new function creation). Super Admin only, not workspace-scoped.
+  // Deploy coordinators call buildCatalogLog after every deploy so each
+  // release appears in the bell dropdown and the catalog page.
+  if (typeof action === "string" && action.startsWith("buildCatalog")) {
+    return handleBuildCatalogAction(action, (request.data ?? {}) as Record<string, unknown>, request.auth?.token);
   }
   if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
   await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);

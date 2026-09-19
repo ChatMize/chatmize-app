@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { WorkspaceSilo } from '../../types/workspace';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+
+import { BuildCatalogBell } from './BuildCatalogBell';
 import { AppUser, signOutUser, prodDb } from '../../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 
@@ -141,6 +143,8 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
       case 'docs':
       case 'knowledge-base':
         return { title: 'Knowledge Base', category: 'Documentation', icon: HelpCircle };
+      case 'whats-new':
+        return { title: 'Build Catalog', category: 'Release Notes', icon: Sparkles };
       default:
         return { title: 'Platform Control', category: 'ChatMize', icon: LayoutDashboard };
     }
@@ -229,6 +233,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
           {/* Channel status lives in the workspace switcher dropdown (avoids header crowding as channels grow) */}
 
           {/* Notifications Trigger */}
+          <BuildCatalogBell onOpenCatalog={() => setActiveTab('whats-new')} />
           <div className="relative" ref={notifRef}>
             <button
               onClick={() => setShowNotifications(prev => !prev)}

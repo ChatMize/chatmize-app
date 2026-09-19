@@ -21,9 +21,12 @@ import {
   Layers,
   Calculator,
   Library,
+
+  Rocket,
   MailPlus
 } from 'lucide-react';
 import { SuperAdminKanban } from '../components/admin/SuperAdminKanban';
+import { BuildCatalogAdminTab } from '../components/admin/BuildCatalogAdminTab';
 import { PlanEditorModal } from '../components/admin/PlanEditorModal';
 import { PlanModulesManager } from '../components/admin/PlanModulesManager';
 import { SnapshotAdminTab } from '../components/admin/SnapshotAdminTab';
@@ -33,7 +36,7 @@ import { Plan, PlanMode, PLAN_MODE_LABELS, FEATURE_LABELS, formatPrice, deletePl
 import { usePlans } from '../lib/entitlements';
 
 interface SuperAdminViewProps {
-  initialTab?: 'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist';
+  initialTab?: 'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist' | 'catalog';
 }
 
 interface UserRecord {
@@ -211,7 +214,7 @@ const PlanTierCard: React.FC<PlanTierCardProps> = ({ plan, onEdit }) => (
 export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
   initialTab = 'kanban'
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist'>(initialTab);
+  const [activeSubTab, setActiveSubTab] = useState<'kanban' | 'users' | 'plans' | 'migration' | 'snapshots' | 'waitlist' | 'catalog'>(initialTab);
   const [users, setUsers] = useState<UserRecord[]>(INITIAL_USERS);
   const [searchQuery, setSearchQuery] = useState('');
   const { plans, loading: plansLoading } = usePlans();
@@ -333,6 +336,18 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
           >
             <MailPlus className="w-4 h-4" />
             <span>Waitlist</span>
+          </button>
+          <button
+
+            onClick={() => setActiveSubTab('catalog')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeSubTab === 'catalog'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/25'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Rocket className="w-4 h-4" />
+            <span>Build Catalog</span>
           </button>
           <button
             onClick={() => setActiveSubTab('migration')}
@@ -592,6 +607,11 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
         <SnapshotAdminTab />
       )}
 
+
+      {/* TAB: BUILD CATALOG (RELEASE NOTES FEED) */}
+      {activeSubTab === 'catalog' && (
+        <BuildCatalogAdminTab />
+      )}
       {/* TAB: SEGMATE MIGRATION IMPORTER */}
       {activeSubTab === 'migration' && (
         <SegMateMigrationTab />
