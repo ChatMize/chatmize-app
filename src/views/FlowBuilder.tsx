@@ -63,6 +63,7 @@ import {
   Search,
   BookOpen,
   Hash,
+  ShoppingBag,
   HelpCircle
 } from 'lucide-react';
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -296,6 +297,12 @@ export interface FlowNode {
   // party URL as JSON. Configured per node, stored on the flow document.
   // variableNames limits the push; empty means all variables.
   webhookAction?: { url: string; variableNames?: string[] };
+  // Shopify action: send a commerce message (cart recovery or order update)
+  // from a flow step. The message supports {{variable}} personalization with
+  // the event variables of the trigger that started the flow
+  // ({{cart_recovery_url}}, {{order_name}}, {{tracking_number}}, ...).
+  // Fires once per flow run from the API, never retried.
+  shopifyAction?: { kind: 'cart_recovery' | 'order_update'; message: string };
   // Google Sheets action: append one row to a tab of the workspace's
   // connected spreadsheet. mappings pair a column header with the variable
   // name whose captured value fills that column.
@@ -2897,6 +2904,14 @@ const NodeCard = React.memo(function NodeCard({
             <span className="truncate font-mono">Webhook: {node.webhookAction.url}</span>
           </div>
         )}
+        {isAction && node.shopifyAction?.message && (
+          <div className="text-xs bg-emerald-500/10 text-emerald-100 px-2.5 py-1.5 rounded-lg border border-emerald-500/20 flex items-start gap-2 mt-1.5">
+            <ShoppingBag className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
+            <span className="line-clamp-2">
+              Shopify {node.shopifyAction.kind === 'cart_recovery' ? 'cart recovery' : 'order update'}: {node.shopifyAction.message}
+            </span>
+          </div>
+        )}
         {isAction && node.sheetsAction?.tab && (
           <div className="text-xs bg-emerald-500/10 text-emerald-100 px-2.5 py-1.5 rounded-lg border border-emerald-500/20 flex items-start gap-2 mt-1.5">
             <Table2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
@@ -3597,7 +3612,7 @@ function NodeEditor({
     if (type === 'web_modal' || type === 'web_bar' || type === 'web_slidein' || type === 'web_embed_form' || type === 'landing_page' || type === 'fb_customer_chat') {
       return ['OPTIN', 'START', 'DOWNLOAD', 'GUIDE', 'FREE', 'VIP'];
     }
-    if (type === 'webhook' || type === 'shopify_trigger' || type === 'lead_form') {
+    if (type === 'webhook' || type === 'shopify_trigger' || type === 'lead_form' || type === 'shopify_cart_abandoned' || type === 'shopify_order_created' || type === 'shopify_order_shipped' || type === 'shopify_order_delivered' || type === 'shopify_product_purchased') {
       return ['CHECKOUT', 'NEW_LEAD', 'ORDER_PAID', 'ABANDONED', 'PURCHASE'];
     }
     return ['START', 'BOT', 'HELP', 'PRICING', 'VIP', 'JOIN', 'INFO'];
@@ -4674,7 +4689,7 @@ function NodeEditor({
                             )}
 
                             {/* External Inbound Webhook / Integrations */}
-                            {(trig.type === 'webhook' || trig.type === 'shopify_trigger' || trig.type === 'lead_form') && (
+                            {(trig.type === 'webhook' || trig.type === 'shopify_trigger' || trig.type === 'lead_form' || trig.type === 'shopify_cart_abandoned' || trig.type === 'shopify_order_created' || trig.type === 'shopify_order_shipped' || trig.type === 'shopify_order_delivered' || trig.type === 'shopify_product_purchased') && (
                               <div className="space-y-2.5 p-3 rounded-2xl bg-slate-950/60 border border-white/10">
                                 <div className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                                   <Webhook className="w-3.5 h-3.5 text-amber-400" />
@@ -6285,6 +6300,63 @@ function NodeEditor({
               </p>
             </div>
 
+            {/* Shopify action: send a cart recovery or order update message */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <ShoppingBag className="w-3 h-3 text-emerald-400" />
+                <span>Shopify message</span>
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => onAutoUpdate({ shopifyAction: { kind: 'cart_recovery', message: node.shopifyAction?.message || '' } })}
+                  className={`flex-1 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
+                    (node.shopifyAction?.kind || 'cart_recovery') === 'cart_recovery'
+                      ? 'bg-emerald-600 text-white border-emerald-500'
+                      : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  Cart recovery
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAutoUpdate({ shopifyAction: { kind: 'order_update', message: node.shopifyAction?.message || '' } })}
+                  className={`flex-1 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
+                    node.shopifyAction?.kind === 'order_update'
+                      ? 'bg-emerald-600 text-white border-emerald-500'
+                      : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  Order update
+                </button>
+              </div>
+              <textarea
+                value={node.shopifyAction?.message || ''}
+                onChange={(e) => {
+                  const message = e.target.value;
+                  if (!message && !node.shopifyAction) return;
+                  onAutoUpdate({
+                    shopifyAction: message
+                      ? { kind: node.shopifyAction?.kind || 'cart_recovery', message }
+                      : undefined,
+                  });
+                }}
+                placeholder={
+                  (node.shopifyAction?.kind || 'cart_recovery') === 'cart_recovery'
+                    ? 'Hi {{customer_first_name}}, you left {{cart_items}} in your cart ({{cart_total}}). Tap to finish checkout: {{cart_recovery_url}}'
+                    : 'Hi {{customer_first_name}}, order {{order_name}} is on its way. Track it here: {{tracking_url}}'
+                }
+                rows={3}
+                className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 outline-none focus:border-emerald-500 transition-colors resize-y"
+              />
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                {(node.shopifyAction?.kind || 'cart_recovery') === 'cart_recovery'
+                  ? 'Use {{cart_items}}, {{cart_total}}, {{cart_recovery_url}}, {{customer_first_name}}. Fires when the cart abandoned trigger starts this flow.'
+                  : 'Use {{order_name}}, {{order_total}}, {{tracking_number}}, {{tracking_url}}, {{customer_first_name}}. Fires when an order event starts this flow.'}
+                {' '}Sends once per flow run, never retried.
+              </p>
+            </div>
+
             {/* Google Sheets action: append one row to the workspace's connected sheet */}
             <div className="pt-3 border-t border-white/10 space-y-2.5">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -7005,6 +7077,45 @@ function PhoneSimulator({
             sender: 'bot',
             type: 'text',
             text: `Webhook simulated → ${node.webhookAction!.url}${pushedPairs ? ` (${pushedPairs})` : ''}`,
+          },
+        ]);
+      }
+      // Shopify action: simulate the commerce message with sample values
+      // (no real send from the browser; production sends fire from the API).
+      if (node.shopifyAction?.message) {
+        const sampleVars: Record<string, string> = {
+          customer_first_name: 'Alex',
+          customer_email: 'alex@example.com',
+          cart_items: '2 x Trail Backpack (Forest)',
+          cart_total: '$129.00',
+          cart_currency: 'USD',
+          cart_item_count: '2',
+          cart_recovery_url: 'https://mystore.myshopify.com/checkouts/recover',
+          order_name: '#1001',
+          order_total: '$129.00',
+          order_currency: 'USD',
+          order_item_count: '2',
+          order_items: '2 x Trail Backpack (Forest)',
+          order_status_url: 'https://mystore.myshopify.com/orders/status',
+          tracking_number: '1Z9999999999999999',
+          tracking_company: 'UPS',
+          tracking_url: 'https://www.ups.com/track?tracknum=1Z9999999999999999',
+          product_title: 'Trail Backpack',
+          variant_title: 'Forest',
+          quantity: '1',
+          price: '$129.00',
+        };
+        const rendered = node.shopifyAction.message.replace(
+          /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+          (_m, name: string) => sampleVars[name] ?? simContact.variables[name] ?? `{{${name}}}`,
+        );
+        setChatItems((prev) => [
+          ...prev,
+          {
+            id: `shopify-${Date.now()}`,
+            sender: 'bot',
+            type: 'text',
+            text: rendered,
           },
         ]);
       }
