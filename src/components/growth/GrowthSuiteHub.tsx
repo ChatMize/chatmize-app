@@ -27,6 +27,8 @@ interface GrowthSuiteHubProps {
   workspaceId?: string;
   workspaceName?: string;
   workspaceSlug?: string;
+  /** Firestore plan id of the active workspace; drives capture tool limits. */
+  workspacePlanId?: string;
   onTabChange?: (tab: GrowthSuiteTab) => void;
 }
 
@@ -38,6 +40,7 @@ export const GrowthSuiteHub: React.FC<GrowthSuiteHubProps> = ({
   workspaceId,
   workspaceName = 'Apex Marketing',
   workspaceSlug = 'apex-marketing',
+  workspacePlanId,
   onTabChange
 }) => {
   const [activeTab, setActiveTab] = useState<GrowthSuiteTab>(initialTab);
@@ -159,6 +162,7 @@ export const GrowthSuiteHub: React.FC<GrowthSuiteHubProps> = ({
           availableBots={availableBots}
           onNavigateToFlows={onNavigateToFlows}
           initialFilter={overlayFilter}
+          workspacePlanId={workspacePlanId}
         />
       )}
 

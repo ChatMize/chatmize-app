@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { SuperAdminKanban } from '../components/admin/SuperAdminKanban';
 import { PlanEditorModal } from '../components/admin/PlanEditorModal';
+import { PlanModulesManager } from '../components/admin/PlanModulesManager';
 import { SnapshotAdminTab } from '../components/admin/SnapshotAdminTab';
 import { SegMateMigrationTab } from '../components/admin/SegMateMigrationTab';
 import { WaitlistAdminTab } from '../components/admin/WaitlistAdminTab';
@@ -518,6 +519,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({
             <div className="text-center py-12 text-slate-400 text-sm">Loading plans...</div>
           ) : (
             <>
+              <PlanModulesManager />
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>

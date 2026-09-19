@@ -37,12 +37,17 @@ import {
   setOverlayStatus,
   overlayEmbedCode,
 } from '../../lib/overlays';
+import { usePlan } from '../../lib/entitlements';
+import { limitFor } from '../../lib/planModules';
+import { UpgradePromptModal } from '../UpgradePromptModal';
 
 interface WebsiteOverlaysViewProps {
   workspaceId?: string;
   availableBots?: Array<{ id: string; name: string }>;
   onNavigateToFlows?: (botId?: string) => void;
   initialFilter?: OverlayType | 'all';
+  /** Firestore plan id of the active workspace; drives capture tool limits. */
+  workspacePlanId?: string;
 }
 
 const OVERLAY_TYPE_INFO: Record<OverlayType, {
@@ -240,8 +245,14 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
   // No fake bots: the parent passes the workspace's real bots; empty when unknown.
   availableBots = [],
   onNavigateToFlows,
-  initialFilter = 'all'
+  initialFilter = 'all',
+  workspacePlanId
 }) => {
+  // Modular plan enforcement: the workspace's plan caps capture tools.
+  const plan = usePlan(workspacePlanId);
+  const captureToolLimit = limitFor(plan, 'capture_tools');
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
+
   // Overlays are stored per workspace in Firestore via the backend callable
   // actions (see src/lib/overlays.ts). No local demo data: the list starts
   // empty and loads from the server.
@@ -330,6 +341,12 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
   };
 
   const handleCreateNew = (type: OverlayType = 'popup_modal') => {
+    // Plan enforcement: creating beyond the capture tool limit shows the
+    // upgrade prompt instead of opening the editor.
+    if (overlays.length >= captureToolLimit) {
+      setLimitModalOpen(true);
+      return;
+    }
     const info = OVERLAY_TYPE_INFO[type];
     // New overlays start as drafts with neutral copy — nothing fake is
     // published. The user edits content, then sets status to active.
@@ -1839,6 +1856,15 @@ export const WebsiteOverlaysView: React.FC<WebsiteOverlaysViewProps> = ({
 
           </div>
         </div>
+      )}
+
+      {limitModalOpen && (
+        <UpgradePromptModal
+          resourceName="capture tool"
+          limit={captureToolLimit}
+          unit="per workspace"
+          onClose={() => setLimitModalOpen(false)}
+        />
       )}
 
     </div>
