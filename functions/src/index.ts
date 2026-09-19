@@ -67,6 +67,7 @@ import {
   selectWhatsAppNumber,
   whatsappAppReturnUrl,
 } from "./whatsappOAuth";
+import { handleBigmarkerAction } from "./bigmarker";
 import { META_INSTAGRAM_APP_SECRET } from "./secrets";
 import { normalizeEntry } from "./handlers";
 import {
@@ -78,6 +79,22 @@ import {
 } from "./kb";
 import { handleCloakerRequest, CloakerReq, CloakerRes } from "./cloaker";
 import { isWaitlistRequest, handleWaitlistRequest } from "./waitlist";
+import {
+  GOOGLE_OAUTH_CLIENT_ID,
+  GOOGLE_OAUTH_CLIENT_SECRET,
+  buildGoogleSheetsLoginUrl,
+  consumeGoogleSheetsOAuthState,
+  exchangeGoogleSheetsCode,
+  connectGoogleSheetsAccount,
+  googleSheetsReturnUrl,
+  getGoogleSheetsStatus,
+  disconnectGoogleSheets,
+  setGoogleSheetsSpreadsheet,
+  listSheetsTabs,
+  appendSheetsRow,
+  readSheetsRows,
+  resolveSpreadsheetId,
+} from "./googleSheets";
 import {
   overlayList,
   overlaySave,
@@ -1211,6 +1228,10 @@ export const metaOAuthStatus = onCall({ region: REGION }, async (request) => {
     logger.info("WhatsApp number connected", { workspaceId, phoneNumberId: result.phoneNumberId });
     return result;
   }
+  // BigMarker actions (folded in: proxy blocks new function creation)
+  if (typeof action === "string" && action.startsWith("bigmarker")) {
+    return handleBigmarkerAction(action, (request.data ?? {}) as Record<string, unknown>, workspaceId);
+  }
   // Website Overlays SDK actions (folded in: proxy blocks new function
   // creation; logic lives in ./overlays so it can split out later).
   if (action === "overlayList") {
@@ -1387,6 +1408,117 @@ export const whatsappOAuthSelectNumber = onCall({ region: REGION }, async (reque
   logger.info("WhatsApp number connected", { workspaceId, phoneNumberId: result.phoneNumberId });
   return result;
 });
+
+// ---------------------------------------------------------------------------
+// Google Sheets integration (OAuth + row append / read). One onCall
+// dispatcher keeps the function count small; the OAuth callback rides a
+// public onRequest behind the /googleOAuthCallback hosting rewrite.
+// ---------------------------------------------------------------------------
+
+/**
+ * Google Sheets dispatcher. Actions: start, status, disconnect,
+ * setSpreadsheet, listTabs, appendRow, readRows.
+ */
+export const googleSheets = onCall(
+  { region: REGION, secrets: [GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET] },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Sign in required.");
+    const { workspaceId, action, ...rest } = (request.data ?? {}) as {
+      workspaceId?: string;
+      action?: string;
+      [key: string]: unknown;
+    };
+    if (!workspaceId) throw new HttpsError("invalid-argument", "workspaceId is required.");
+    await requireWorkspaceAccess(uid, workspaceId, request.auth?.token);
+    switch (action) {
+      case "start": {
+        const url = await buildGoogleSheetsLoginUrl(workspaceId, uid, rest.returnTo);
+        logger.info("Google Sheets OAuth started", { workspaceId, uid });
+        return { url };
+      }
+      case "status":
+        return getGoogleSheetsStatus(workspaceId);
+      case "disconnect":
+        return disconnectGoogleSheets(workspaceId);
+      case "setSpreadsheet": {
+        if (typeof rest.spreadsheet !== "string" || !rest.spreadsheet.trim()) {
+          throw new HttpsError("invalid-argument", "Paste a Google Sheet link or id.");
+        }
+        return setGoogleSheetsSpreadsheet(workspaceId, rest.spreadsheet);
+      }
+      case "listTabs": {
+        const spreadsheetId = await resolveSpreadsheetId(
+          workspaceId,
+          typeof rest.spreadsheetId === "string" ? rest.spreadsheetId : undefined,
+        );
+        return { tabs: await listSheetsTabs(workspaceId, spreadsheetId) };
+      }
+      case "appendRow": {
+        const { tab, values, spreadsheetId } = rest as {
+          tab?: string;
+          values?: Record<string, string>;
+          spreadsheetId?: string;
+        };
+        if (!tab || typeof values !== "object" || values === null) {
+          throw new HttpsError("invalid-argument", "tab and values are required.");
+        }
+        return appendSheetsRow(workspaceId, {
+          tab,
+          values,
+          spreadsheetId: typeof spreadsheetId === "string" ? spreadsheetId : undefined,
+        });
+      }
+      case "readRows": {
+        const { tab, matchHeader, matchValue, limit, spreadsheetId } = rest as {
+          tab?: string;
+          matchHeader?: string;
+          matchValue?: string;
+          limit?: number;
+          spreadsheetId?: string;
+        };
+        if (!tab) throw new HttpsError("invalid-argument", "tab is required.");
+        return readSheetsRows(workspaceId, {
+          tab,
+          matchHeader: typeof matchHeader === "string" ? matchHeader : undefined,
+          matchValue: typeof matchValue === "string" ? matchValue : undefined,
+          limit: typeof limit === "number" ? limit : undefined,
+          spreadsheetId: typeof spreadsheetId === "string" ? spreadsheetId : undefined,
+        });
+      }
+      default:
+        throw new HttpsError("invalid-argument", "Unknown Google Sheets action.");
+    }
+  },
+);
+
+/** Step 2: Google redirects here with ?code&state. Public; state is single-use. */
+export const googleOAuthCallback = onRequest(
+  { region: REGION, secrets: [GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET] },
+  async (req, res) => {
+    const code = req.query["code"];
+    const state = req.query["state"];
+    let returnTo: string | undefined;
+    try {
+      if (typeof code !== "string" || typeof state !== "string") {
+        throw new Error("Missing code or state.");
+      }
+      const consumed = await consumeGoogleSheetsOAuthState(state);
+      returnTo = consumed.returnTo;
+      const tokens = await exchangeGoogleSheetsCode(code);
+      const { email } = await connectGoogleSheetsAccount(consumed.workspaceId, consumed.uid, tokens);
+      logger.info("Google Sheets OAuth callback ok", {
+        workspaceId: consumed.workspaceId,
+        email,
+      });
+      res.redirect(302, googleSheetsReturnUrl("success", undefined, returnTo));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Login failed.";
+      logger.warn("Google Sheets OAuth callback failed", { message });
+      res.redirect(302, googleSheetsReturnUrl("error", message, returnTo));
+    }
+  },
+);
 
 /**
  * Phase 1 SES notification triggers (see notifications.ts): owner reconnect
